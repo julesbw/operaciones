@@ -1,0 +1,335 @@
+@import "tailwindcss";
+
+:root {
+  color: #0f172a;
+  background: #f5f7f6;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #f5f7f6;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 82% 0%, rgb(204 251 241 / 0.28), transparent 27rem),
+    #f5f7f6;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+::selection {
+  color: #fff;
+  background: #0f766e;
+}
+
+@media screen and (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .sidebar {
+    @apply sticky top-0 h-dvh flex-col border-r border-slate-200 bg-white px-5 py-6;
+  }
+
+  .brand-mark {
+    @apply flex size-12 shrink-0 items-center justify-center rounded-2xl bg-teal-700 text-white shadow-lg shadow-teal-900/15;
+  }
+
+  .side-nav-item,
+  .side-nav-active {
+    @apply flex w-full items-center gap-3 rounded-xl px-3.5 py-3 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700;
+  }
+
+  .side-nav-item {
+    @apply text-slate-500 hover:bg-slate-50 hover:text-slate-900;
+  }
+
+  .side-nav-active {
+    @apply bg-teal-50 text-teal-800 ring-1 ring-teal-100;
+  }
+
+  .avatar {
+    @apply flex size-10 shrink-0 items-center justify-center rounded-full bg-teal-100 text-xs font-black text-teal-800 ring-2 ring-white;
+  }
+
+  .icon-button {
+    @apply flex size-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white hover:text-slate-900 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700;
+  }
+
+  .topbar {
+    @apply sticky top-0 z-30 flex h-[68px] items-center border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:h-[76px] lg:px-10;
+  }
+
+  .sync-pill {
+    @apply flex h-9 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-700 transition hover:bg-emerald-100;
+  }
+
+  .sync-pill-offline {
+    @apply border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100;
+  }
+
+  .mobile-nav {
+    padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
+    @apply fixed inset-x-0 bottom-0 z-40 flex justify-around border-t border-slate-200 bg-white/95 px-2 pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl;
+  }
+
+  .mobile-nav-item,
+  .mobile-nav-active {
+    @apply flex min-w-14 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-bold transition;
+  }
+
+  .mobile-nav-item {
+    @apply text-slate-400;
+  }
+
+  .mobile-nav-active {
+    @apply bg-teal-50 text-teal-700;
+  }
+
+  .login-shell {
+    @apply min-h-dvh lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(440px,0.85fr)];
+  }
+
+  .login-story {
+    background:
+      linear-gradient(135deg, rgb(4 47 46 / 0.98), rgb(15 118 110 / 0.96)),
+      #0f766e;
+    @apply relative hidden min-h-dvh overflow-hidden px-14 py-12 lg:flex lg:items-start xl:px-24;
+  }
+
+  .login-orb {
+    @apply pointer-events-none absolute rounded-full blur-sm;
+  }
+
+  .login-orb-one {
+    width: 32rem;
+    height: 32rem;
+    right: -12rem;
+    bottom: -10rem;
+    background: radial-gradient(circle at 35% 35%, rgb(251 191 36 / 0.44), rgb(251 191 36 / 0.04) 64%, transparent 65%);
+  }
+
+  .login-orb-two {
+    width: 24rem;
+    height: 24rem;
+    top: -12rem;
+    right: 12%;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    box-shadow: 0 0 0 70px rgb(255 255 255 / 0.025), 0 0 0 140px rgb(255 255 255 / 0.018);
+  }
+
+  .eyebrow,
+  .eyebrow-light {
+    @apply text-[11px] font-extrabold uppercase tracking-[0.16em];
+  }
+
+  .eyebrow {
+    @apply text-teal-700;
+  }
+
+  .eyebrow-light {
+    @apply text-teal-100;
+  }
+
+  .page-title {
+    @apply text-3xl font-black tracking-[-0.025em] text-slate-950 sm:text-4xl;
+  }
+
+  .page-subtitle {
+    @apply mt-2 text-sm leading-6 text-slate-500 sm:text-base;
+  }
+
+  .panel {
+    @apply rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_10px_35px_rgba(15,23,42,0.045)] sm:p-6;
+  }
+
+  .stat-card {
+    @apply flex items-center gap-4 rounded-2xl border border-slate-200/90 bg-white p-5 shadow-[0_8px_30px_rgba(15,23,42,0.04)];
+  }
+
+  .stat-icon {
+    @apply flex size-11 shrink-0 items-center justify-center rounded-xl;
+  }
+
+  .stat-label {
+    @apply text-xs font-semibold text-slate-500;
+  }
+
+  .stat-value {
+    @apply mt-1 text-xl font-black tracking-tight text-slate-950;
+  }
+
+  .hero-card {
+    background:
+      radial-gradient(circle at 100% 0%, rgb(251 191 36 / 0.24), transparent 17rem),
+      linear-gradient(135deg, #064e3b, #0f766e);
+    @apply relative min-h-72 overflow-hidden rounded-3xl p-7 shadow-xl shadow-teal-950/10 sm:p-9;
+  }
+
+  .hero-receipt {
+    transform: rotate(9deg);
+    @apply absolute -bottom-8 -right-6 flex size-52 items-center justify-center rounded-[2.5rem] bg-white/10 text-white/20 ring-1 ring-white/10 sm:right-8;
+  }
+
+  .button-primary,
+  .button-secondary,
+  .button-light {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-extrabold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700;
+  }
+
+  .button-primary {
+    @apply bg-teal-700 text-white shadow-md shadow-teal-900/10 hover:-translate-y-0.5 hover:bg-teal-800 hover:shadow-lg;
+  }
+
+  .button-secondary {
+    @apply border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50;
+  }
+
+  .button-light {
+    @apply bg-white text-teal-800 shadow-lg shadow-teal-950/15 hover:-translate-y-0.5 hover:bg-teal-50;
+  }
+
+  .text-action {
+    @apply inline-flex items-center gap-2 text-sm font-extrabold text-teal-700 hover:text-teal-900;
+  }
+
+  .field-label {
+    @apply block text-sm font-bold text-slate-700;
+  }
+
+  .field {
+    @apply mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-base font-normal text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-3 focus:ring-teal-600/10;
+  }
+
+  .compact-field {
+    @apply min-h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-teal-600 focus:ring-3 focus:ring-teal-600/10;
+  }
+
+  .money-field {
+    @apply mt-2 flex items-center rounded-xl border border-slate-300 bg-white px-3.5 transition focus-within:border-teal-600 focus-within:ring-3 focus-within:ring-teal-600/10;
+  }
+
+  .money-field > span {
+    @apply pr-2 text-xl font-black text-teal-700;
+  }
+
+  .money-field > input {
+    @apply min-w-0 flex-1 border-0 bg-transparent py-2.5 text-2xl font-black tracking-tight text-slate-950 outline-none placeholder:text-slate-300;
+  }
+
+  .alert-error {
+    @apply rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-red-800;
+  }
+
+  .alert-success {
+    @apply flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-emerald-800;
+  }
+
+  .demo-badge {
+    @apply rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800;
+  }
+
+  .summary-strip {
+    @apply flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-5 sm:p-6;
+  }
+
+  .empty-state {
+    @apply px-6 py-12 text-center text-sm font-medium text-slate-400;
+  }
+
+  .attendance-option,
+  .attendance-present,
+  .attendance-absent,
+  .attendance-rest_day {
+    @apply flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-bold transition;
+  }
+
+  .attendance-option {
+    @apply text-slate-400 hover:bg-white hover:text-slate-700;
+  }
+
+  .attendance-present {
+    @apply bg-white text-emerald-700 shadow-sm ring-1 ring-emerald-100;
+  }
+
+  .attendance-absent {
+    @apply bg-white text-red-700 shadow-sm ring-1 ring-red-100;
+  }
+
+  .attendance-rest_day {
+    @apply bg-white text-amber-700 shadow-sm ring-1 ring-amber-100;
+  }
+
+  .denomination-field {
+    @apply rounded-xl border border-slate-200 bg-slate-50 p-3 transition focus-within:border-teal-500 focus-within:bg-white focus-within:ring-3 focus-within:ring-teal-600/10;
+  }
+
+  .denomination-field > span {
+    @apply block text-xs font-bold text-slate-500;
+  }
+
+  .denomination-field > input {
+    @apply mt-2 block w-full border-0 bg-transparent p-0 text-xl font-black text-slate-950 outline-none;
+  }
+
+  .summary-row {
+    @apply flex items-center justify-between gap-4;
+  }
+
+  .summary-row > dt {
+    @apply text-slate-500;
+  }
+
+  .summary-row > dd {
+    @apply font-bold tabular-nums;
+  }
+
+  .tab-item,
+  .tab-active {
+    @apply -mb-px inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition;
+  }
+
+  .tab-item {
+    @apply border-transparent text-slate-400 hover:text-slate-700;
+  }
+
+  .tab-active {
+    @apply border-teal-700 text-teal-700;
+  }
+
+  .small-button {
+    @apply rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50;
+  }
+}
