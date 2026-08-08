@@ -40,6 +40,14 @@ export type CollaboratorRow = {
   updated_at: string
 }
 
+export type CollaboratorCompensationRow = {
+  collaborator_id: string
+  weekly_pay: number
+  effective_from: string
+  updated_at: string
+  updated_by: string
+}
+
 export type AttendanceRow = {
   id: string
   collaborator_id: string
@@ -101,6 +109,11 @@ export type Database = {
         Pick<CollaboratorRow, 'id' | 'name' | 'store_id' | 'rest_day'> &
           Partial<Pick<CollaboratorRow, 'status'>>,
         Partial<Pick<CollaboratorRow, 'name' | 'store_id' | 'rest_day' | 'status'>>
+      >
+      collaborator_compensation: TableDefinition<
+        CollaboratorCompensationRow,
+        never,
+        never
       >
       attendance_records: TableDefinition<
         AttendanceRow,
@@ -210,6 +223,16 @@ export type Database = {
           p_recorded_by: string
         }
         Returns: AttendanceRow
+      }
+      create_collaborator: {
+        Args: {
+          p_id: string
+          p_name: string
+          p_store_id: string
+          p_rest_day: number
+          p_weekly_pay: number
+        }
+        Returns: CollaboratorRow
       }
     }
     Enums: Record<string, never>

@@ -14,8 +14,14 @@ import { syncService } from './services/syncService'
 
 type AppState = 'loading' | 'ready' | 'error'
 
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : 'Error desconocido'
+}
+
 function App() {
   const [state, setState] = useState<AppState>('loading')
+  const [startupError, setStartupError] = useState<string>()
+  const [startupNotice, setStartupNotice] = useState<string>()
   const [user, setUser] = useState<UserProfile>()
   const [page, setPage] = useState<PageId>('home')
   const [stores, setStores] = useState<Store[]>([])
@@ -49,30 +55,58 @@ function App() {
 
   useEffect(() => {
     let active = true
-    void bootstrapService
-      .initialize()
-      .then(async () => {
-        const restoredUser = await authService.restore()
-        if (restoredUser && !restoredUser.demo) {
-          await referenceDataService.refresh()
-        }
-        if (!active) return
-        setUser(restoredUser)
+
+    async function initializeApplication() {
+      try {
+        await bootstrapService.initialize()
         await refreshLocalState()
+      } catch (cause: unknown) {
+        console.error('No fue posible preparar el almacenamiento local', cause)
         if (active) {
-          setState('ready')
-          void syncService
-            .process()
-            .then(refreshLocalState)
-            .catch((cause: unknown) =>
-              console.error('No fue posible actualizar datos remotos', cause),
-            )
+          setStartupError(errorMessage(cause))
+          setState('error')
         }
-      })
-      .catch((cause: unknown) => {
-        console.error('No fue posible iniciar Operaciones', cause)
-        if (active) setState('error')
-      })
+        return
+      }
+
+      let restoredUser: UserProfile | undefined
+      try {
+        restoredUser = await authService.restore()
+      } catch (cause: unknown) {
+        console.error('No fue posible restaurar la sesión anterior', cause)
+        if (active) {
+          setStartupNotice(
+            'No se pudo restaurar la sesión anterior. Inicia sesión nuevamente.',
+          )
+        }
+      }
+
+      if (restoredUser && !restoredUser.demo) {
+        try {
+          await referenceDataService.refresh()
+          await refreshLocalState()
+        } catch (cause: unknown) {
+          console.error('No fue posible actualizar los datos remotos', cause)
+          if (active) {
+            setStartupNotice(
+              'Supabase no respondió correctamente. Se conservaron los datos locales.',
+            )
+          }
+        }
+      }
+
+      if (!active) return
+      setUser(restoredUser)
+      setState('ready')
+      void syncService
+        .process()
+        .then(refreshLocalState)
+        .catch((cause: unknown) =>
+          console.error('No fue posible actualizar datos remotos', cause),
+        )
+    }
+
+    void initializeApplication()
     return () => {
       active = false
     }
@@ -94,7 +128,17 @@ function App() {
 
   async function signedIn(profile: UserProfile) {
     setUser(profile)
-    if (!profile.demo) await referenceDataService.refresh()
+    setStartupNotice(undefined)
+    if (!profile.demo) {
+      try {
+        await referenceDataService.refresh()
+      } catch (cause: unknown) {
+        console.error('No fue posible actualizar los datos remotos', cause)
+        setStartupNotice(
+          'La sesión inició, pero Supabase no devolvió los datos operativos.',
+        )
+      }
+    }
     await refreshLocalState()
     void syncService
       .process()
@@ -132,12 +176,33 @@ function App() {
           <p className={`mt-5 text-sm font-semibold ${state === 'error' ? 'text-red-700' : 'text-slate-500'}`}>
             {state === 'error' ? 'No fue posible preparar la aplicación.' : 'Preparando Operaciones…'}
           </p>
+          {state === 'error' && startupError && (
+            <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">
+              {startupError}
+            </p>
+          )}
+          {state === 'error' && (
+            <button
+              className="button-secondary mt-5"
+              type="button"
+              onClick={() => window.location.reload()}
+            >
+              Reintentar
+            </button>
+          )}
         </div>
       </main>
     )
   }
 
-  if (!user) return <LoginPage onSignedIn={(profile) => void signedIn(profile)} />
+  if (!user) {
+    return (
+      <LoginPage
+        notice={startupNotice}
+        onSignedIn={(profile) => void signedIn(profile)}
+      />
+    )
+  }
 
   return (
     <AppShell

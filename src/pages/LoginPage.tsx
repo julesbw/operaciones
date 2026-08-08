@@ -5,10 +5,11 @@ import { isSupabaseConfigured } from '../lib/supabase'
 import { authService } from '../services/authService'
 
 type LoginPageProps = {
+  notice?: string
   onSignedIn: (profile: UserProfile) => void
 }
 
-export function LoginPage({ onSignedIn }: LoginPageProps) {
+export function LoginPage({ notice, onSignedIn }: LoginPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -74,6 +75,12 @@ export function LoginPage({ onSignedIn }: LoginPageProps) {
           <p className="mt-3 text-sm leading-6 text-slate-500">
             Accede con la cuenta asignada a tu tienda.
           </p>
+
+          {notice && (
+            <p className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+              {notice}
+            </p>
+          )}
 
           {isSupabaseConfigured ? (
             <form className="mt-8 space-y-5" onSubmit={submit}>

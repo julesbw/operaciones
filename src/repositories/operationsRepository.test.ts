@@ -130,3 +130,38 @@ describe('OperationsRepository attendance constraints', () => {
     }
   })
 })
+
+describe('OperationsRepository store queries', () => {
+  it('lists stores ordered by their indexed name', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const timestamp = '2026-08-06T12:00:00.000Z'
+
+    try {
+      await repository.saveStores([
+        {
+          id: 'store-north',
+          name: 'Tienda Norte',
+          status: 'active',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: 'store-center',
+          name: 'Tienda Centro',
+          status: 'active',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ])
+
+      await expect(repository.listStores()).resolves.toMatchObject([
+        { id: 'store-center' },
+        { id: 'store-north' },
+      ])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})

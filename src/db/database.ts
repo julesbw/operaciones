@@ -21,7 +21,7 @@ export class OperationsDatabase extends Dexie {
   constructor(databaseName = OPERATIONS_DATABASE_NAME) {
     super(databaseName)
 
-    const schema = {
+    const schemaV1 = {
       stores: '&id, status, updatedAt',
       collaborators: '&id, storeId, [storeId+status], updatedAt',
       attendanceRecords:
@@ -32,10 +32,14 @@ export class OperationsDatabase extends Dexie {
         '&id, &[entityType+entityId], entityType, createdAt, nextAttemptAt',
       closingDrafts: '&id, &[storeId+businessDate], updatedAt',
     }
+    const schemaV3 = {
+      ...schemaV1,
+      stores: '&id, name, status, updatedAt',
+    }
 
-    this.version(1).stores(schema)
+    this.version(1).stores(schemaV1)
     this.version(2)
-      .stores(schema)
+      .stores(schemaV1)
       .upgrade(async (transaction) => {
         await transaction
           .table<Expense, string>('expenses')
@@ -50,6 +54,7 @@ export class OperationsDatabase extends Dexie {
             attendance.version ??= 0
           })
       })
+    this.version(3).stores(schemaV3)
   }
 }
 
