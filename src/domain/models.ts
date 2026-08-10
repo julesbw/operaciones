@@ -91,15 +91,28 @@ export type Bills = {
   monedas: number
 }
 
+export type CashClosingStep = 1 | 2 | 3 | 4
+
 export type CashClosingDraft = {
   id: string
   storeId: string
   businessDate: string
   grossSales: number
-  otherMovements: number
-  openingBalance: number
   bills: Bills
+  balanceBills: Bills
+  withdrawBills: Bills
+  cashBalance: number
+  expensesTotal: number
+  cashExpensesTotal: number
+  countedCash: number
+  cashToWithdraw: number
+  expectedCash: number
+  difference: number
   notes?: string
+  currentStep: CashClosingStep
+  status: 'draft'
+  createdBy: string
+  createdAt: string
   updatedAt: string
 }
 

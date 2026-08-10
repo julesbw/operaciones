@@ -40,3 +40,11 @@ La primera versión no resuelve silenciosamente conflictos administrativos. La r
 El filtro de Asistencias se conserva en `App` mientras dura la sesión de navegación. Para administración puede valer `all` o el UUID de una tienda; para cashier la página ignora cualquier filtro visual y deriva siempre la tienda desde `profile.store_id`.
 
 La vista global consulta Dexie por fecha y agrupa colaboradores por tienda. Al refrescar referencias desde Supabase se reemplaza la caché de tiendas y colaboradores con el conjunto autorizado por RLS, evitando que una sesión cashier conserve perfiles de otras tiendas descargados por una sesión anterior.
+
+## Corte de caja guiado
+
+El corte se captura en cuatro fases y cada cambio se persiste inmediatamente en `closingDrafts`. Dexie v4 transforma borradores anteriores: el antiguo `openingBalance` se conserva como `cashBalance` y se eliminan los campos que ya no forman parte del flujo.
+
+Los gastos se consultan por tienda y fecha, sin copiarlos ni duplicarlos. `expensesTotal` representa todos los gastos del día; `cashExpensesTotal` incluye únicamente `paymentMethod = efectivo` y es el valor usado para calcular `expectedCash`. El cierre remoto conserva ambos importes, el saldo que permanece y el efectivo a retirar.
+
+El saldo también se captura por denominación en `balanceBills`. `withdrawBills` se deriva restando cada valor a `bills`; ninguna denominación del saldo puede superar la cantidad contada. Dexie v5 conserva borradores anteriores representando su saldo monetario histórico dentro de `monedas`, ya que esos borradores no contenían una composición verificable de billetes.

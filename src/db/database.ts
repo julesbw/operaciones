@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import { EMPTY_BILLS } from '../domain/constants'
 import type {
   AttendanceRecord,
   CashClosingDraft,
@@ -7,6 +8,13 @@ import type {
   Store,
   SyncQueueItem,
 } from '../domain/models'
+
+type LegacyClosingDraft = CashClosingDraft & {
+  balanceBills?: CashClosingDraft['balanceBills']
+  withdrawBills?: CashClosingDraft['withdrawBills']
+  openingBalance?: number
+  otherMovements?: number
+}
 
 export const OPERATIONS_DATABASE_NAME = 'operaciones-db'
 
@@ -55,6 +63,45 @@ export class OperationsDatabase extends Dexie {
           })
       })
     this.version(3).stores(schemaV3)
+    this.version(4)
+      .stores(schemaV3)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<LegacyClosingDraft, string>('closingDrafts')
+          .toCollection()
+          .modify((draft) => {
+            draft.cashBalance ??= draft.openingBalance ?? 0
+            draft.expensesTotal ??= 0
+            draft.cashExpensesTotal ??= 0
+            draft.countedCash ??= 0
+            draft.cashToWithdraw ??= 0
+            draft.expectedCash ??= draft.grossSales
+            draft.difference ??= draft.countedCash - draft.expectedCash
+            draft.currentStep ??= 1
+            draft.status ??= 'draft'
+            draft.createdBy ??= ''
+            draft.createdAt ??= draft.updatedAt
+            delete draft.openingBalance
+            delete draft.otherMovements
+          })
+      })
+    this.version(5)
+      .stores(schemaV3)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<LegacyClosingDraft, string>('closingDrafts')
+          .toCollection()
+          .modify((draft) => {
+            draft.balanceBills ??= {
+              ...EMPTY_BILLS,
+              monedas: draft.cashBalance ?? 0,
+            }
+            draft.withdrawBills ??= {
+              ...EMPTY_BILLS,
+              monedas: draft.cashToWithdraw ?? 0,
+            }
+          })
+      })
   }
 }
 

@@ -81,16 +81,22 @@ export type CashClosingRow = {
   business_date: string
   gross_sales: number
   expense_total: number
+  cash_expense_total: number
   other_movements: number
   opening_balance: number
   counted_cash: number
+  cash_balance: number
+  cash_to_withdraw: number
   expected_cash: number
   difference: number
   bills: Bills
+  balance_bills: Bills
+  withdraw_bills: Bills
   notes: string | null
   status: 'closed' | 'reopened'
   closed_at: string
   closed_by: string
+  created_by: string
   created_at: string
   updated_at: string
 }
@@ -163,14 +169,20 @@ export type Database = {
           | 'business_date'
           | 'gross_sales'
           | 'expense_total'
+          | 'cash_expense_total'
           | 'other_movements'
           | 'opening_balance'
           | 'counted_cash'
+          | 'cash_balance'
+          | 'cash_to_withdraw'
           | 'expected_cash'
           | 'difference'
           | 'bills'
+          | 'balance_bills'
+          | 'withdraw_bills'
           | 'closed_at'
           | 'closed_by'
+          | 'created_by'
         > &
           Partial<Pick<CashClosingRow, 'notes' | 'status'>>,
         Partial<
@@ -178,12 +190,17 @@ export type Database = {
             CashClosingRow,
             | 'gross_sales'
             | 'expense_total'
+            | 'cash_expense_total'
             | 'other_movements'
             | 'opening_balance'
             | 'counted_cash'
+            | 'cash_balance'
+            | 'cash_to_withdraw'
             | 'expected_cash'
             | 'difference'
             | 'bills'
+            | 'balance_bills'
+            | 'withdraw_bills'
             | 'notes'
             | 'status'
             | 'closed_at'

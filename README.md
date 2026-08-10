@@ -27,7 +27,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=TU_LLAVE_PUBLISHABLE
 
 1. Aplica primero las migraciones existentes de Arrendamientos; proporcionan `profiles`, roles, `private.is_admin()` y el trigger compartido de auditoría.
 2. Revisa y aplica [`supabase/migrations/202608060001_initial_operations.sql`](supabase/migrations/202608060001_initial_operations.sql). La migración crea `stores`, añade `profiles.store_id` y agrega únicamente las entidades de Operaciones.
-3. Aplica las migraciones posteriores de Operaciones en orden; `202608070001_collaborator_management.sql` habilita el alta atómica de colaboradores y compensación.
+3. Aplica las migraciones posteriores de Operaciones en orden; `202608070001_collaborator_management.sql` habilita el alta atómica de colaboradores, `202608100001_cash_closing_flow.sql` añade los campos financieros del corte guiado y `202608100002_cash_balance_denominations.sql` conserva el desglose de saldo y retiro.
 4. Adapta y ejecuta [`supabase/setup-operations.example.sql`](supabase/setup-operations.example.sql) para crear tiendas y asignar cada cajera.
 5. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en `.env.local`.
 6. Verifica que cada perfil `cashier` tenga `store_id`; una cajera sin tienda no tendrá acceso a datos operativos por RLS.
