@@ -165,3 +165,51 @@ describe('OperationsRepository store queries', () => {
     }
   })
 })
+
+describe('OperationsRepository collaborator filters', () => {
+  it('lists active collaborators from every cached store', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const timestamp = '2026-08-09T12:00:00.000Z'
+
+    try {
+      await repository.saveCollaborators([
+        {
+          id: 'north-carlos',
+          name: 'Carlos Pérez',
+          storeId: 'north',
+          restDay: 1,
+          status: 'active',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: 'center-ana',
+          name: 'Ana López',
+          storeId: 'center',
+          restDay: 2,
+          status: 'active',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: 'inactive-person',
+          name: 'Persona Inactiva',
+          storeId: 'center',
+          restDay: 3,
+          status: 'inactive',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ])
+
+      await expect(repository.listCollaborators()).resolves.toMatchObject([
+        { id: 'center-ana' },
+        { id: 'north-carlos' },
+      ])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})

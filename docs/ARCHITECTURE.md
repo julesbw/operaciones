@@ -34,3 +34,9 @@ Las operaciones administrativas críticas (tiendas y cierre definitivo) requiere
 Los registros locales mantienen `pending`, `syncing`, `synced` o `error`. La cola usa backoff exponencial con máximo de cinco minutos. Las RPC `sync_expense` y `sync_attendance` usan el UUID como clave idempotente, validan tienda/autor en PostgreSQL y rechazan una versión local anterior a la remota.
 
 La primera versión no resuelve silenciosamente conflictos administrativos. La restricción de asistencia por `collaborator_id + attendance_date` existe en Dexie y PostgreSQL.
+
+## Contexto de tienda en asistencias
+
+El filtro de Asistencias se conserva en `App` mientras dura la sesión de navegación. Para administración puede valer `all` o el UUID de una tienda; para cashier la página ignora cualquier filtro visual y deriva siempre la tienda desde `profile.store_id`.
+
+La vista global consulta Dexie por fecha y agrupa colaboradores por tienda. Al refrescar referencias desde Supabase se reemplaza la caché de tiendas y colaboradores con el conjunto autorizado por RLS, evitando que una sesión cashier conserve perfiles de otras tiendas descargados por una sesión anterior.

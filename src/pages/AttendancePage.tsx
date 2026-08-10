@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckIcon, MoonIcon, UsersIcon, XIcon } from '../components/icons'
+import {
+  ALL_STORES,
+  StoreFilter,
+  type StoreFilterValue,
+} from '../components/StoreFilter'
+import {
+  CheckIcon,
+  MoonIcon,
+  StoreIcon,
+  UsersIcon,
+  XIcon,
+} from '../components/icons'
 import type {
   AttendanceStatus,
   Collaborator,
@@ -13,8 +24,10 @@ import { formatLongDate, getLocalDate, getWeekday } from '../utils/date'
 
 type AttendancePageProps = {
   stores: Store[]
+  storeFilter: StoreFilterValue
   user: UserProfile
   onDataChanged: () => void
+  onStoreFilterChange: (value: StoreFilterValue) => void
 }
 
 const STATUS_OPTIONS: Array<{
@@ -27,10 +40,21 @@ const STATUS_OPTIONS: Array<{
   { value: 'rest_day', label: 'Descanso', icon: MoonIcon },
 ]
 
-export function AttendancePage({ stores, user, onDataChanged }: AttendancePageProps) {
-  const [storeId, setStoreId] = useState(
-    user.storeId ?? stores.find((store) => store.status === 'active')?.id ?? '',
-  )
+function initials(name: string): string {
+  return name
+    .split(' ')
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join('')
+}
+
+export function AttendancePage({
+  stores,
+  storeFilter,
+  user,
+  onDataChanged,
+  onStoreFilterChange,
+}: AttendancePageProps) {
   const [date, setDate] = useState(getLocalDate())
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
@@ -39,26 +63,73 @@ export function AttendancePage({ stores, user, onDataChanged }: AttendancePagePr
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string>()
 
+  const activeStores = useMemo(
+    () => stores.filter((store) => store.status === 'active'),
+    [stores],
+  )
+  const assignedStore = stores.find((store) => store.id === user.storeId)
+  const isGlobalView = user.role === 'admin' && storeFilter === ALL_STORES
+  const effectiveStoreId =
+    user.role === 'cashier'
+      ? user.storeId
+      : storeFilter === ALL_STORES
+        ? undefined
+        : storeFilter
+
   useEffect(() => {
-    if (!storeId) return
+    if (
+      user.role === 'admin' &&
+      storeFilter !== ALL_STORES &&
+      !stores.some(
+        (store) => store.id === storeFilter && store.status === 'active',
+      )
+    ) {
+      onStoreFilterChange(ALL_STORES)
+    }
+  }, [onStoreFilterChange, storeFilter, stores, user.role])
+
+  useEffect(() => {
+    if (user.role === 'cashier' && !effectiveStoreId) {
+      setCollaborators([])
+      setStatuses({})
+      setError('Tu perfil no tiene una tienda asignada.')
+      setLoading(false)
+      return
+    }
+
     let active = true
     setLoading(true)
     setSaved(false)
+    setError(undefined)
 
     void Promise.all([
-      referenceDataService.listCollaborators(storeId),
-      attendanceService.list(storeId, date),
+      referenceDataService.listCollaborators(effectiveStoreId),
+      attendanceService.list(effectiveStoreId, date),
     ])
       .then(([people, records]) => {
         if (!active) return
-        const existing = new Map(records.map((record) => [record.collaboratorId, record.status]))
+
+        const allowedStoreIds = new Set(
+          user.role === 'cashier'
+            ? user.storeId
+              ? [user.storeId]
+              : []
+            : activeStores.map((store) => store.id),
+        )
+        const visiblePeople = people.filter((person) =>
+          allowedStoreIds.has(person.storeId),
+        )
+        const existing = new Map(
+          records.map((record) => [record.collaboratorId, record.status]),
+        )
         const weekday = getWeekday(date)
-        setCollaborators(people)
+        setCollaborators(visiblePeople)
         setStatuses(
           Object.fromEntries(
-            people.map((person) => [
+            visiblePeople.map((person) => [
               person.id,
-              existing.get(person.id) ?? (person.restDay === weekday ? 'rest_day' : 'present'),
+              existing.get(person.id) ??
+                (person.restDay === weekday ? 'rest_day' : 'present'),
             ]),
           ),
         )
@@ -74,12 +145,28 @@ export function AttendancePage({ stores, user, onDataChanged }: AttendancePagePr
     return () => {
       active = false
     }
-  }, [date, storeId])
+  }, [activeStores, date, effectiveStoreId, user.role, user.storeId])
 
   const presentCount = useMemo(
     () => Object.values(statuses).filter((status) => status === 'present').length,
     [statuses],
   )
+
+  const groups = useMemo(() => {
+    if (isGlobalView) {
+      return activeStores
+        .map((store) => ({
+          store,
+          people: collaborators.filter(
+            (collaborator) => collaborator.storeId === store.id,
+          ),
+        }))
+        .filter((group) => group.people.length > 0)
+    }
+
+    const store = stores.find((candidate) => candidate.id === effectiveStoreId)
+    return [{ store, people: collaborators }]
+  }, [activeStores, collaborators, effectiveStoreId, isGlobalView, stores])
 
   async function save() {
     setSaving(true)
@@ -88,7 +175,7 @@ export function AttendancePage({ stores, user, onDataChanged }: AttendancePagePr
       await attendanceService.save(
         collaborators.map((collaborator) => ({
           collaboratorId: collaborator.id,
-          storeId,
+          storeId: collaborator.storeId,
           attendanceDate: date,
           status: statuses[collaborator.id] ?? 'present',
         })),
@@ -112,24 +199,43 @@ export function AttendancePage({ stores, user, onDataChanged }: AttendancePagePr
           <p className="eyebrow">Equipo de tienda</p>
           <h1 className="page-title mt-2">Asistencias</h1>
           <p className="page-subtitle">{formatLongDate(date)}</p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          {user.role === 'admin' && (
-            <select className="compact-field" aria-label="Tienda" value={storeId} onChange={(event) => setStoreId(event.target.value)}>
-              {stores.filter((store) => store.status === 'active').map((store) => (
-                <option key={store.id} value={store.id}>{store.name}</option>
-              ))}
-            </select>
+          {user.role === 'cashier' && (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
+              <StoreIcon className="size-4" />
+              {assignedStore?.name ?? user.storeName ?? 'Tienda sin asignar'}
+            </p>
           )}
-          <input className="compact-field" aria-label="Fecha" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
         </div>
+        <input
+          aria-label="Fecha"
+          className="compact-field"
+          type="date"
+          value={date}
+          onChange={(event) => setDate(event.target.value)}
+        />
       </div>
+
+      {user.role === 'admin' && (
+        <div className="mt-6">
+          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-400">
+            Vista
+          </p>
+          <StoreFilter
+            ariaLabel="Filtrar asistencia por tienda"
+            stores={activeStores}
+            value={storeFilter}
+            onChange={onStoreFilterChange}
+          />
+        </div>
+      )}
 
       <div className="mt-8 grid gap-5 lg:grid-cols-[1fr_250px]">
         <div className="panel p-0">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
             <div>
-              <h2 className="font-extrabold text-slate-950">Lista del día</h2>
+              <h2 className="font-extrabold text-slate-950">
+                {isGlobalView ? 'Todas las tiendas' : 'Lista del día'}
+              </h2>
               <p className="mt-1 text-xs text-slate-500">Toca un estado para cambiarlo.</p>
             </div>
             <span className="rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700">
@@ -139,48 +245,73 @@ export function AttendancePage({ stores, user, onDataChanged }: AttendancePagePr
 
           {error && <p className="alert-error m-5">{error}</p>}
           {loading && <p className="empty-state">Preparando la lista…</p>}
-          {!loading && collaborators.length === 0 && (
-            <p className="empty-state">No hay colaboradores activos en esta tienda.</p>
+          {!loading && collaborators.length === 0 && !error && (
+            <p className="empty-state">
+              {isGlobalView
+                ? 'No hay colaboradores activos en las tiendas disponibles.'
+                : 'No hay colaboradores activos en esta tienda.'}
+            </p>
           )}
 
-          <div className="divide-y divide-slate-100">
-            {collaborators.map((collaborator) => (
-              <article className="px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:px-6" key={collaborator.id}>
-                <div className="flex items-center gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-slate-600">
-                    {collaborator.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}
+          {!loading && groups.map((group) => (
+            <div key={group.store?.id ?? 'current-store'}>
+              {isGlobalView && group.store && (
+                <div className="flex items-center justify-between border-y border-slate-100 bg-slate-50 px-5 py-3 first:border-t-0 sm:px-6">
+                  <p className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.1em] text-slate-600">
+                    <StoreIcon className="size-4 text-teal-700" />
+                    {group.store.name}
+                  </p>
+                  <span className="text-xs font-semibold text-slate-400">
+                    {group.people.length}
                   </span>
-                  <div>
-                    <p className="font-bold text-slate-900">{collaborator.name}</p>
-                    {collaborator.restDay === getWeekday(date) && (
-                      <p className="mt-0.5 text-xs font-semibold text-amber-700">Día de descanso</p>
-                    )}
-                  </div>
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 sm:mt-0 sm:w-[295px]">
-                  {STATUS_OPTIONS.map((option) => {
-                    const Icon = option.icon
-                    const active = statuses[collaborator.id] === option.value
-                    return (
-                      <button
-                        aria-pressed={active}
-                        className={active ? `attendance-${option.value}` : 'attendance-option'}
-                        key={option.value}
-                        type="button"
-                        onClick={() => {
-                          setSaved(false)
-                          setStatuses({ ...statuses, [collaborator.id]: option.value })
-                        }}
-                      >
-                        <Icon className="size-4" />
-                        <span className="hidden min-[420px]:inline">{option.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </article>
-            ))}
-          </div>
+              )}
+              <div className="divide-y divide-slate-100">
+                {group.people.map((collaborator) => (
+                  <article
+                    className="px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:px-6"
+                    key={collaborator.id}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-slate-600">
+                        {initials(collaborator.name)}
+                      </span>
+                      <div>
+                        <p className="font-bold text-slate-900">{collaborator.name}</p>
+                        {collaborator.restDay === getWeekday(date) && (
+                          <p className="mt-0.5 text-xs font-semibold text-amber-700">Día de descanso</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 sm:mt-0 sm:w-[295px]">
+                      {STATUS_OPTIONS.map((option) => {
+                        const Icon = option.icon
+                        const active = statuses[collaborator.id] === option.value
+                        return (
+                          <button
+                            aria-pressed={active}
+                            className={active ? `attendance-${option.value}` : 'attendance-option'}
+                            key={option.value}
+                            type="button"
+                            onClick={() => {
+                              setSaved(false)
+                              setStatuses((current) => ({
+                                ...current,
+                                [collaborator.id]: option.value,
+                              }))
+                            }}
+                          >
+                            <Icon className="size-4" />
+                            <span className="hidden min-[420px]:inline">{option.label}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
 
         <aside className="space-y-4">
@@ -196,7 +327,12 @@ export function AttendancePage({ stores, user, onDataChanged }: AttendancePagePr
               Todos tienen un estado asignado automáticamente.
             </p>
           </article>
-          <button className="button-primary w-full" disabled={saving || loading || collaborators.length === 0} type="button" onClick={() => void save()}>
+          <button
+            className="button-primary w-full"
+            disabled={saving || loading || collaborators.length === 0}
+            type="button"
+            onClick={() => void save()}
+          >
             <CheckIcon className="size-4" />
             {saving ? 'Guardando…' : saved ? 'Asistencia guardada' : 'Guardar asistencia'}
           </button>

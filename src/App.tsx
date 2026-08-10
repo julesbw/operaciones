@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AppShell, type PageId } from './components/AppShell'
+import {
+  ALL_STORES,
+  type StoreFilterValue,
+} from './components/StoreFilter'
 import type { Store, UserProfile } from './domain/models'
 import { AttendancePage } from './pages/AttendancePage'
 import { ClosingsPage } from './pages/ClosingsPage'
@@ -24,6 +28,8 @@ function App() {
   const [startupNotice, setStartupNotice] = useState<string>()
   const [user, setUser] = useState<UserProfile>()
   const [page, setPage] = useState<PageId>('home')
+  const [attendanceStoreFilter, setAttendanceStoreFilter] =
+    useState<StoreFilterValue>(ALL_STORES)
   const [stores, setStores] = useState<Store[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
@@ -128,6 +134,7 @@ function App() {
 
   async function signedIn(profile: UserProfile) {
     setUser(profile)
+    setAttendanceStoreFilter(ALL_STORES)
     setStartupNotice(undefined)
     if (!profile.demo) {
       try {
@@ -156,6 +163,7 @@ function App() {
     } finally {
       setUser(undefined)
       setPage('home')
+      setAttendanceStoreFilter(ALL_STORES)
     }
   }
 
@@ -222,7 +230,13 @@ function App() {
         <ExpensesPage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />
       )}
       {page === 'attendance' && (
-        <AttendancePage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />
+        <AttendancePage
+          stores={stores}
+          storeFilter={attendanceStoreFilter}
+          user={user}
+          onDataChanged={() => void refreshLocalState()}
+          onStoreFilterChange={setAttendanceStoreFilter}
+        />
       )}
       {page === 'closings' && user.role === 'admin' && <ClosingsPage stores={stores} user={user} />}
       {page === 'settings' && user.role === 'admin' && (

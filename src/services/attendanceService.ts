@@ -5,19 +5,27 @@ import type {
 } from '../domain/models'
 import { operationsRepository } from '../repositories/operationsRepository'
 
-class AttendanceService {
-  list(storeId: string, attendanceDate: string) {
-    return operationsRepository.listAttendance(storeId, attendanceDate)
+export class AttendanceService {
+  constructor(private readonly repository = operationsRepository) {}
+
+  list(storeId: string | undefined, attendanceDate: string) {
+    return this.repository.listAttendance(storeId, attendanceDate)
   }
 
   async save(
     inputs: AttendanceInput[],
     userId: string,
   ): Promise<AttendanceRecord[]> {
+    if (inputs.length === 0) return []
+
     const now = new Date().toISOString()
-    const existingRecords = await operationsRepository.listAttendance(
-      inputs[0]?.storeId ?? '',
-      inputs[0]?.attendanceDate ?? '',
+    const attendanceDate = inputs[0]!.attendanceDate
+    if (inputs.some((input) => input.attendanceDate !== attendanceDate)) {
+      throw new Error('Todas las asistencias deben corresponder a la misma fecha')
+    }
+    const existingRecords = await this.repository.listAttendance(
+      undefined,
+      attendanceDate,
     )
     const existingByCollaborator = new Map(
       existingRecords.map((record) => [record.collaboratorId, record]),
@@ -46,7 +54,7 @@ class AttendanceService {
       attempts: 0,
     }))
 
-    await operationsRepository.saveAttendanceWithQueue(records, queueItems)
+    await this.repository.saveAttendanceWithQueue(records, queueItems)
     return records
   }
 }

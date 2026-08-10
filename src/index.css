@@ -237,6 +237,19 @@ button:disabled {
     @apply min-h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition focus:border-teal-600 focus:ring-3 focus:ring-teal-600/10;
   }
 
+  .store-filter-item,
+  .store-filter-active {
+    @apply min-h-10 shrink-0 rounded-full px-4 py-2 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700;
+  }
+
+  .store-filter-item {
+    @apply border border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-800;
+  }
+
+  .store-filter-active {
+    @apply bg-teal-700 text-white shadow-sm shadow-teal-900/10;
+  }
+
   .money-field {
     @apply mt-2 flex items-center rounded-xl border border-slate-300 bg-white px-3.5 transition focus-within:border-teal-600 focus-within:ring-3 focus-within:ring-teal-600/10;
   }

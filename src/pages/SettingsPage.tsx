@@ -1,5 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { CheckIcon, PlusIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
+import {
+  ALL_STORES,
+  StoreFilter,
+  type StoreFilterValue,
+} from '../components/StoreFilter'
 import type { Collaborator, Store, UserProfile } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { collaboratorService } from '../services/collaboratorService'
@@ -21,8 +26,14 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const [newStoreName, setNewStoreName] = useState('')
   const [editingId, setEditingId] = useState<string>()
   const [editingName, setEditingName] = useState('')
-  const [selectedStoreId, setSelectedStoreId] = useState(stores[0]?.id ?? '')
+  const [teamStoreFilter, setTeamStoreFilter] =
+    useState<StoreFilterValue>(ALL_STORES)
+  const [newCollaboratorStoreId, setNewCollaboratorStoreId] = useState(
+    stores.find((store) => store.status === 'active')?.id ?? '',
+  )
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
+  const [collaboratorSearch, setCollaboratorSearch] = useState('')
+  const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator>()
   const [newCollaboratorName, setNewCollaboratorName] = useState('')
   const [restDay, setRestDay] = useState(0)
   const [weeklyPay, setWeeklyPay] = useState('')
@@ -34,23 +45,53 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
 
   useEffect(() => {
     const selectableStores = stores.filter((store) => store.status === 'active')
-    if (selectableStores.some((store) => store.id === selectedStoreId)) return
-    setSelectedStoreId(selectableStores[0]?.id ?? '')
-  }, [stores, selectedStoreId])
+    if (
+      !selectableStores.some(
+        (store) => store.id === newCollaboratorStoreId,
+      )
+    ) {
+      setNewCollaboratorStoreId(selectableStores[0]?.id ?? '')
+    }
+    if (
+      teamStoreFilter !== ALL_STORES &&
+      !selectableStores.some((store) => store.id === teamStoreFilter)
+    ) {
+      setTeamStoreFilter(ALL_STORES)
+    }
+  }, [newCollaboratorStoreId, stores, teamStoreFilter])
 
   useEffect(() => {
-    if (!selectedStoreId) {
-      setCollaborators([])
-      return
-    }
+    const requestedStoreId =
+      teamStoreFilter === ALL_STORES ? undefined : teamStoreFilter
     void referenceDataService
-      .listCollaborators(selectedStoreId)
-      .then(setCollaborators)
+      .listCollaborators(requestedStoreId)
+      .then((people) => {
+        const activeStoreIds = new Set(
+          stores
+            .filter((store) => store.status === 'active')
+            .map((store) => store.id),
+        )
+        setCollaborators(
+          people.filter((person) => activeStoreIds.has(person.storeId)),
+        )
+      })
       .catch((cause: unknown) => {
         console.error('No fue posible cargar colaboradores', cause)
         setError('No fue posible cargar el equipo.')
       })
-  }, [selectedStoreId])
+  }, [stores, teamStoreFilter])
+
+  const storeNames = useMemo(
+    () => new Map(stores.map((store) => [store.id, store.name])),
+    [stores],
+  )
+  const filteredCollaborators = useMemo(() => {
+    const query = collaboratorSearch.trim().toLocaleLowerCase('es-MX')
+    if (!query) return collaborators
+    return collaborators.filter((collaborator) =>
+      collaborator.name.toLocaleLowerCase('es-MX').includes(query),
+    )
+  }, [collaboratorSearch, collaborators])
 
   async function createStore(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -110,11 +151,16 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     try {
       const collaborator = await collaboratorService.create({
         name: newCollaboratorName,
-        storeId: selectedStoreId,
+        storeId: newCollaboratorStoreId,
         restDay,
         weeklyPay: weeklyPay.trim() ? Number(weeklyPay) : Number.NaN,
       })
-      setCollaborators((current) => [...current, collaborator])
+      if (
+        teamStoreFilter === ALL_STORES ||
+        teamStoreFilter === collaborator.storeId
+      ) {
+        setCollaborators((current) => [...current, collaborator])
+      }
       setNewCollaboratorName('')
       setWeeklyPay('')
       setMessage(`${collaborator.name} se añadió al equipo.`)
@@ -215,21 +261,25 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
       {tab === 'team' && (
         <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1fr_320px]">
           <div>
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-extrabold text-slate-950">Equipo activo</h2>
-                <p className="mt-1 text-sm text-slate-500">La información de pago sólo está disponible para administración.</p>
-              </div>
-              <select
-                aria-label="Filtrar colaboradores por tienda"
-                className="compact-field"
-                disabled={activeStores.length === 0}
-                value={selectedStoreId}
-                onChange={(event) => setSelectedStoreId(event.target.value)}
-              >
-                {activeStores.length === 0 && <option value="">Sin tiendas activas</option>}
-                {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
-              </select>
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-950">Equipo activo</h2>
+              <p className="mt-1 text-sm text-slate-500">Busca perfiles y cambia de tienda sin salir de esta vista.</p>
+            </div>
+            <div className="mt-5 space-y-3">
+              <input
+                aria-label="Buscar colaborador por nombre"
+                className="field mt-0"
+                placeholder="Buscar colaborador…"
+                type="search"
+                value={collaboratorSearch}
+                onChange={(event) => setCollaboratorSearch(event.target.value)}
+              />
+              <StoreFilter
+                ariaLabel="Filtrar colaboradores por tienda"
+                stores={activeStores}
+                value={teamStoreFilter}
+                onChange={setTeamStoreFilter}
+              />
             </div>
             {activeStores.length === 0 ? (
               <div className="panel mt-5 border-dashed text-center">
@@ -237,15 +287,23 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                 <p className="mt-3 font-bold text-slate-700">Primero crea una tienda activa</p>
                 <p className="mt-1 text-sm text-slate-500">Cada colaborador debe pertenecer a una tienda.</p>
               </div>
-            ) : collaborators.length === 0 ? (
+            ) : filteredCollaborators.length === 0 ? (
               <div className="panel mt-5 border-dashed text-center">
                 <UsersIcon className="mx-auto size-8 text-slate-300" />
-                <p className="mt-3 font-bold text-slate-700">Aún no hay colaboradores</p>
-                <p className="mt-1 text-sm text-slate-500">Usa el formulario para añadir el primero.</p>
+                <p className="mt-3 font-bold text-slate-700">
+                  {collaboratorSearch.trim()
+                    ? 'No encontramos coincidencias'
+                    : 'Aún no hay colaboradores'}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {collaboratorSearch.trim()
+                    ? 'Prueba con otro nombre o cambia el filtro de tienda.'
+                    : 'Usa el formulario para añadir el primero.'}
+                </p>
               </div>
             ) : (
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                {collaborators.map((collaborator) => (
+                {filteredCollaborators.map((collaborator) => (
                   <article className="panel" key={collaborator.id}>
                     <div className="flex items-start gap-3">
                       <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-teal-50 text-sm font-black text-teal-700">
@@ -253,6 +311,11 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                       </span>
                       <div className="min-w-0 flex-1">
                         <h3 className="font-extrabold text-slate-950">{collaborator.name}</h3>
+                        {teamStoreFilter === ALL_STORES && (
+                          <p className="mt-1 text-xs font-bold text-teal-700">
+                            {storeNames.get(collaborator.storeId) ?? 'Tienda sin identificar'}
+                          </p>
+                        )}
                         <p className="mt-1 text-xs text-slate-500">Descanso: {WEEKDAYS[collaborator.restDay]}</p>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">Activo</span>
@@ -263,6 +326,13 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                         {collaborator.weeklyPay === undefined ? 'Protegido en Supabase' : currencyFormatter.format(collaborator.weeklyPay)}
                       </p>
                     </div>
+                    <button
+                      className="small-button mt-4 w-full"
+                      type="button"
+                      onClick={() => setSelectedCollaborator(collaborator)}
+                    >
+                      Ver perfil
+                    </button>
                   </article>
                 ))}
               </div>
@@ -289,8 +359,8 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                 className="field"
                 disabled={activeStores.length === 0}
                 required
-                value={selectedStoreId}
-                onChange={(event) => setSelectedStoreId(event.target.value)}
+                value={newCollaboratorStoreId}
+                onChange={(event) => setNewCollaboratorStoreId(event.target.value)}
               >
                 {activeStores.length === 0 && <option value="">Sin tiendas activas</option>}
                 {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
@@ -322,6 +392,72 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
               <PlusIcon className="size-4" /> {saving ? 'Guardando…' : 'Añadir colaborador'}
             </button>
           </form>
+        </div>
+      )}
+
+      {selectedCollaborator && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => setSelectedCollaborator(undefined)}
+        >
+          <section
+            aria-labelledby="collaborator-profile-title"
+            aria-modal="true"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="eyebrow">Perfil de colaborador</p>
+                <h2 className="mt-2 text-2xl font-black text-slate-950" id="collaborator-profile-title">
+                  {selectedCollaborator.name}
+                </h2>
+              </div>
+              <button
+                aria-label="Cerrar perfil"
+                className="icon-button"
+                type="button"
+                onClick={() => setSelectedCollaborator(undefined)}
+              >
+                <XIcon className="size-4" />
+              </button>
+            </div>
+            <dl className="mt-6 divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4">
+              <div className="flex items-center justify-between gap-4 py-3.5">
+                <dt className="text-sm font-semibold text-slate-500">Tienda</dt>
+                <dd className="text-sm font-bold text-slate-900">
+                  {storeNames.get(selectedCollaborator.storeId) ?? 'Sin identificar'}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-3.5">
+                <dt className="text-sm font-semibold text-slate-500">Descanso</dt>
+                <dd className="text-sm font-bold text-slate-900">
+                  {WEEKDAYS[selectedCollaborator.restDay]}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-3.5">
+                <dt className="text-sm font-semibold text-slate-500">Pago semanal</dt>
+                <dd className="text-sm font-bold text-slate-900">
+                  {selectedCollaborator.weeklyPay === undefined
+                    ? 'Protegido en Supabase'
+                    : currencyFormatter.format(selectedCollaborator.weeklyPay)}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-3.5">
+                <dt className="text-sm font-semibold text-slate-500">Estado</dt>
+                <dd className="text-sm font-bold text-emerald-700">Activo</dd>
+              </div>
+            </dl>
+            <button
+              className="button-secondary mt-6 w-full"
+              type="button"
+              onClick={() => setSelectedCollaborator(undefined)}
+            >
+              Cerrar
+            </button>
+          </section>
         </div>
       )}
     </section>

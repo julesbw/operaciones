@@ -30,10 +30,16 @@ export class OperationsRepository {
     return this.database.stores.put(store)
   }
 
-  listCollaborators(storeId: string): Promise<Collaborator[]> {
+  listCollaborators(storeId?: string): Promise<Collaborator[]> {
+    if (storeId) {
+      return this.database.collaborators
+        .where('[storeId+status]')
+        .equals([storeId, 'active'])
+        .sortBy('name')
+    }
+
     return this.database.collaborators
-      .where('[storeId+status]')
-      .equals([storeId, 'active'])
+      .filter((collaborator) => collaborator.status === 'active')
       .sortBy('name')
   }
 
@@ -41,6 +47,27 @@ export class OperationsRepository {
     return this.database.collaborators
       .bulkPut(collaborators)
       .then(() => undefined)
+  }
+
+  async replaceReferenceData(
+    stores: Store[],
+    collaborators: Collaborator[],
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.stores,
+      this.database.collaborators,
+      async () => {
+        await Promise.all([
+          this.database.stores.clear(),
+          this.database.collaborators.clear(),
+        ])
+        await Promise.all([
+          this.database.stores.bulkPut(stores),
+          this.database.collaborators.bulkPut(collaborators),
+        ])
+      },
+    )
   }
 
   listExpenses(storeId: string, businessDate?: string): Promise<Expense[]> {
@@ -101,9 +128,16 @@ export class OperationsRepository {
   }
 
   listAttendance(
-    storeId: string,
+    storeId: string | undefined,
     attendanceDate: string,
   ): Promise<AttendanceRecord[]> {
+    if (!storeId) {
+      return this.database.attendanceRecords
+        .where('attendanceDate')
+        .equals(attendanceDate)
+        .toArray()
+    }
+
     return this.database.attendanceRecords
       .where('[storeId+attendanceDate]')
       .equals([storeId, attendanceDate])

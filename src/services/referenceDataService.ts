@@ -36,7 +36,7 @@ class ReferenceDataService {
     return operationsRepository.listStores()
   }
 
-  listCollaborators(storeId: string): Promise<Collaborator[]> {
+  listCollaborators(storeId?: string): Promise<Collaborator[]> {
     return operationsRepository.listCollaborators(storeId)
   }
 
@@ -70,29 +70,25 @@ class ReferenceDataService {
       ]),
     )
 
-    await Promise.all([
-      operationsRepository.saveStores(
-        storesResult.data.map((store) => ({
-          id: store.id,
-          name: store.name,
-          status: store.status,
-          createdAt: store.created_at,
-          updatedAt: store.updated_at,
-        })),
-      ),
-      operationsRepository.saveCollaborators(
-        collaboratorsResult.data.map((collaborator) => ({
-          id: collaborator.id,
-          name: collaborator.name,
-          storeId: collaborator.store_id,
-          restDay: collaborator.rest_day,
-          status: collaborator.status,
-          weeklyPay: compensationByCollaborator.get(collaborator.id),
-          createdAt: collaborator.created_at,
-          updatedAt: collaborator.updated_at,
-        })),
-      ),
-    ])
+    await operationsRepository.replaceReferenceData(
+      storesResult.data.map((store) => ({
+        id: store.id,
+        name: store.name,
+        status: store.status,
+        createdAt: store.created_at,
+        updatedAt: store.updated_at,
+      })),
+      collaboratorsResult.data.map((collaborator) => ({
+        id: collaborator.id,
+        name: collaborator.name,
+        storeId: collaborator.store_id,
+        restDay: collaborator.rest_day,
+        status: collaborator.status,
+        weeklyPay: compensationByCollaborator.get(collaborator.id),
+        createdAt: collaborator.created_at,
+        updatedAt: collaborator.updated_at,
+      })),
+    )
   }
 }
 
