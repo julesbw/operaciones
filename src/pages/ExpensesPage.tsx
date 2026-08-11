@@ -1,5 +1,23 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CheckIcon, PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from 'react'
+import {
+  CheckIcon,
+  PlusIcon,
+  ReceiptIcon,
+  SyncIcon,
+  XIcon,
+} from '../components/icons'
+import {
+  ALL_STORES,
+  StoreFilter,
+  type StoreFilterValue,
+} from '../components/StoreFilter'
 import {
   PAYMENT_METHODS,
   type Expense,
@@ -22,56 +40,250 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   otro: 'Otro',
 }
 
+const TIME_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
+const COMPACT_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+
+type PaymentFilter = PaymentMethod | 'all'
+
 type ExpensesPageProps = {
   stores: Store[]
   user: UserProfile
   onDataChanged: () => void
 }
 
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function groupDateLabel(value: string, today: string): string {
+  const yesterday = new Date(`${today}T12:00:00`)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  if (value === today) return 'Hoy'
+  if (value === getLocalDate(yesterday)) return 'Ayer'
+  return capitalize(formatLongDate(value))
+}
+
+function expenseTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : TIME_FORMATTER.format(date)
+}
+
+function compactDate(value: string): string {
+  return COMPACT_DATE_FORMATTER.format(new Date(`${value}T12:00:00`)).replace('.', '')
+}
+
 export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps) {
-  const initialStore = user.storeId ?? stores.find((store) => store.status === 'active')?.id ?? ''
-  const [storeId, setStoreId] = useState(initialStore)
-  const [businessDate, setBusinessDate] = useState(getLocalDate())
+  const today = getLocalDate()
+  const activeStores = useMemo(
+    () => stores.filter((store) => store.status === 'active'),
+    [stores],
+  )
+  const isAdmin = user.role === 'admin'
+  const cashierStoreId = user.storeId ?? ''
+  const [storeFilter, setStoreFilter] = useState<StoreFilterValue>(
+    isAdmin ? ALL_STORES : cashierStoreId,
+  )
+  const [dateFrom, setDateFrom] = useState(today)
+  const [dateTo, setDateTo] = useState(today)
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all')
+  const [search, setSearch] = useState('')
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [feedback, setFeedback] = useState('')
+
+  const [formOpen, setFormOpen] = useState(false)
+  const [formStoreId, setFormStoreId] = useState('')
+  const [initialFormStoreId, setInitialFormStoreId] = useState('')
+  const [formDate, setFormDate] = useState(today)
+  const [initialFormDate, setInitialFormDate] = useState(today)
   const [amount, setAmount] = useState('')
   const [concept, setConcept] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo')
   const [notes, setNotes] = useState('')
-  const [expenses, setExpenses] = useState<Expense[]>([])
   const [errors, setErrors] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+  const amountInputRef = useRef<HTMLInputElement>(null)
+  const formDirtyRef = useRef(false)
+
+  const queryStoreId = isAdmin
+    ? storeFilter === ALL_STORES
+      ? undefined
+      : storeFilter
+    : cashierStoreId || undefined
 
   const load = useCallback(async () => {
-    if (!storeId) return
+    if (!isAdmin && !cashierStoreId) {
+      setExpenses([])
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
+    setLoadError('')
     try {
-      setExpenses(await expenseService.list(storeId, businessDate))
+      setExpenses(await expenseService.list(queryStoreId, dateFrom, dateTo))
+    } catch (cause: unknown) {
+      console.error('No fue posible consultar los gastos', cause)
+      setLoadError('No fue posible consultar los gastos guardados en este dispositivo.')
     } finally {
       setLoading(false)
     }
-  }, [businessDate, storeId])
+  }, [cashierStoreId, dateFrom, dateTo, isAdmin, queryStoreId])
 
   useEffect(() => {
     void load()
   }, [load])
 
+  useEffect(() => {
+    if (!feedback) return
+    const timeout = window.setTimeout(() => setFeedback(''), 3200)
+    return () => window.clearTimeout(timeout)
+  }, [feedback])
+
+  const isFormDirty =
+    amount.trim().length > 0 ||
+    concept.trim().length > 0 ||
+    notes.trim().length > 0 ||
+    paymentMethod !== 'efectivo' ||
+    formStoreId !== initialFormStoreId ||
+    formDate !== initialFormDate
+  formDirtyRef.current = isFormDirty
+
+  useEffect(() => {
+    if (!formOpen) return
+
+    const scrollPosition = window.scrollY
+    const previousBodyStyles = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+      width: document.body.style.width,
+    }
+    const previousHtmlOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.body.style.position = 'fixed'
+    document.body.style.top = `-${scrollPosition}px`
+    document.body.style.width = '100%'
+    document.documentElement.style.overflow = 'hidden'
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      amountInputRef.current?.focus()
+    })
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !formDirtyRef.current) {
+        setFormOpen(false)
+        window.requestAnimationFrame(() => addButtonRef.current?.focus())
+      }
+    }
+    document.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame)
+      document.removeEventListener('keydown', closeOnEscape)
+      document.body.style.overflow = previousBodyStyles.overflow
+      document.body.style.position = previousBodyStyles.position
+      document.body.style.top = previousBodyStyles.top
+      document.body.style.width = previousBodyStyles.width
+      document.documentElement.style.overflow = previousHtmlOverflow
+      window.scrollTo(0, scrollPosition)
+    }
+  }, [formOpen])
+
+  const visibleExpenses = useMemo(() => {
+    const normalizedSearch = search.trim().toLocaleLowerCase('es-MX')
+    return expenses.filter((expense) => {
+      if (paymentFilter !== 'all' && expense.paymentMethod !== paymentFilter) {
+        return false
+      }
+      return (
+        !normalizedSearch ||
+        expense.concept.toLocaleLowerCase('es-MX').includes(normalizedSearch)
+      )
+    })
+  }, [expenses, paymentFilter, search])
+
   const total = useMemo(
-    () => expenses.reduce((sum, expense) => sum + expense.amount, 0),
-    [expenses],
+    () => visibleExpenses.reduce((sum, expense) => sum + expense.amount, 0),
+    [visibleExpenses],
   )
+
+  const groupedExpenses = useMemo(() => {
+    const groups = new Map<string, Expense[]>()
+    for (const expense of visibleExpenses) {
+      const group = groups.get(expense.businessDate) ?? []
+      group.push(expense)
+      groups.set(expense.businessDate, group)
+    }
+    return Array.from(groups.entries())
+  }, [visibleExpenses])
+
+  const storeNames = useMemo(
+    () => new Map(stores.map((store) => [store.id, store.name])),
+    [stores],
+  )
+
+  const rangeLabel =
+    dateFrom === dateTo
+      ? capitalize(formatLongDate(dateFrom))
+      : `${capitalize(formatLongDate(dateFrom))} – ${capitalize(formatLongDate(dateTo))}`
+
+  function changeDateFrom(value: string) {
+    setDateFrom(value)
+    if (value > dateTo) setDateTo(value)
+  }
+
+  function changeDateTo(value: string) {
+    setDateTo(value)
+    if (value < dateFrom) setDateFrom(value)
+  }
+
+  function openForm() {
+    const selectedStore = isAdmin
+      ? storeFilter === ALL_STORES
+        ? ''
+        : storeFilter
+      : cashierStoreId
+    const selectedDate = dateFrom === dateTo ? dateFrom : today
+
+    setFormStoreId(selectedStore)
+    setInitialFormStoreId(selectedStore)
+    setFormDate(selectedDate)
+    setInitialFormDate(selectedDate)
+    setAmount('')
+    setConcept('')
+    setPaymentMethod('efectivo')
+    setNotes('')
+    setErrors([])
+    setFormOpen(true)
+  }
+
+  function closeForm(force = false) {
+    if (!force && formDirtyRef.current) return
+    setFormOpen(false)
+    window.requestAnimationFrame(() => addButtonRef.current?.focus())
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrors([])
-    setSaved(false)
     setSaving(true)
 
     try {
       await expenseService.create(
         {
-          storeId,
-          businessDate,
+          storeId: formStoreId,
+          businessDate: formDate,
           amount: Number(amount),
           concept,
           paymentMethod,
@@ -79,13 +291,19 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
         },
         user.id,
       )
-      setAmount('')
-      setConcept('')
-      setNotes('')
-      setSaved(true)
       await load()
+      setFeedback('Gasto guardado en este dispositivo.')
+      setFormOpen(false)
       onDataChanged()
-      void syncService.process().then(onDataChanged)
+      void syncService
+        .process()
+        .then(async () => {
+          await load()
+          onDataChanged()
+        })
+        .catch((cause: unknown) => {
+          console.error('No fue posible sincronizar el gasto', cause)
+        })
     } catch (cause: unknown) {
       if (cause instanceof ExpenseValidationError) {
         setErrors(cause.messages)
@@ -98,148 +316,302 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
     }
   }
 
+  const cannotCreate = isAdmin ? activeStores.length === 0 : !cashierStoreId
+
   return (
     <section>
       <div>
-        <p className="eyebrow">Movimientos de caja</p>
-        <h1 className="page-title mt-2">Gastos</h1>
-        <p className="page-subtitle">Captura rápida, incluso sin conexión.</p>
+        <p className="eyebrow hidden sm:block">Movimientos de caja</p>
+        <h1 className="page-title sm:mt-2">Gastos</h1>
+        <p className="page-subtitle hidden sm:block">
+          {isAdmin
+            ? 'Consulta y registra movimientos de todas las tiendas.'
+            : user.storeName || 'Sin tienda asignada'}
+        </p>
       </div>
 
-      <div className="mt-8 grid items-start gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <div className="min-w-0 space-y-5">
+      {feedback && (
+        <div className="alert-success mt-5" role="status">
+          <CheckIcon className="size-5" />
+          {feedback}
+        </div>
+      )}
+
+      {!isAdmin && !cashierStoreId && (
+        <div className="alert-error mt-5" role="alert">
+          Tu perfil no tiene una tienda asignada. No es posible consultar ni registrar gastos.
+        </div>
+      )}
+
+      <div className="mt-4 space-y-3 sm:mt-7 sm:space-y-5">
+        {isAdmin && (
+          <div>
+            <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">
+              Tienda
+            </p>
+            <StoreFilter
+              ariaLabel="Filtrar gastos por tienda"
+              stores={activeStores}
+              value={storeFilter}
+              onChange={setStoreFilter}
+            />
+          </div>
+        )}
+
+        <div className="panel grid grid-cols-1 gap-x-2 gap-y-3 p-3 min-[360px]:grid-cols-2 sm:gap-4 sm:p-5 xl:grid-cols-[minmax(150px,0.7fr)_minmax(150px,0.7fr)_minmax(180px,0.8fr)_minmax(240px,1.4fr)]">
+          <label className="field-label min-w-0">
+            Desde
+            <span className="expense-date-control">
+              <span aria-hidden="true">{compactDate(dateFrom)}</span>
+              <input
+                aria-label="Fecha inicial"
+                max={dateTo}
+                type="date"
+                value={dateFrom}
+                onChange={(event) => changeDateFrom(event.target.value)}
+              />
+            </span>
+          </label>
+          <label className="field-label min-w-0">
+            Hasta
+            <span className="expense-date-control">
+              <span aria-hidden="true">{compactDate(dateTo)}</span>
+              <input
+                aria-label="Fecha final"
+                min={dateFrom}
+                type="date"
+                value={dateTo}
+                onChange={(event) => changeDateTo(event.target.value)}
+              />
+            </span>
+          </label>
+          <label className="field-label">
+            Forma de pago
+            <select
+              className="field"
+              value={paymentFilter}
+              onChange={(event) => setPaymentFilter(event.target.value as PaymentFilter)}
+            >
+              <option value="all">Todas</option>
+              {PAYMENT_METHODS.map((method) => (
+                <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex min-h-full flex-col justify-end sm:hidden">
+            <p className="text-sm font-bold text-slate-700">Total</p>
+            <p className="mt-2 flex min-h-12 items-center justify-end rounded-xl bg-teal-50 px-3 text-lg font-black tabular-nums text-teal-800 ring-1 ring-teal-100">
+              {currencyFormatter.format(total)}
+            </p>
+          </div>
+
+          <label className="field-label col-span-full xl:col-span-1">
+            Concepto
+            <input
+              className="field"
+              placeholder="Ej. tortillas"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+        </div>
+
+        <div className="hidden sm:block">
           <article className="summary-strip">
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Total · {formatLongDate(businessDate)}
+                Total visible
               </p>
               <p className="mt-1 text-3xl font-black tracking-tight text-slate-950">
                 {currencyFormatter.format(total)}
               </p>
             </div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-500">
-              <ReceiptIcon className="size-4" />
-              {expenses.length} movimiento{expenses.length === 1 ? '' : 's'}
+            <div className="min-w-0 text-right">
+              <p className="text-sm font-extrabold text-slate-800">
+                {visibleExpenses.length} gasto{visibleExpenses.length === 1 ? '' : 's'}
+              </p>
+              <p className="mt-1 max-w-sm text-xs text-slate-500">{rangeLabel}</p>
             </div>
           </article>
-
-          <div className="panel p-0">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
-              <h2 className="font-extrabold text-slate-950">Gastos del día</h2>
-              <label className="sr-only" htmlFor="expense-date-filter">
-                Fecha a consultar
-              </label>
-              <input
-                className="compact-field"
-                id="expense-date-filter"
-                type="date"
-                value={businessDate}
-                onChange={(event) => setBusinessDate(event.target.value)}
-              />
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {loading && <p className="empty-state">Cargando gastos…</p>}
-              {!loading && expenses.length === 0 && (
-                <div className="empty-state">
-                  <span className="mx-auto mb-3 flex size-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                    <ReceiptIcon className="size-5" />
-                  </span>
-                  Aún no hay gastos para esta fecha.
-                </div>
-              )}
-              {expenses.map((expense) => (
-                <article className="flex items-center gap-4 px-5 py-4 sm:px-6" key={expense.id}>
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 font-black text-teal-700">
-                    {expense.concept.slice(0, 1).toUpperCase()}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold text-slate-900">{expense.concept}</p>
-                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
-                      {PAYMENT_LABELS[expense.paymentMethod]}
-                      <span aria-hidden="true">·</span>
-                      <span
-                        className={
-                          expense.syncStatus === 'synced'
-                            ? 'text-emerald-600'
-                            : expense.syncStatus === 'error'
-                              ? 'text-red-600'
-                              : 'text-amber-600'
-                        }
-                      >
-                        {expense.syncStatus === 'synced' ? 'Sincronizado' : 'Pendiente'}
-                      </span>
-                    </p>
-                  </div>
-                  <p className="max-w-[45%] text-right text-sm font-extrabold tabular-nums text-slate-950 sm:max-w-none sm:text-base">
-                    {currencyFormatter.format(expense.amount)}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </div>
         </div>
 
-        <form className="panel xl:sticky xl:top-24" onSubmit={submit}>
-          <div className="flex items-center gap-3">
-            <span className="stat-icon bg-teal-50 text-teal-700">
-              <PlusIcon className="size-5" />
-            </span>
-            <div>
-              <p className="eyebrow">Registro rápido</p>
-              <h2 className="text-xl font-extrabold text-slate-950">Nuevo gasto</h2>
-            </div>
+        <div className="panel overflow-hidden p-0">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4">
+            <h2 className="font-extrabold text-slate-950">Movimientos</h2>
+            <ReceiptIcon className="size-5 shrink-0 text-slate-400" />
           </div>
 
-          {errors.length > 0 && (
-            <div className="alert-error mt-5" role="alert">
-              {errors.map((message) => (
-                <p key={message}>{message}</p>
-              ))}
+          {loading && <p className="empty-state">Cargando gastos…</p>}
+          {!loading && loadError && (
+            <div className="p-5 sm:p-6">
+              <div className="alert-error" role="alert">{loadError}</div>
             </div>
           )}
-          {saved && (
-            <div className="alert-success mt-5" role="status">
-              <CheckIcon className="size-5" />
-              Gasto guardado en este dispositivo.
+          {!loading && !loadError && visibleExpenses.length === 0 && (
+            <div className="empty-state">
+              <span className="mx-auto mb-3 flex size-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                <ReceiptIcon className="size-5" />
+              </span>
+              <p>No hay gastos que coincidan con estos filtros.</p>
+              <button
+                className="button-secondary mt-5"
+                disabled={cannotCreate}
+                type="button"
+                onClick={openForm}
+              >
+                <PlusIcon className="size-4" />
+                Nuevo gasto
+              </button>
             </div>
           )}
 
-          <div className="mt-6 space-y-5">
-            {user.role === 'admin' ? (
-              <label className="field-label">
-                Tienda
-                <select className="field" value={storeId} onChange={(event) => setStoreId(event.target.value)}>
-                  {stores
-                    .filter((store) => store.status === 'active')
-                    .map((store) => (
-                      <option key={store.id} value={store.id}>{store.name}</option>
-                    ))}
-                </select>
-              </label>
-            ) : (
+          {!loading && !loadError && groupedExpenses.map(([date, items]) => (
+            <section className="border-b border-slate-100 last:border-b-0" key={date}>
+              <div className="bg-slate-50/80 px-5 py-2.5 sm:px-6">
+                <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-600">
+                  {groupDateLabel(date, today)}
+                </h3>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {items.map((expense) => {
+                  const time = expenseTime(expense.createdAt)
+                  const syncLabel =
+                    expense.syncStatus === 'synced'
+                      ? 'Sincronizado'
+                      : expense.syncStatus === 'error'
+                        ? 'Error al sincronizar'
+                        : 'Pendiente'
+                  const syncClass =
+                    expense.syncStatus === 'synced'
+                      ? 'text-emerald-600'
+                      : expense.syncStatus === 'error'
+                        ? 'text-red-600'
+                        : 'text-amber-700'
+
+                  return (
+                    <article className="flex min-w-0 items-center gap-3 px-5 py-4 sm:gap-4 sm:px-6" key={expense.id}>
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 font-black text-teal-700">
+                        {expense.concept.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="overflow-hidden text-ellipsis whitespace-nowrap font-bold text-slate-900">
+                          {expense.concept}
+                        </p>
+                        <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                          {isAdmin && (
+                            <>
+                              <span>{storeNames.get(expense.storeId) ?? 'Tienda sin nombre'}</span>
+                              <span aria-hidden="true"> · </span>
+                            </>
+                          )}
+                          {time}
+                          <span aria-hidden="true"> · </span>
+                          {PAYMENT_LABELS[expense.paymentMethod]}
+                        </p>
+                        <p className={`mt-0.5 text-[11px] font-bold ${syncClass}`}>
+                          {expense.syncStatus !== 'synced' && <SyncIcon className="mr-1 inline size-3" />}
+                          {syncLabel}
+                        </p>
+                      </div>
+                      <p className="max-w-[42%] shrink-0 text-right text-sm font-black tabular-nums text-slate-950 sm:max-w-none sm:text-base">
+                        {currencyFormatter.format(expense.amount)}
+                      </p>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+
+      <button
+        aria-label="Registrar nuevo gasto"
+        className="expense-fab"
+        disabled={cannotCreate}
+        ref={addButtonRef}
+        title="Nuevo gasto"
+        type="button"
+        onClick={openForm}
+      >
+        <PlusIcon className="size-7" />
+      </button>
+
+      {formOpen && (
+        <div
+          className="expense-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-3 backdrop-blur-[3px] sm:p-6"
+          role="presentation"
+          onClick={() => closeForm()}
+        >
+          <form
+            aria-labelledby="new-expense-title"
+            aria-modal="true"
+            className="expense-modal-card max-h-[calc(100dvh-1.5rem)] w-[92%] max-w-[440px] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:p-6"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={submit}
+          >
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="field-label">Tienda</p>
-                <p className="mt-2 rounded-xl bg-slate-50 px-3.5 py-3 text-sm font-bold text-slate-800 ring-1 ring-slate-200">
-                  {user.storeName}
-                </p>
+                <p className="eyebrow">Registro local</p>
+                <h2 className="mt-1 text-2xl font-black text-slate-950" id="new-expense-title">
+                  Nuevo gasto
+                </h2>
+              </div>
+              <button
+                aria-label="Cerrar formulario de gasto"
+                className="icon-button shrink-0"
+                type="button"
+                onClick={() => closeForm(true)}
+              >
+                <XIcon className="size-5" />
+              </button>
+            </div>
+
+            {errors.length > 0 && (
+              <div className="alert-error mt-5" role="alert">
+                {errors.map((message) => (
+                  <p key={message}>{message}</p>
+                ))}
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-              <label className="field-label">
-                Fecha
-                <input className="field" required type="date" value={businessDate} onChange={(event) => setBusinessDate(event.target.value)} />
-              </label>
+            <div className="mt-6 space-y-5">
+              {isAdmin ? (
+                <label className="field-label">
+                  Tienda
+                  <select
+                    className="field"
+                    required
+                    value={formStoreId}
+                    onChange={(event) => setFormStoreId(event.target.value)}
+                  >
+                    <option disabled value="">Selecciona una tienda</option>
+                    {activeStores.map((store) => (
+                      <option key={store.id} value={store.id}>{store.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div>
+                  <p className="field-label">Tienda</p>
+                  <p className="mt-2 rounded-xl bg-slate-50 px-3.5 py-3 text-sm font-bold text-slate-800 ring-1 ring-slate-200">
+                    {user.storeName}
+                  </p>
+                </div>
+              )}
+
               <label className="field-label">
                 Monto
                 <div className="money-field">
                   <span>$</span>
                   <input
-                    autoFocus
                     inputMode="decimal"
                     min="0.01"
                     placeholder="0.00"
+                    ref={amountInputRef}
                     required
                     step="0.01"
                     type="number"
@@ -248,38 +620,79 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
                   />
                 </div>
               </label>
+
+              <label className="field-label">
+                Concepto
+                <input
+                  className="field"
+                  maxLength={160}
+                  placeholder="Ej. Material de limpieza"
+                  required
+                  value={concept}
+                  onChange={(event) => setConcept(event.target.value)}
+                />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="field-label">
+                  Fecha
+                  <input
+                    className="field"
+                    required
+                    type="date"
+                    value={formDate}
+                    onChange={(event) => setFormDate(event.target.value)}
+                  />
+                </label>
+                <label className="field-label">
+                  Forma de pago
+                  <select
+                    className="field"
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
+                  >
+                    {PAYMENT_METHODS.map((method) => (
+                      <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <label className="field-label">
+                Notas <span className="font-normal text-slate-400">(opcional)</span>
+                <textarea
+                  className="field min-h-20 resize-y"
+                  maxLength={500}
+                  placeholder="Información adicional"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                />
+              </label>
             </div>
 
-            <label className="field-label">
-              Concepto
-              <input className="field" maxLength={160} placeholder="Ej. Material de limpieza" required value={concept} onChange={(event) => setConcept(event.target.value)} />
-            </label>
-            <label className="field-label">
-              Forma de pago
-              <select className="field" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>
-                {PAYMENT_METHODS.map((method) => (
-                  <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field-label">
-              Notas <span className="font-normal text-slate-400">(opcional)</span>
-              <textarea className="field min-h-20 resize-y" maxLength={500} placeholder="Información adicional" value={notes} onChange={(event) => setNotes(event.target.value)} />
-            </label>
-          </div>
-
-          <button className="button-primary mt-6 w-full" disabled={saving} type="submit">
-            {saving ? (
-              <><SyncIcon className="size-4 animate-spin" /> Guardando…</>
-            ) : (
-              <><CheckIcon className="size-4" /> Guardar gasto</>
-            )}
-          </button>
-          <p className="mt-3 text-center text-xs text-slate-400">
-            Se guarda localmente antes de sincronizar.
-          </p>
-        </form>
-      </div>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                className="button-secondary w-full"
+                disabled={saving}
+                type="button"
+                onClick={() => closeForm(true)}
+              >
+                Cancelar
+              </button>
+              <button className="button-primary w-full" disabled={saving} type="submit">
+                {saving ? (
+                  <><SyncIcon className="size-4 animate-spin" /> Guardando…</>
+                ) : (
+                  <><CheckIcon className="size-4" /> Guardar</>
+                )}
+              </button>
+            </div>
+            <p className="mt-3 text-center text-xs text-slate-400">
+              Se guarda localmente antes de sincronizar.
+            </p>
+          </form>
+        </div>
+      )}
     </section>
   )
 }

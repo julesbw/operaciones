@@ -70,16 +70,28 @@ export class OperationsRepository {
     )
   }
 
-  listExpenses(storeId: string, businessDate?: string): Promise<Expense[]> {
-    const collection = businessDate
-      ? this.database.expenses
-          .where('[storeId+businessDate]')
-          .equals([storeId, businessDate])
-      : this.database.expenses.where('storeId').equals(storeId)
+  async listExpenses(
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<Expense[]> {
+    const items = storeId
+      ? await this.database.expenses.where('storeId').equals(storeId).toArray()
+      : await this.database.expenses.toArray()
 
-    return collection
-      .sortBy('createdAt')
-      .then((items) => items.map((_item, index) => items[items.length - index - 1]!))
+    return items
+      .filter((expense) => {
+        if (dateFrom && expense.businessDate < dateFrom) return false
+        if (dateTo && expense.businessDate > dateTo) return false
+        return true
+      })
+      // ES2022 is the current target, so Array#toSorted is not available yet.
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.businessDate.localeCompare(left.businessDate) ||
+          right.createdAt.localeCompare(left.createdAt),
+      )
   }
 
   getExpense(id: string): Promise<Expense | undefined> {

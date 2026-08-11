@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { OperationsDatabase } from '../db/database'
-import type { AttendanceRecord, SyncQueueItem } from '../domain/models'
+import type { AttendanceRecord, Expense, SyncQueueItem } from '../domain/models'
 import { OperationsRepository } from './operationsRepository'
 
 function attendance(id: string): AttendanceRecord {
@@ -23,6 +23,38 @@ function queueItem(entityId: string): SyncQueueItem {
   return {
     id: `attendance:${entityId}`,
     entityType: 'attendance',
+    entityId,
+    operation: 'insert',
+    createdAt: '2026-08-06T12:00:00.000Z',
+    attempts: 0,
+  }
+}
+
+function expense(
+  id: string,
+  storeId: string,
+  businessDate: string,
+  createdAt: string,
+): Expense {
+  return {
+    id,
+    storeId,
+    businessDate,
+    amount: 100,
+    concept: `Gasto ${id}`,
+    paymentMethod: 'efectivo',
+    createdBy: 'user-id',
+    createdAt,
+    updatedAt: createdAt,
+    version: 0,
+    syncStatus: 'pending',
+  }
+}
+
+function expenseQueueItem(entityId: string): SyncQueueItem {
+  return {
+    id: `expense:${entityId}`,
+    entityType: 'expense',
     entityId,
     operation: 'insert',
     createdAt: '2026-08-06T12:00:00.000Z',
@@ -159,6 +191,39 @@ describe('OperationsRepository store queries', () => {
         { id: 'store-center' },
         { id: 'store-north' },
       ])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})
+
+describe('OperationsRepository expense filters', () => {
+  it('filters an inclusive date range across stores and orders newest first', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const records = [
+      expense('old', 'north', '2026-08-01', '2026-08-01T18:00:00.000Z'),
+      expense('center', 'center', '2026-08-10', '2026-08-10T16:00:00.000Z'),
+      expense('north', 'north', '2026-08-11', '2026-08-11T15:00:00.000Z'),
+    ]
+
+    try {
+      await Promise.all(
+        records.map((record) =>
+          repository.saveExpenseWithQueue(record, expenseQueueItem(record.id)),
+        ),
+      )
+
+      await expect(
+        repository.listExpenses(undefined, '2026-08-10', '2026-08-11'),
+      ).resolves.toMatchObject([{ id: 'north' }, { id: 'center' }])
+      await expect(
+        repository.listExpenses('north', '2026-08-01', '2026-08-11'),
+      ).resolves.toMatchObject([{ id: 'north' }, { id: 'old' }])
+      await expect(
+        repository.listExpenses('center', '2026-08-10'),
+      ).resolves.toMatchObject([{ id: 'center' }])
     } finally {
       database.close()
       await database.delete()

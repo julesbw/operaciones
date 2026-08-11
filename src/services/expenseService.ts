@@ -56,8 +56,12 @@ class ExpenseService {
     return expense
   }
 
-  list(storeId: string, businessDate?: string): Promise<Expense[]> {
-    return operationsRepository.listExpenses(storeId, businessDate)
+  list(
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<Expense[]> {
+    return operationsRepository.listExpenses(storeId, dateFrom, dateTo)
   }
 
   async totalForDay(storeId: string, businessDate: string): Promise<number> {
