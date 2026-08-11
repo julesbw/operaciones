@@ -168,7 +168,7 @@ function App() {
   }
 
   function navigate(nextPage: PageId) {
-    if ((nextPage === 'closings' || nextPage === 'settings') && user?.role !== 'admin') {
+    if (nextPage === 'closings' && user?.role !== 'admin') {
       setPage('home')
       return
     }
@@ -245,7 +245,7 @@ function App() {
         />
       )}
       {page === 'closings' && user.role === 'admin' && <ClosingsPage stores={stores} user={user} />}
-      {page === 'settings' && user.role === 'admin' && (
+      {page === 'settings' && (
         <SettingsPage stores={stores} user={user} onStoresChanged={() => void refreshLocalState()} />
       )}
     </AppShell>

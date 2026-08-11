@@ -150,6 +150,16 @@ button:disabled {
   background: var(--brand-primary);
 }
 
+@keyframes profile-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes profile-drawer-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
 @layer components {
   .sidebar {
     @apply sticky top-0 h-dvh flex-col border-r border-slate-200 bg-white px-5 py-6;
@@ -207,12 +217,12 @@ button:disabled {
 
   .mobile-nav {
     padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
-    @apply fixed inset-x-0 bottom-0 z-40 flex max-w-full justify-around border-t border-slate-200 bg-white/95 px-2 pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl;
+    @apply fixed inset-x-0 bottom-0 z-40 flex max-w-full justify-around gap-1 border-t border-slate-200 bg-white/95 px-2 pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl;
   }
 
   .mobile-nav-item,
   .mobile-nav-active {
-    @apply flex min-w-14 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-1.5 text-[10px] font-bold transition;
+    @apply flex min-h-12 min-w-14 flex-1 flex-col items-center justify-center gap-1 whitespace-nowrap rounded-xl px-2 py-1.5 text-[11px] font-bold transition;
   }
 
   .mobile-nav-item {
@@ -221,6 +231,23 @@ button:disabled {
 
   .mobile-nav-active {
     @apply bg-teal-50 text-teal-700;
+  }
+
+  .profile-overlay {
+    animation: profile-overlay-in 160ms ease-out both;
+  }
+
+  .profile-drawer {
+    width: min(22rem, calc(100% - 0.75rem));
+    padding-top: max(1.25rem, env(safe-area-inset-top));
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+    touch-action: pan-y;
+    animation: profile-drawer-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    @apply h-dvh min-w-0 overflow-y-auto border-l border-slate-200 bg-white px-5 shadow-2xl sm:px-6;
+  }
+
+  .profile-menu-item {
+    @apply flex min-h-13 w-full min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-sm font-extrabold text-slate-700 transition hover:bg-slate-50 hover:text-slate-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700;
   }
 
   .login-shell {
@@ -437,7 +464,7 @@ button:disabled {
 
   .tab-item,
   .tab-active {
-    @apply -mb-px inline-flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold transition;
+    @apply -mb-px inline-flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-bold transition;
   }
 
   .tab-item {
@@ -450,5 +477,12 @@ button:disabled {
 
   .small-button {
     @apply rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-overlay,
+  .profile-drawer {
+    animation-duration: 1ms;
   }
 }

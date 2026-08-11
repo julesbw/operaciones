@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { CheckIcon, PlusIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
+import { CheckIcon, PlusIcon, SettingsIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
 import {
   ALL_STORES,
   StoreFilter,
@@ -13,7 +13,7 @@ import { storeService } from '../services/storeService'
 import { WEEKDAYS } from '../domain/constants'
 import { currencyFormatter } from '../utils/money'
 
-type SettingsTab = 'stores' | 'team'
+type SettingsTab = 'stores' | 'team' | 'system'
 
 type SettingsPageProps = {
   stores: Store[]
@@ -21,8 +21,17 @@ type SettingsPageProps = {
   onStoresChanged: () => void
 }
 
+const buildTime = new Date(import.meta.env.BUILD_TIME)
+const buildTimeLabel = Number.isNaN(buildTime.getTime())
+  ? import.meta.env.BUILD_TIME
+  : new Intl.DateTimeFormat('es-MX', {
+      dateStyle: 'medium',
+      timeStyle: 'long',
+    }).format(buildTime)
+
 export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProps) {
-  const [tab, setTab] = useState<SettingsTab>('stores')
+  const isAdmin = user.role === 'admin'
+  const [tab, setTab] = useState<SettingsTab>(isAdmin ? 'stores' : 'system')
   const [newStoreName, setNewStoreName] = useState('')
   const [editingId, setEditingId] = useState<string>()
   const [editingName, setEditingName] = useState('')
@@ -40,10 +49,11 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
   const [message, setMessage] = useState<string>()
-  const canMutate = user.demo || (!isSupabaseConfigured ? false : navigator.onLine)
+  const canMutate = isAdmin && (user.demo || (!isSupabaseConfigured ? false : navigator.onLine))
   const activeStores = stores.filter((store) => store.status === 'active')
 
   useEffect(() => {
+    if (!isAdmin) return
     const selectableStores = stores.filter((store) => store.status === 'active')
     if (
       !selectableStores.some(
@@ -58,9 +68,13 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     ) {
       setTeamStoreFilter(ALL_STORES)
     }
-  }, [newCollaboratorStoreId, stores, teamStoreFilter])
+  }, [isAdmin, newCollaboratorStoreId, stores, teamStoreFilter])
 
   useEffect(() => {
+    if (!isAdmin) {
+      setCollaborators([])
+      return
+    }
     const requestedStoreId =
       teamStoreFilter === ALL_STORES ? undefined : teamStoreFilter
     void referenceDataService
@@ -79,7 +93,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         console.error('No fue posible cargar colaboradores', cause)
         setError('No fue posible cargar el equipo.')
       })
-  }, [stores, teamStoreFilter])
+  }, [isAdmin, stores, teamStoreFilter])
 
   const storeNames = useMemo(
     () => new Map(stores.map((store) => [store.id, store.name])),
@@ -179,29 +193,38 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   return (
     <section className="mx-auto max-w-5xl">
       <div>
-        <p className="eyebrow">Administración</p>
+        <p className="eyebrow">{isAdmin ? 'Administración' : 'Cuenta'}</p>
         <h1 className="page-title mt-2">Ajustes</h1>
-        <p className="page-subtitle">Tiendas y equipo de trabajo.</p>
+        <p className="page-subtitle">
+          {isAdmin ? 'Tiendas, equipo e información de la aplicación.' : 'Información de la aplicación.'}
+        </p>
       </div>
 
-      <div className="mt-7 flex gap-2 border-b border-slate-200">
-        <button className={tab === 'stores' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('stores')}>
-          <StoreIcon className="size-4" /> Tiendas
-        </button>
-        <button className={tab === 'team' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('team')}>
-          <UsersIcon className="size-4" /> Colaboradores
+      <div className="mt-7 flex max-w-full gap-2 overflow-x-auto overscroll-x-contain border-b border-slate-200">
+        {isAdmin && (
+          <>
+            <button className={tab === 'stores' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('stores')}>
+              <StoreIcon className="size-4" /> Tiendas
+            </button>
+            <button className={tab === 'team' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('team')}>
+              <UsersIcon className="size-4" /> Colaboradores
+            </button>
+          </>
+        )}
+        <button className={tab === 'system' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('system')}>
+          <SettingsIcon className="size-4" /> Sistema
         </button>
       </div>
 
-      {error && <p className="alert-error mt-6">{error}</p>}
-      {message && <p className="alert-success mt-6">{message}</p>}
-      {!canMutate && (
+      {isAdmin && tab !== 'system' && error && <p className="alert-error mt-6">{error}</p>}
+      {isAdmin && tab !== 'system' && message && <p className="alert-success mt-6">{message}</p>}
+      {isAdmin && tab !== 'system' && !canMutate && (
         <p className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           Los cambios administrativos requieren conexión.
         </p>
       )}
 
-      {tab === 'stores' && (
+      {isAdmin && tab === 'stores' && (
         <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1fr_320px]">
           <article className="panel p-0">
             <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
@@ -258,7 +281,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         </div>
       )}
 
-      {tab === 'team' && (
+      {isAdmin && tab === 'team' && (
         <div className="mt-6 grid items-start gap-6 lg:grid-cols-[1fr_320px]">
           <div>
             <div>
@@ -395,7 +418,37 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         </div>
       )}
 
-      {selectedCollaborator && (
+      {tab === 'system' && (
+        <article className="panel mt-6">
+          <div className="flex items-center gap-3">
+            <span className="stat-icon bg-teal-50 text-teal-700">
+              <SettingsIcon className="size-5" />
+            </span>
+            <div>
+              <p className="eyebrow">Sistema</p>
+              <h2 className="text-xl font-extrabold text-slate-950">Información de la aplicación</h2>
+            </div>
+          </div>
+          <dl className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Versión PWA</dt>
+              <dd className="mt-1 font-extrabold text-slate-950">v{import.meta.env.APP_VERSION}</dd>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Versión del build</dt>
+              <dd className="mt-1 break-all font-mono text-sm font-bold text-slate-950">{import.meta.env.BUILD_VERSION}</dd>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Hora del build</dt>
+              <dd className="mt-1 text-sm font-bold text-slate-950">
+                <time dateTime={import.meta.env.BUILD_TIME}>{buildTimeLabel}</time>
+              </dd>
+            </div>
+          </dl>
+        </article>
+      )}
+
+      {isAdmin && selectedCollaborator && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
           role="presentation"
