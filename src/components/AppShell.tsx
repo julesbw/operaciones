@@ -6,7 +6,6 @@ import {
   LogoutIcon,
   ReceiptIcon,
   SettingsIcon,
-  StoreIcon,
   SyncIcon,
   UsersIcon,
   WifiOffIcon,
@@ -75,16 +74,14 @@ export function AppShell({
           type="button"
           onClick={() => onNavigate('home')}
         >
-          <span className="brand-mark">
-            <StoreIcon className="size-6" />
-          </span>
+          <img
+            alt=""
+            className="brand-mark"
+            src="/la-piedad-operaciones-ui.png"
+          />
           <span>
-            <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-teal-700">
-              Sistema
-            </span>
-            <span className="block text-xl font-extrabold tracking-tight text-slate-950">
-              Operaciones
-            </span>
+            <span className="brand-name">La Piedad</span>
+            <span className="brand-kicker">Operaciones</span>
           </span>
         </button>
 
@@ -133,16 +130,14 @@ export function AppShell({
       <div className="min-w-0">
         <header className="topbar">
           <div className="flex items-center gap-3 lg:hidden">
-            <span className="brand-mark size-10 rounded-xl">
-              <StoreIcon className="size-5" />
-            </span>
+            <img
+              alt=""
+              className="brand-mark size-12"
+              src="/la-piedad-operaciones-ui.png"
+            />
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-teal-700">
-                Sistema
-              </p>
-              <p className="text-lg font-extrabold leading-none tracking-tight">
-                Operaciones
-              </p>
+              <p className="brand-name text-lg">La Piedad</p>
+              <p className="brand-kicker text-[9px]">Operaciones</p>
             </div>
           </div>
 

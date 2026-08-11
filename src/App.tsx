@@ -180,9 +180,15 @@ function App() {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-6">
         <div className="text-center">
-          <span className="mx-auto flex size-14 animate-pulse items-center justify-center rounded-2xl bg-teal-700 text-2xl font-black text-white">O</span>
+          <img
+            alt="La Piedad Operaciones"
+            className="mx-auto size-24 animate-pulse rounded-full border border-slate-200 object-cover shadow-lg"
+            src="/la-piedad-operaciones-ui.png"
+          />
+          <p className="brand-display mt-4 text-2xl font-bold text-slate-950">La Piedad</p>
+          <p className="brand-kicker mt-1">Operaciones</p>
           <p className={`mt-5 text-sm font-semibold ${state === 'error' ? 'text-red-700' : 'text-slate-500'}`}>
-            {state === 'error' ? 'No fue posible preparar la aplicación.' : 'Preparando Operaciones…'}
+            {state === 'error' ? 'No fue posible preparar la aplicación.' : 'Preparando la aplicación…'}
           </p>
           {state === 'error' && startupError && (
             <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">

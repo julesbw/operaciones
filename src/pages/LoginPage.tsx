@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from 'react'
 import type { AppRole, UserProfile } from '../domain/models'
-import { StoreIcon } from '../components/icons'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { authService } from '../services/authService'
 
@@ -37,21 +36,23 @@ export function LoginPage({ notice, onSignedIn }: LoginPageProps) {
     <main className="login-shell">
       <section className="login-story">
         <div className="relative z-10 max-w-xl">
-          <div className="flex items-center gap-3 text-white">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20 backdrop-blur">
-              <StoreIcon className="size-7" />
-            </span>
+          <div className="flex items-center gap-4 text-white">
+            <img
+              alt="Símbolo de La Piedad Operaciones"
+              className="size-24 rounded-full border border-white/25 object-cover shadow-2xl"
+              src="/la-piedad-operaciones-ui.png"
+            />
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-teal-100">
-                Sistema
+              <p className="brand-display text-3xl font-bold leading-none">La Piedad</p>
+              <p className="mt-2 text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#e8ca83]">
+                Operaciones
               </p>
-              <p className="text-2xl font-extrabold tracking-tight">Operaciones</p>
             </div>
           </div>
 
           <div className="mt-20 lg:mt-32">
             <span className="eyebrow-light">Todo en un solo lugar</span>
-            <h1 className="mt-5 max-w-lg text-4xl font-black leading-[1.08] tracking-[-0.035em] text-white lg:text-6xl">
+            <h1 className="brand-display mt-5 max-w-lg text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-white lg:text-6xl">
               Tu tienda, al día. Sin complicaciones.
             </h1>
             <p className="mt-6 max-w-md text-base leading-7 text-teal-50/80 lg:text-lg">
@@ -63,10 +64,18 @@ export function LoginPage({ notice, onSignedIn }: LoginPageProps) {
         <div className="login-orb login-orb-two" />
       </section>
 
-      <section className="flex min-h-dvh items-center justify-center bg-white px-6 py-12 sm:px-10 lg:px-16">
-        <div className="w-full max-w-md">
-          <div className="mb-10 lg:hidden">
-            <span className="eyebrow">Sistema Operaciones</span>
+      <section className="flex min-h-dvh items-center justify-center bg-slate-50 px-5 py-10 sm:px-10 lg:px-16">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(100,21,45,0.08)] sm:p-9">
+          <div className="mb-9 flex flex-col items-center text-center lg:hidden">
+            <img
+              alt="Símbolo de La Piedad Operaciones"
+              className="size-28 rounded-full border border-slate-200 object-cover shadow-lg"
+              src="/la-piedad-operaciones-ui.png"
+            />
+            <p className="brand-display mt-4 text-3xl font-bold leading-none text-slate-950">
+              La Piedad
+            </p>
+            <p className="brand-kicker mt-2">Operaciones</p>
           </div>
           <p className="text-sm font-bold text-teal-700">Bienvenido de vuelta</p>
           <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">

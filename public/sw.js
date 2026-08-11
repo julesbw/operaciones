@@ -1,11 +1,15 @@
-const CACHE_NAME = 'operaciones-shell-v1'
+const CACHE_NAME = 'la-piedad-operaciones-shell-v3'
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
-  '/favicon.svg',
+  '/favicon.ico',
+  '/pwa-64x64.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
+  '/maskable-icon-512x512.png',
+  '/apple-touch-icon-180x180.png',
+  '/la-piedad-operaciones-ui.png',
 ]
 
 self.addEventListener('install', (event) => {

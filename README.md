@@ -1,4 +1,4 @@
-# Operaciones
+# La Piedad Operaciones
 
 PWA local-first para gastos, asistencias y cortes de caja de las tiendas.
 
@@ -42,4 +42,4 @@ npm run lint
 npm run build
 ```
 
-La explicación de capas, sincronización y decisiones de seguridad está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+La explicación de capas, sincronización y decisiones de seguridad está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). La paleta, tipografía y reglas de marca están en [`docs/VISUAL_IDENTITY.md`](docs/VISUAL_IDENTITY.md).
