@@ -433,7 +433,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                     const subtotal = isCoins ? value : value * denomination.value
                     return (
                       <label
-                        className="grid min-h-16 grid-cols-[5rem_1fr_minmax(5rem,auto)] items-center gap-3"
+                        className="grid min-h-16 grid-cols-[minmax(3.5rem,0.8fr)_minmax(4.25rem,1fr)_minmax(4.5rem,auto)] items-center gap-2 sm:grid-cols-[5rem_1fr_minmax(5rem,auto)] sm:gap-3"
                         key={denomination.key}
                       >
                         <span className="text-sm font-bold text-slate-700">{denomination.label}</span>
@@ -466,11 +466,11 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                   })}
                 </div>
                 <div className="flex items-center justify-between gap-4 bg-slate-50 px-5 py-5 sm:px-6">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-700">Efectivo contado</p>
                     <p className="mt-1 text-xs text-slate-500">Actualizado en tiempo real</p>
                   </div>
-                  <p className="text-2xl font-black tabular-nums text-slate-950">
+                  <p className="min-w-0 text-right text-xl font-black tabular-nums text-slate-950 min-[360px]:text-2xl">
                     {currencyFormatter.format(summary.countedCash)}
                   </p>
                 </div>
@@ -482,7 +482,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
             )}
 
             {draft.currentStep === 3 && (
-              <article className="panel">
+              <article className="panel px-3 sm:px-6">
                 <p className="eyebrow">Saldo de caja</p>
                 <h2 className="mt-2 text-2xl font-black text-slate-950">¿Qué efectivo permanece?</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -495,13 +495,13 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                   </strong>
                 </div>
                 <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-                  <div className="grid grid-cols-[minmax(4.5rem,1fr)_4.5rem_5.5rem_4.5rem] gap-2 bg-slate-50 px-3 py-3 text-center text-[10px] font-extrabold uppercase tracking-wider text-slate-400 sm:grid-cols-[minmax(6rem,1fr)_5rem_7rem_5rem] sm:px-4">
+                  <div className="grid grid-cols-[minmax(3.25rem,1fr)_2.625rem_3.5rem_2.75rem] gap-1 bg-slate-50 px-2 py-3 text-center text-[9px] font-extrabold uppercase leading-3 tracking-normal text-slate-400 sm:grid-cols-[minmax(6rem,1fr)_5rem_7rem_5rem] sm:gap-2 sm:px-4 sm:text-[10px] sm:tracking-wider">
                     <span className="text-left">Denominación</span>
                     <span>Contado</span>
                     <span>Permanece</span>
                     <span>Retirar</span>
                   </div>
-                  <div className="divide-y divide-slate-100 px-3 sm:px-4">
+                  <div className="divide-y divide-slate-100 px-2 sm:px-4">
                     {BILL_DENOMINATIONS.map((denomination, index) => {
                       const isCoins = denomination.key === 'monedas'
                       const counted = draft.bills[denomination.key]
@@ -510,7 +510,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                       const invalid = balance > counted
                       return (
                         <label
-                          className="grid min-h-16 grid-cols-[minmax(4.5rem,1fr)_4.5rem_5.5rem_4.5rem] items-center gap-2 sm:grid-cols-[minmax(6rem,1fr)_5rem_7rem_5rem]"
+                          className="grid min-h-16 grid-cols-[minmax(3.25rem,1fr)_2.625rem_3.5rem_2.75rem] items-center gap-1 sm:grid-cols-[minmax(6rem,1fr)_5rem_7rem_5rem] sm:gap-2"
                           key={denomination.key}
                         >
                           <span className="text-sm font-bold text-slate-700">{denomination.label}</span>
@@ -520,7 +520,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                           <input
                             aria-label={`${denomination.label} que permanecen en caja`}
                             autoFocus={index === 0}
-                            className={`h-10 min-w-0 rounded-lg border px-2 text-center text-sm font-bold outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 ${invalid ? 'border-red-400 bg-red-50 text-red-800' : 'border-slate-300'}`}
+                            className={`h-10 min-w-0 rounded-lg border px-1 text-center font-bold outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 sm:px-2 ${invalid ? 'border-red-400 bg-red-50 text-red-800' : 'border-slate-300'}`}
                             inputMode={isCoins ? 'decimal' : 'numeric'}
                             max={counted}
                             min="0"

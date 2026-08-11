@@ -214,7 +214,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                   <span className={`flex size-10 items-center justify-center rounded-xl ${store.status === 'active' ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-400'}`}>
                     <StoreIcon className="size-5" />
                   </span>
-                  <div className="min-w-[180px] flex-1">
+                  <div className="min-w-0 flex-1 basis-[180px]">
                     {editingId === store.id ? (
                       <input className="field mt-0" autoFocus value={editingName} onChange={(event) => setEditingName(event.target.value)} />
                     ) : (
@@ -404,7 +404,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
           <section
             aria-labelledby="collaborator-profile-title"
             aria-modal="true"
-            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
             role="dialog"
             onClick={(event) => event.stopPropagation()}
           >
@@ -427,19 +427,19 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
             <dl className="mt-6 divide-y divide-slate-100 rounded-2xl border border-slate-200 px-4">
               <div className="flex items-center justify-between gap-4 py-3.5">
                 <dt className="text-sm font-semibold text-slate-500">Tienda</dt>
-                <dd className="text-sm font-bold text-slate-900">
+                <dd className="min-w-0 text-right text-sm font-bold text-slate-900">
                   {storeNames.get(selectedCollaborator.storeId) ?? 'Sin identificar'}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4 py-3.5">
                 <dt className="text-sm font-semibold text-slate-500">Descanso</dt>
-                <dd className="text-sm font-bold text-slate-900">
+                <dd className="min-w-0 text-right text-sm font-bold text-slate-900">
                   {WEEKDAYS[selectedCollaborator.restDay]}
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4 py-3.5">
                 <dt className="text-sm font-semibold text-slate-500">Pago semanal</dt>
-                <dd className="text-sm font-bold text-slate-900">
+                <dd className="min-w-0 text-right text-sm font-bold text-slate-900">
                   {selectedCollaborator.weeklyPay === undefined
                     ? 'Protegido en Supabase'
                     : currencyFormatter.format(selectedCollaborator.weeklyPay)}

@@ -67,7 +67,7 @@ export function AppShell({
   )
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[260px_1fr]">
+    <div className="min-h-dvh w-full max-w-full overflow-x-hidden lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="sidebar hidden lg:flex">
         <button
           className="flex items-center gap-3 text-left"
@@ -176,7 +176,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-10 lg:pb-12">
+        <main className="mx-auto min-w-0 w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-10 lg:pb-12">
           {children}
         </main>
 

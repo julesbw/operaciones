@@ -35,7 +35,7 @@ export function StoreFilter({
   return (
     <div
       aria-label={ariaLabel}
-      className="flex max-w-full gap-2 overflow-x-auto pb-1"
+      className="flex max-w-full gap-2 overflow-x-auto overscroll-x-contain pb-1"
       role="group"
     >
       <button

@@ -200,8 +200,8 @@ export function AttendancePage({
           <h1 className="page-title mt-2">Asistencias</h1>
           <p className="page-subtitle">{formatLongDate(date)}</p>
           {user.role === 'cashier' && (
-            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
-              <StoreIcon className="size-4" />
+            <p className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
+              <StoreIcon className="size-4 shrink-0" />
               {assignedStore?.name ?? user.storeName ?? 'Tienda sin asignar'}
             </p>
           )}
@@ -269,21 +269,21 @@ export function AttendancePage({
               <div className="divide-y divide-slate-100">
                 {group.people.map((collaborator) => (
                   <article
-                    className="px-5 py-4 sm:flex sm:items-center sm:justify-between sm:gap-5 sm:px-6"
+                    className="px-5 py-4 sm:px-6 xl:flex xl:items-center xl:justify-between xl:gap-5"
                     key={collaborator.id}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-slate-600">
                         {initials(collaborator.name)}
                       </span>
-                      <div>
+                      <div className="min-w-0">
                         <p className="font-bold text-slate-900">{collaborator.name}</p>
                         {collaborator.restDay === getWeekday(date) && (
                           <p className="mt-0.5 text-xs font-semibold text-amber-700">Día de descanso</p>
                         )}
                       </div>
                     </div>
-                    <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 sm:mt-0 sm:w-[295px]">
+                    <div className="mt-3 grid w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 xl:mt-0 xl:w-[348px] xl:shrink-0">
                       {STATUS_OPTIONS.map((option) => {
                         const Icon = option.icon
                         const active = statuses[collaborator.id] === option.value
@@ -301,7 +301,7 @@ export function AttendancePage({
                               }))
                             }}
                           >
-                            <Icon className="size-4" />
+                            <Icon className="size-4 shrink-0" />
                             <span className="hidden min-[420px]:inline">{option.label}</span>
                           </button>
                         )

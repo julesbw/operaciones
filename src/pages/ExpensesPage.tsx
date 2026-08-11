@@ -171,7 +171,7 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
                       </span>
                     </p>
                   </div>
-                  <p className="shrink-0 font-extrabold tabular-nums text-slate-950">
+                  <p className="max-w-[45%] text-right text-sm font-extrabold tabular-nums text-slate-950 sm:max-w-none sm:text-base">
                     {currencyFormatter.format(expense.amount)}
                   </p>
                 </article>
