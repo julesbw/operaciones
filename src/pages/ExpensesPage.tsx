@@ -6,12 +6,12 @@ import {
   useState,
   type FormEvent,
 } from 'react'
+import { AppModal } from '../components/AppModal'
 import {
   CheckIcon,
   PlusIcon,
   ReceiptIcon,
   SyncIcon,
-  XIcon,
 } from '../components/icons'
 import {
   ALL_STORES,
@@ -114,7 +114,6 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
   const [saving, setSaving] = useState(false)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const amountInputRef = useRef<HTMLInputElement>(null)
-  const formDirtyRef = useRef(false)
 
   const queryStoreId = isAdmin
     ? storeFilter === ALL_STORES
@@ -158,47 +157,6 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
     paymentMethod !== 'efectivo' ||
     formStoreId !== initialFormStoreId ||
     formDate !== initialFormDate
-  formDirtyRef.current = isFormDirty
-
-  useEffect(() => {
-    if (!formOpen) return
-
-    const scrollPosition = window.scrollY
-    const previousBodyStyles = {
-      overflow: document.body.style.overflow,
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-    }
-    const previousHtmlOverflow = document.documentElement.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.body.style.position = 'fixed'
-    document.body.style.top = `-${scrollPosition}px`
-    document.body.style.width = '100%'
-    document.documentElement.style.overflow = 'hidden'
-
-    const focusFrame = window.requestAnimationFrame(() => {
-      amountInputRef.current?.focus()
-    })
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !formDirtyRef.current) {
-        setFormOpen(false)
-        window.requestAnimationFrame(() => addButtonRef.current?.focus())
-      }
-    }
-    document.addEventListener('keydown', closeOnEscape)
-
-    return () => {
-      window.cancelAnimationFrame(focusFrame)
-      document.removeEventListener('keydown', closeOnEscape)
-      document.body.style.overflow = previousBodyStyles.overflow
-      document.body.style.position = previousBodyStyles.position
-      document.body.style.top = previousBodyStyles.top
-      document.body.style.width = previousBodyStyles.width
-      document.documentElement.style.overflow = previousHtmlOverflow
-      window.scrollTo(0, scrollPosition)
-    }
-  }, [formOpen])
 
   const visibleExpenses = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('es-MX')
@@ -268,10 +226,8 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
     setFormOpen(true)
   }
 
-  function closeForm(force = false) {
-    if (!force && formDirtyRef.current) return
+  function closeForm() {
     setFormOpen(false)
-    window.requestAnimationFrame(() => addButtonRef.current?.focus())
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -529,7 +485,7 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
 
       <button
         aria-label="Registrar nuevo gasto"
-        className="expense-fab"
+        className="app-fab"
         disabled={cannotCreate}
         ref={addButtonRef}
         title="Nuevo gasto"
@@ -539,37 +495,18 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
         <PlusIcon className="size-7" />
       </button>
 
-      {formOpen && (
-        <div
-          className="expense-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-3 backdrop-blur-[3px] sm:p-6"
-          role="presentation"
-          onClick={() => closeForm()}
-        >
-          <form
-            aria-labelledby="new-expense-title"
-            aria-modal="true"
-            className="expense-modal-card max-h-[calc(100dvh-1.5rem)] w-[92%] max-w-[440px] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:max-h-[calc(100dvh-3rem)] sm:p-6"
-            role="dialog"
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={submit}
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="eyebrow">Registro local</p>
-                <h2 className="mt-1 text-2xl font-black text-slate-950" id="new-expense-title">
-                  Nuevo gasto
-                </h2>
-              </div>
-              <button
-                aria-label="Cerrar formulario de gasto"
-                className="icon-button shrink-0"
-                type="button"
-                onClick={() => closeForm(true)}
-              >
-                <XIcon className="size-5" />
-              </button>
-            </div>
-
+      <AppModal
+        closeDisabled={saving}
+        closeLabel="Cerrar formulario de gasto"
+        eyebrow="Registro local"
+        hasUnsavedChanges={isFormDirty}
+        initialFocusRef={amountInputRef}
+        open={formOpen}
+        returnFocusRef={addButtonRef}
+        title="Nuevo gasto"
+        onClose={closeForm}
+      >
+        <form onSubmit={submit}>
             {errors.length > 0 && (
               <div className="alert-error mt-5" role="alert">
                 {errors.map((message) => (
@@ -675,7 +612,7 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
                 className="button-secondary w-full"
                 disabled={saving}
                 type="button"
-                onClick={() => closeForm(true)}
+                onClick={closeForm}
               >
                 Cancelar
               </button>
@@ -690,9 +627,8 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
             <p className="mt-3 text-center text-xs text-slate-400">
               Se guarda localmente antes de sincronizar.
             </p>
-          </form>
-        </div>
-      )}
+        </form>
+      </AppModal>
     </section>
   )
 }
