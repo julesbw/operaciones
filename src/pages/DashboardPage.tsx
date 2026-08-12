@@ -8,9 +8,9 @@ import { getLocalDate } from '../utils/date'
 import { currencyFormatter } from '../utils/money'
 
 const HOME_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  weekday: 'long',
   day: 'numeric',
   month: 'long',
-  year: 'numeric',
 })
 
 type DashboardPageProps = {
@@ -31,6 +31,7 @@ export function DashboardPage({
   const [todayExpenses, setTodayExpenses] = useState(0)
   const [attendanceCount, setAttendanceCount] = useState(0)
   const today = getLocalDate()
+  const firstName = user.fullName.trim().split(/\s+/)[0] || 'bienvenido'
 
   useEffect(() => {
     const storeIds = user.storeId
@@ -58,10 +59,10 @@ export function DashboardPage({
     <section>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="page-title text-teal-700">Inicio</h1>
-          <p className="mt-1 text-sm font-bold capitalize text-teal-700 sm:text-base">
+          <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-teal-700 sm:text-xs">
             {HOME_DATE_FORMATTER.format(new Date(`${today}T12:00:00`))}
           </p>
+          <h1 className="page-title">Hola, {firstName}</h1>
         </div>
         {user.demo && <span className="demo-badge">Vista de demostración</span>}
       </div>
