@@ -277,9 +277,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
     <section className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div>
-          <p className="eyebrow">Cierre administrativo</p>
-          <h1 className="page-title mt-2">Corte de caja</h1>
-          <p className="page-subtitle">Completa una tarea a la vez.</p>
+          <h1 className="page-title">Cortes</h1>
         </div>
         <div className="flex flex-wrap gap-3">
           <select

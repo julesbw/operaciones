@@ -238,14 +238,10 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   return (
     <section className="mx-auto max-w-5xl">
       <div>
-        <p className="eyebrow">{isAdmin ? 'Administración' : 'Cuenta'}</p>
-        <h1 className="page-title mt-2">Ajustes</h1>
-        <p className="page-subtitle">
-          {isAdmin ? 'Tiendas, equipo e información de la aplicación.' : 'Información de la aplicación.'}
-        </p>
+        <h1 className="page-title">Ajustes</h1>
       </div>
 
-      <div className="mt-7 flex max-w-full gap-2 overflow-x-auto overscroll-x-contain border-b border-slate-200">
+      <div className="mt-4 flex max-w-full gap-2 overflow-x-auto overscroll-x-contain border-b border-slate-200">
         {isAdmin && (
           <>
             <button className={tab === 'stores' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('stores')}>

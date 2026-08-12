@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ALL_STORES,
-  StoreFilter,
-  type StoreFilterValue,
-} from '../components/StoreFilter'
+  StoreScopeSelector,
+  type StoreScopeValue,
+} from '../components/filters/StoreScopeSelector'
 import {
   CheckIcon,
   MoonIcon,
@@ -20,14 +20,14 @@ import type {
 import { attendanceService } from '../services/attendanceService'
 import { referenceDataService } from '../services/referenceDataService'
 import { syncService } from '../services/syncService'
-import { formatLongDate, getLocalDate, getWeekday } from '../utils/date'
+import { getLocalDate, getWeekday } from '../utils/date'
 
 type AttendancePageProps = {
   stores: Store[]
-  storeFilter: StoreFilterValue
+  storeFilter: StoreScopeValue
   user: UserProfile
   onDataChanged: () => void
-  onStoreFilterChange: (value: StoreFilterValue) => void
+  onStoreFilterChange: (value: StoreScopeValue) => void
 }
 
 const STATUS_OPTIONS: Array<{
@@ -196,11 +196,9 @@ export function AttendancePage({
     <section className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div>
-          <p className="eyebrow">Equipo de tienda</p>
-          <h1 className="page-title mt-2">Asistencias</h1>
-          <p className="page-subtitle">{formatLongDate(date)}</p>
+          <h1 className="page-title">Asistencias</h1>
           {user.role === 'cashier' && (
-            <p className="mt-3 inline-flex max-w-full items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
+            <p className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
               <StoreIcon className="size-4 shrink-0" />
               {assignedStore?.name ?? user.storeName ?? 'Tienda sin asignar'}
             </p>
@@ -216,20 +214,22 @@ export function AttendancePage({
       </div>
 
       {user.role === 'admin' && (
-        <div className="mt-6">
+        <div className="mt-4">
           <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-400">
             Vista
           </p>
-          <StoreFilter
+          <StoreScopeSelector
             ariaLabel="Filtrar asistencia por tienda"
-            stores={activeStores}
+            assignedStoreId={user.storeId}
+            role={user.role}
+            stores={stores}
             value={storeFilter}
             onChange={onStoreFilterChange}
           />
         </div>
       )}
 
-      <div className="mt-8 grid gap-5 lg:grid-cols-[1fr_250px]">
+      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_250px]">
         <div className="panel p-0">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
             <div>

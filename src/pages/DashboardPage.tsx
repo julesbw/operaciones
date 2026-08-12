@@ -4,8 +4,14 @@ import { ArrowIcon, CashIcon, ReceiptIcon, UsersIcon } from '../components/icons
 import type { PageId } from '../components/AppShell'
 import { attendanceService } from '../services/attendanceService'
 import { expenseService } from '../services/expenseService'
-import { getLocalDate, formatLongDate } from '../utils/date'
+import { getLocalDate } from '../utils/date'
 import { currencyFormatter } from '../utils/money'
+
+const HOME_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
 
 type DashboardPageProps = {
   pendingCount: number
@@ -48,24 +54,19 @@ export function DashboardPage({
     })
   }, [revision, stores, today, user.storeId])
 
-  const firstName = user.fullName.split(' ')[0]
-
   return (
     <section>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="eyebrow">{formatLongDate(today)}</p>
-          <h1 className="page-title mt-2">Hola, {firstName}</h1>
-          <p className="page-subtitle">
-            {user.role === 'admin'
-              ? 'Este es el pulso de tus tiendas hoy.'
-              : `Todo listo para operar en ${user.storeName}.`}
+          <h1 className="page-title text-teal-700">Inicio</h1>
+          <p className="mt-1 text-sm font-bold capitalize text-teal-700 sm:text-base">
+            {HOME_DATE_FORMATTER.format(new Date(`${today}T12:00:00`))}
           </p>
         </div>
         {user.demo && <span className="demo-badge">Vista de demostración</span>}
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+      <div className="mt-5 grid gap-4 sm:grid-cols-3">
         <article className="stat-card">
           <span className="stat-icon bg-teal-50 text-teal-700">
             <ReceiptIcon className="size-5" />

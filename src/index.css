@@ -405,16 +405,22 @@ button:disabled {
     @apply min-h-10 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-semibold text-slate-700 outline-none transition focus:border-teal-600 focus:ring-3 focus:ring-teal-600/10;
   }
 
-  .store-filter-item,
-  .store-filter-active {
+  .filter-chip-group {
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    @apply flex w-full max-w-full min-w-0 select-none gap-2 overflow-x-auto overscroll-x-contain pb-1;
+  }
+
+  .filter-chip-item,
+  .filter-chip-active {
     @apply min-h-10 shrink-0 rounded-full px-4 py-2 text-sm font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700;
   }
 
-  .store-filter-item {
+  .filter-chip-item {
     @apply border border-slate-200 bg-white text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-800;
   }
 
-  .store-filter-active {
+  .filter-chip-active {
     @apply bg-teal-700 text-white shadow-sm shadow-teal-900/10;
   }
 

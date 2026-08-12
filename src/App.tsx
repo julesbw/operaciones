@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { AppShell, type PageId } from './components/AppShell'
 import {
   ALL_STORES,
-  type StoreFilterValue,
-} from './components/StoreFilter'
+  type StoreScopeValue,
+} from './components/filters/StoreScopeSelector'
 import type { Store, UserProfile } from './domain/models'
 import { AttendancePage } from './pages/AttendancePage'
 import { ClosingsPage } from './pages/ClosingsPage'
@@ -29,7 +29,7 @@ function App() {
   const [user, setUser] = useState<UserProfile>()
   const [page, setPage] = useState<PageId>('home')
   const [attendanceStoreFilter, setAttendanceStoreFilter] =
-    useState<StoreFilterValue>(ALL_STORES)
+    useState<StoreScopeValue>(ALL_STORES)
   const [stores, setStores] = useState<Store[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [syncing, setSyncing] = useState(false)

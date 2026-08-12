@@ -15,9 +15,9 @@ import {
 } from '../components/icons'
 import {
   ALL_STORES,
-  StoreFilter,
-  type StoreFilterValue,
-} from '../components/StoreFilter'
+  StoreScopeSelector,
+  type StoreScopeValue,
+} from '../components/filters/StoreScopeSelector'
 import {
   PAYMENT_METHODS,
   type Expense,
@@ -89,7 +89,7 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
   )
   const isAdmin = user.role === 'admin'
   const cashierStoreId = user.storeId ?? ''
-  const [storeFilter, setStoreFilter] = useState<StoreFilterValue>(
+  const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(
     isAdmin ? ALL_STORES : cashierStoreId,
   )
   const [dateFrom, setDateFrom] = useState(today)
@@ -143,6 +143,16 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (
+      isAdmin &&
+      storeFilter !== ALL_STORES &&
+      !activeStores.some((store) => store.id === storeFilter)
+    ) {
+      setStoreFilter(ALL_STORES)
+    }
+  }, [activeStores, isAdmin, storeFilter])
 
   useEffect(() => {
     if (!feedback) return
@@ -277,13 +287,7 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
   return (
     <section>
       <div>
-        <p className="eyebrow hidden sm:block">Movimientos de caja</p>
-        <h1 className="page-title sm:mt-2">Gastos</h1>
-        <p className="page-subtitle hidden sm:block">
-          {isAdmin
-            ? 'Consulta y registra movimientos de todas las tiendas.'
-            : user.storeName || 'Sin tienda asignada'}
-        </p>
+        <h1 className="page-title">Gastos</h1>
       </div>
 
       {feedback && (
@@ -305,9 +309,11 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
             <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">
               Tienda
             </p>
-            <StoreFilter
+            <StoreScopeSelector
               ariaLabel="Filtrar gastos por tienda"
-              stores={activeStores}
+              assignedStoreId={user.storeId}
+              role={user.role}
+              stores={stores}
               value={storeFilter}
               onChange={setStoreFilter}
             />
@@ -624,9 +630,6 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
                 )}
               </button>
             </div>
-            <p className="mt-3 text-center text-xs text-slate-400">
-              Se guarda localmente antes de sincronizar.
-            </p>
         </form>
       </AppModal>
     </section>
