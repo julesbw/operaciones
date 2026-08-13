@@ -1,6 +1,7 @@
 import type {
   AttendanceRecord,
   Expense,
+  MerchandiseTransfer,
   SyncQueueItem,
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
@@ -38,6 +39,20 @@ type AttendanceRow = {
   version: number
 }
 
+type MerchandiseTransferRow = {
+  id: string
+  origin_store_id: string
+  destination_store_id: string
+  ticket_number: string
+  amount: number
+  business_date: string
+  notes: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  version: number
+}
+
 function expenseToRpcArgs(expense: Expense) {
   return {
     p_id: expense.id,
@@ -65,6 +80,22 @@ function attendanceToRpcArgs(record: AttendanceRecord) {
     p_created_at: record.createdAt,
     p_updated_at: record.updatedAt,
     p_recorded_by: record.recordedBy,
+  }
+}
+
+function merchandiseTransferToRpcArgs(transfer: MerchandiseTransfer) {
+  return {
+    p_id: transfer.id,
+    p_base_version: transfer.version,
+    p_origin_store_id: transfer.originStoreId,
+    p_destination_store_id: transfer.destinationStoreId,
+    p_ticket_number: transfer.ticketNumber,
+    p_amount: transfer.amount,
+    p_business_date: transfer.businessDate,
+    p_notes: transfer.notes ?? null,
+    p_created_at: transfer.createdAt,
+    p_updated_at: transfer.updatedAt,
+    p_created_by: transfer.createdBy,
   }
 }
 
@@ -129,7 +160,7 @@ class SyncService {
     const since = new Date()
     since.setDate(since.getDate() - 45)
     const sinceDate = since.toISOString().slice(0, 10)
-    const [expensesResult, attendanceResult] = await Promise.all([
+    const [expensesResult, attendanceResult, transfersResult] = await Promise.all([
       supabase
         .from('expenses')
         .select(
@@ -144,9 +175,17 @@ class SyncService {
         )
         .gte('attendance_date', sinceDate)
         .returns<AttendanceRow[]>(),
+      supabase
+        .from('merchandise_transfers')
+        .select(
+          'id, origin_store_id, destination_store_id, ticket_number, amount, business_date, notes, created_by, created_at, updated_at, version',
+        )
+        .gte('business_date', sinceDate)
+        .returns<MerchandiseTransferRow[]>(),
     ])
     if (expensesResult.error) throw expensesResult.error
     if (attendanceResult.error) throw attendanceResult.error
+    if (transfersResult.error) throw transfersResult.error
 
     await Promise.all([
       operationsRepository.saveRemoteExpenses(
@@ -179,6 +218,22 @@ class SyncService {
           syncStatus: 'synced',
         })),
       ),
+      operationsRepository.saveRemoteMerchandiseTransfers(
+        transfersResult.data.map((transfer) => ({
+          id: transfer.id,
+          originStoreId: transfer.origin_store_id,
+          destinationStoreId: transfer.destination_store_id,
+          ticketNumber: transfer.ticket_number,
+          amount: Number(transfer.amount),
+          businessDate: transfer.business_date,
+          notes: transfer.notes ?? undefined,
+          createdBy: transfer.created_by,
+          createdAt: transfer.created_at,
+          updatedAt: transfer.updated_at,
+          version: transfer.version,
+          syncStatus: 'synced',
+        })),
+      ),
     ])
   }
 
@@ -197,11 +252,24 @@ class SyncService {
       return result.data.version
     }
 
-    const attendance = await operationsRepository.getAttendance(item.entityId)
-    if (!attendance) throw new Error('La asistencia local ya no existe')
+    if (item.entityType === 'attendance') {
+      const attendance = await operationsRepository.getAttendance(item.entityId)
+      if (!attendance) throw new Error('La asistencia local ya no existe')
+      const { data, error } = await supabase.rpc(
+        'sync_attendance',
+        attendanceToRpcArgs(attendance),
+      )
+      if (error) throw error
+      return data.version
+    }
+
+    const transfer = await operationsRepository.getMerchandiseTransfer(
+      item.entityId,
+    )
+    if (!transfer) throw new Error('La transferencia local ya no existe')
     const { data, error } = await supabase.rpc(
-      'sync_attendance',
-      attendanceToRpcArgs(attendance),
+      'sync_merchandise_transfer',
+      merchandiseTransferToRpcArgs(transfer),
     )
     if (error) throw error
     return data.version

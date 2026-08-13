@@ -57,6 +57,21 @@ export type Expense = {
   syncStatus: SyncStatus
 }
 
+export type MerchandiseTransfer = {
+  id: string
+  originStoreId: string
+  destinationStoreId: string
+  ticketNumber: string
+  amount: number
+  businessDate: string
+  notes?: string
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  version: number
+  syncStatus: SyncStatus
+}
+
 export type Collaborator = {
   id: string
   name: string
@@ -116,7 +131,7 @@ export type CashClosingDraft = {
   updatedAt: string
 }
 
-export type SyncEntity = 'expense' | 'attendance'
+export type SyncEntity = 'expense' | 'attendance' | 'merchandiseTransfer'
 export type SyncOperation = 'insert' | 'update' | 'delete'
 
 export type SyncQueueItem = {
@@ -133,6 +148,16 @@ export type SyncQueueItem = {
 export type ExpenseInput = Pick<
   Expense,
   'storeId' | 'businessDate' | 'amount' | 'concept' | 'paymentMethod' | 'notes'
+>
+
+export type MerchandiseTransferInput = Pick<
+  MerchandiseTransfer,
+  | 'originStoreId'
+  | 'destinationStoreId'
+  | 'ticketNumber'
+  | 'amount'
+  | 'businessDate'
+  | 'notes'
 >
 
 export type AttendanceInput = Pick<

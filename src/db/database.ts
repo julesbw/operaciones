@@ -5,6 +5,7 @@ import type {
   CashClosingDraft,
   Collaborator,
   Expense,
+  MerchandiseTransfer,
   Store,
   SyncQueueItem,
 } from '../domain/models'
@@ -23,6 +24,7 @@ export class OperationsDatabase extends Dexie {
   collaborators!: Table<Collaborator, string>
   attendanceRecords!: Table<AttendanceRecord, string>
   expenses!: Table<Expense, string>
+  merchandiseTransfers!: Table<MerchandiseTransfer, string>
   syncQueue!: Table<SyncQueueItem, string>
   closingDrafts!: Table<CashClosingDraft, string>
 
@@ -43,6 +45,11 @@ export class OperationsDatabase extends Dexie {
     const schemaV3 = {
       ...schemaV1,
       stores: '&id, name, status, updatedAt',
+    }
+    const schemaV6 = {
+      ...schemaV3,
+      merchandiseTransfers:
+        '&id, originStoreId, destinationStoreId, businessDate, [originStoreId+businessDate], [destinationStoreId+businessDate], ticketNumber, syncStatus, createdAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -102,6 +109,7 @@ export class OperationsDatabase extends Dexie {
             }
           })
       })
+    this.version(6).stores(schemaV6)
   }
 }
 

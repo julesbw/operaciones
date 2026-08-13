@@ -4,6 +4,7 @@ import type {
   CashClosingDraft,
   Collaborator,
   Expense,
+  MerchandiseTransfer,
   Store,
   SyncEntity,
   SyncQueueItem,
@@ -124,6 +125,67 @@ export class OperationsRepository {
     )
   }
 
+  async listMerchandiseTransfers(
+    originStoreId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<MerchandiseTransfer[]> {
+    const items = originStoreId
+      ? await this.database.merchandiseTransfers
+          .where('originStoreId')
+          .equals(originStoreId)
+          .toArray()
+      : await this.database.merchandiseTransfers.toArray()
+
+    return items
+      .filter((transfer) => {
+        if (dateFrom && transfer.businessDate < dateFrom) return false
+        if (dateTo && transfer.businessDate > dateTo) return false
+        return true
+      })
+      // ES2022 is the current target, so Array#toSorted is not available yet.
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.businessDate.localeCompare(left.businessDate) ||
+          right.createdAt.localeCompare(left.createdAt),
+      )
+  }
+
+  getMerchandiseTransfer(
+    id: string,
+  ): Promise<MerchandiseTransfer | undefined> {
+    return this.database.merchandiseTransfers.get(id)
+  }
+
+  async saveRemoteMerchandiseTransfers(
+    transfers: MerchandiseTransfer[],
+  ): Promise<void> {
+    const queued = await this.database.syncQueue
+      .where('entityType')
+      .equals('merchandiseTransfer')
+      .toArray()
+    const pendingIds = new Set(queued.map((item) => item.entityId))
+    await this.database.merchandiseTransfers.bulkPut(
+      transfers.filter((transfer) => !pendingIds.has(transfer.id)),
+    )
+  }
+
+  async saveMerchandiseTransferWithQueue(
+    transfer: MerchandiseTransfer,
+    queueItem: SyncQueueItem,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.merchandiseTransfers,
+      this.database.syncQueue,
+      async () => {
+        await this.database.merchandiseTransfers.put(transfer)
+        await this.database.syncQueue.put(queueItem)
+      },
+    )
+  }
+
   async saveAttendanceWithQueue(
     records: AttendanceRecord[],
     queueItems: SyncQueueItem[],
@@ -207,8 +269,13 @@ export class OperationsRepository {
         syncStatus: status,
         ...(version === undefined ? {} : { version }),
       })
-    } else {
+    } else if (entityType === 'attendance') {
       await this.database.attendanceRecords.update(entityId, {
+        syncStatus: status,
+        ...(version === undefined ? {} : { version }),
+      })
+    } else {
+      await this.database.merchandiseTransfers.update(entityId, {
         syncStatus: status,
         ...(version === undefined ? {} : { version }),
       })
@@ -223,6 +290,7 @@ export class OperationsRepository {
       'rw',
       this.database.expenses,
       this.database.attendanceRecords,
+      this.database.merchandiseTransfers,
       this.database.syncQueue,
       async () => {
         const current = await this.database.syncQueue.get(item.id)
@@ -243,6 +311,7 @@ export class OperationsRepository {
       'rw',
       this.database.expenses,
       this.database.attendanceRecords,
+      this.database.merchandiseTransfers,
       this.database.syncQueue,
       async () => {
         const current = await this.database.syncQueue.get(item.id)

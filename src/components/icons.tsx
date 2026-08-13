@@ -47,6 +47,15 @@ export function ReceiptIcon(props: IconProps) {
   )
 }
 
+export function TransferIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 7h14M14 3l4 4-4 4" />
+      <path d="M20 17H6M10 13l-4 4 4 4" />
+    </IconBase>
+  )
+}
+
 export function UsersIcon(props: IconProps) {
   return (
     <IconBase {...props}>

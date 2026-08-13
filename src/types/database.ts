@@ -75,6 +75,20 @@ export type ExpenseRow = {
   version: number
 }
 
+export type MerchandiseTransferRow = {
+  id: string
+  origin_store_id: string
+  destination_store_id: string
+  ticket_number: string
+  amount: number
+  business_date: string
+  notes: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  version: number
+}
+
 export type CashClosingRow = {
   id: string
   store_id: string
@@ -160,6 +174,34 @@ export type Database = {
           >
         >
       >
+      merchandise_transfers: TableDefinition<
+        MerchandiseTransferRow,
+        Pick<
+          MerchandiseTransferRow,
+          | 'id'
+          | 'origin_store_id'
+          | 'destination_store_id'
+          | 'ticket_number'
+          | 'amount'
+          | 'business_date'
+          | 'created_by'
+          | 'created_at'
+          | 'updated_at'
+          | 'version'
+        > &
+          Partial<Pick<MerchandiseTransferRow, 'notes'>>,
+        Partial<
+          Pick<
+            MerchandiseTransferRow,
+            | 'destination_store_id'
+            | 'ticket_number'
+            | 'amount'
+            | 'business_date'
+            | 'notes'
+            | 'updated_at'
+          >
+        >
+      >
       cash_closings: TableDefinition<
         CashClosingRow,
         Pick<
@@ -240,6 +282,22 @@ export type Database = {
           p_recorded_by: string
         }
         Returns: AttendanceRow
+      }
+      sync_merchandise_transfer: {
+        Args: {
+          p_id: string
+          p_base_version: number
+          p_origin_store_id: string
+          p_destination_store_id: string
+          p_ticket_number: string
+          p_amount: number
+          p_business_date: string
+          p_notes: string | null
+          p_created_at: string
+          p_updated_at: string
+          p_created_by: string
+        }
+        Returns: MerchandiseTransferRow
       }
       create_collaborator: {
         Args: {

@@ -11,6 +11,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { LoginPage } from './pages/LoginPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { TransfersPage } from './pages/TransfersPage'
 import { authService } from './services/authService'
 import { bootstrapService } from './services/bootstrapService'
 import { referenceDataService } from './services/referenceDataService'
@@ -234,6 +235,9 @@ function App() {
       )}
       {page === 'expenses' && (
         <ExpensesPage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />
+      )}
+      {page === 'transfers' && (
+        <TransfersPage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />
       )}
       {page === 'attendance' && (
         <AttendancePage

@@ -16,18 +16,26 @@ import {
   ReceiptIcon,
   SettingsIcon,
   SyncIcon,
+  TransferIcon,
   UsersIcon,
   WifiOffIcon,
   XIcon,
 } from './icons'
 
-export type PageId = 'home' | 'expenses' | 'attendance' | 'closings' | 'settings'
+export type PageId =
+  | 'home'
+  | 'expenses'
+  | 'transfers'
+  | 'attendance'
+  | 'closings'
+  | 'settings'
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
 
 type NavigationItem = {
   id: PageId
   label: string
+  mobileLabel?: string
   icon: IconComponent
   adminOnly?: boolean
 }
@@ -35,6 +43,12 @@ type NavigationItem = {
 const NAVIGATION: NavigationItem[] = [
   { id: 'home', label: 'Inicio', icon: HomeIcon },
   { id: 'expenses', label: 'Gastos', icon: ReceiptIcon },
+  {
+    id: 'transfers',
+    label: 'Transferencias',
+    mobileLabel: 'Transfer.',
+    icon: TransferIcon,
+  },
   { id: 'attendance', label: 'Asistencias', icon: UsersIcon },
   { id: 'closings', label: 'Cortes', icon: CashIcon, adminOnly: true },
 ]
@@ -258,6 +272,7 @@ export function AppShell({
             const active = item.id === currentPage
             return (
               <button
+                aria-label={item.label}
                 aria-current={active ? 'page' : undefined}
                 className={active ? 'mobile-nav-active' : 'mobile-nav-item'}
                 key={item.id}
@@ -265,7 +280,7 @@ export function AppShell({
                 onClick={() => onNavigate(item.id)}
               >
                 <Icon className="size-[22px]" />
-                <span>{item.label}</span>
+                <span>{item.mobileLabel ?? item.label}</span>
               </button>
             )
           })}

@@ -1,7 +1,12 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { OperationsDatabase } from '../db/database'
-import type { AttendanceRecord, Expense, SyncQueueItem } from '../domain/models'
+import type {
+  AttendanceRecord,
+  Expense,
+  MerchandiseTransfer,
+  SyncQueueItem,
+} from '../domain/models'
 import { OperationsRepository } from './operationsRepository'
 
 function attendance(id: string): AttendanceRecord {
@@ -58,6 +63,40 @@ function expenseQueueItem(entityId: string): SyncQueueItem {
     entityId,
     operation: 'insert',
     createdAt: '2026-08-06T12:00:00.000Z',
+    attempts: 0,
+  }
+}
+
+function transfer(
+  id: string,
+  originStoreId: string,
+  destinationStoreId: string,
+  businessDate: string,
+  ticketNumber: string,
+): MerchandiseTransfer {
+  const createdAt = `${businessDate}T12:00:00.000Z`
+  return {
+    id,
+    originStoreId,
+    destinationStoreId,
+    businessDate,
+    ticketNumber,
+    amount: 100,
+    createdBy: 'user-id',
+    createdAt,
+    updatedAt: createdAt,
+    version: 0,
+    syncStatus: 'pending',
+  }
+}
+
+function transferQueueItem(entityId: string): SyncQueueItem {
+  return {
+    id: `merchandiseTransfer:${entityId}`,
+    entityType: 'merchandiseTransfer',
+    entityId,
+    operation: 'insert',
+    createdAt: '2026-08-12T12:00:00.000Z',
     attempts: 0,
   }
 }
@@ -224,6 +263,94 @@ describe('OperationsRepository expense filters', () => {
       await expect(
         repository.listExpenses('center', '2026-08-10'),
       ).resolves.toMatchObject([{ id: 'center' }])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})
+
+describe('OperationsRepository merchandise transfer filters', () => {
+  it('keeps one transfer and one queue item when the same write is retried', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const record = transfer('transfer-id', 'north', 'center', '2026-08-12', '0018452')
+    const queued = transferQueueItem(record.id)
+
+    try {
+      await repository.saveMerchandiseTransferWithQueue(record, queued)
+      await repository.saveMerchandiseTransferWithQueue(record, queued)
+
+      await expect(repository.countPendingQueue()).resolves.toBe(1)
+      await expect(
+        repository.listMerchandiseTransfers('north', '2026-08-12'),
+      ).resolves.toHaveLength(1)
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
+  it('filters by origin and inclusive business-date range, newest first', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const records = [
+      transfer('old', 'north', 'center', '2026-08-01', '001'),
+      transfer('center', 'center', 'north', '2026-08-10', '002'),
+      transfer('north', 'north', 'center', '2026-08-11', '003'),
+    ]
+
+    try {
+      await Promise.all(
+        records.map((record) =>
+          repository.saveMerchandiseTransferWithQueue(
+            record,
+            transferQueueItem(record.id),
+          ),
+        ),
+      )
+
+      await expect(
+        repository.listMerchandiseTransfers(
+          undefined,
+          '2026-08-10',
+          '2026-08-11',
+        ),
+      ).resolves.toMatchObject([{ id: 'north' }, { id: 'center' }])
+      await expect(
+        repository.listMerchandiseTransfers(
+          'north',
+          '2026-08-01',
+          '2026-08-11',
+        ),
+      ).resolves.toMatchObject([{ id: 'north' }, { id: 'old' }])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
+  it('does not overwrite a queued local transfer during a remote pull', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const local = transfer('transfer-id', 'north', 'center', '2026-08-12', '0018452')
+
+    try {
+      await repository.saveMerchandiseTransferWithQueue(
+        local,
+        transferQueueItem(local.id),
+      )
+      await repository.saveRemoteMerchandiseTransfers([
+        {
+          ...local,
+          amount: 9_999,
+          syncStatus: 'synced',
+        },
+      ])
+
+      await expect(
+        repository.getMerchandiseTransfer(local.id),
+      ).resolves.toMatchObject({ amount: 100, syncStatus: 'pending' })
     } finally {
       database.close()
       await database.delete()
