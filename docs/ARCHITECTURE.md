@@ -52,10 +52,12 @@ Para Cortes, una transferencia saliente se consulta por `origin_store_id + busin
 
 ## Corte de caja guiado
 
-El corte se captura en cuatro fases y cada cambio se persiste inmediatamente en `closingDrafts`. Dexie v4 transforma borradores anteriores: el antiguo `openingBalance` se conserva como `cashBalance` y se eliminan los campos que ya no forman parte del flujo.
+La sección abre en un historial que combina cortes cerrados de Supabase con borradores locales de Dexie. Crear es una acción explícita; sólo entonces se inicia el flujo de cuatro fases. Cada cambio se persiste en `closingDrafts` y existe como máximo un borrador local por tienda/fecha para evitar flujos accidentales duplicados.
 
-Los gastos y las transferencias salientes se consultan por tienda y fecha, sin copiarlos en el borrador. `operationalOutflowsTotal` incluye gastos, transferencias y el espacio reservado para pagos; `cashOutflowsTotal` incluye únicamente salidas físicas de efectivo. Por eso una transferencia afecta la comparación operativa con el POS, pero no `expectedCash` ni la reconstrucción del efectivo bruto.
+El Resumen consulta por RPC los gastos y transferencias salientes elegibles de la tienda/fecha. Los IDs seleccionados y conocidos viven en el borrador, pero no reservan movimientos. Todos se seleccionan inicialmente; una exclusión se conserva y los movimientos nuevos se seleccionan al refrescar. `operationalOutflowsTotal` incluye gastos, transferencias y el espacio reservado para pagos; `cashOutflowsTotal` incluye únicamente salidas físicas de efectivo.
 
-Antes de cerrar, la PWA procesa la cola y bloquea la confirmación si quedan gastos o transferencias del día sin sincronizar. La RPC `close_cash_closing` vuelve a calcular ambos totales en PostgreSQL, crea sus snapshots y relaciona cada transferencia mediante `cash_closing_transfer_items`. Un bloqueo transaccional serializa movimientos y cierre para evitar omisiones concurrentes; después del cierre, los movimientos de esa tienda y fecha quedan inmutables.
+Antes de cerrar, la PWA procesa la cola y bloquea la confirmación si un movimiento seleccionado sigue sin sincronizar. La RPC `close_cash_closing` valida los IDs, recalcula los totales en PostgreSQL y crea `cash_closing_expense_items` y `cash_closing_transfer_items` con snapshots. Las restricciones `UNIQUE(expense_id)` y `UNIQUE(transfer_id)` impiden reutilización incluso entre clientes concurrentes.
+
+Puede haber varios cortes cerrados para la misma tienda y fecha. Bajo un bloqueo transaccional por ese par, PostgreSQL asigna `closing_number = max + 1`; la unicidad real es `store_id + business_date + closing_number`. Cerrar un corte inmoviliza únicamente sus movimientos asociados y no impide registrar otros o crear un nuevo corte el mismo día.
 
 El saldo también se captura por denominación en `balanceBills`. `withdrawBills` se deriva restando cada valor a `bills`; ninguna denominación del saldo puede superar la cantidad contada. Dexie v5 conserva borradores anteriores representando su saldo monetario histórico dentro de `monedas`, ya que esos borradores no contenían una composición verificable de billetes.

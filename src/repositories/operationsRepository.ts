@@ -258,26 +258,21 @@ export class OperationsRepository {
     return this.database.syncQueue.count()
   }
 
-  async countPendingClosingMovements(
-    storeId: string,
-    businessDate: string,
+  async countPendingSelectedClosingMovements(
+    expenseIds: readonly string[],
+    transferIds: readonly string[],
   ): Promise<{ expenses: number; transfers: number }> {
     const [expenses, transfers] = await Promise.all([
-      this.database.expenses
-        .where('[storeId+businessDate]')
-        .equals([storeId, businessDate])
-        .toArray(),
-      this.database.merchandiseTransfers
-        .where('[originStoreId+businessDate]')
-        .equals([storeId, businessDate])
-        .toArray(),
+      this.database.expenses.bulkGet([...expenseIds]),
+      this.database.merchandiseTransfers.bulkGet([...transferIds]),
     ])
 
     return {
-      expenses: expenses.filter((expense) => expense.syncStatus !== 'synced')
-        .length,
+      expenses: expenses.filter(
+        (expense) => expense && expense.syncStatus !== 'synced',
+      ).length,
       transfers: transfers.filter(
-        (transfer) => transfer.syncStatus !== 'synced',
+        (transfer) => transfer && transfer.syncStatus !== 'synced',
       ).length,
     }
   }
@@ -368,6 +363,33 @@ export class OperationsRepository {
       .where('[storeId+businessDate]')
       .equals([storeId, businessDate])
       .first()
+  }
+
+  getClosingDraftById(id: string): Promise<CashClosingDraft | undefined> {
+    return this.database.closingDrafts.get(id)
+  }
+
+  async listClosingDrafts(
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<CashClosingDraft[]> {
+    const drafts = storeId
+      ? await this.database.closingDrafts.where('storeId').equals(storeId).toArray()
+      : await this.database.closingDrafts.toArray()
+
+    return drafts
+      .filter((draft) => {
+        if (dateFrom && draft.businessDate < dateFrom) return false
+        if (dateTo && draft.businessDate > dateTo) return false
+        return true
+      })
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.businessDate.localeCompare(left.businessDate) ||
+          right.updatedAt.localeCompare(left.updatedAt),
+      )
   }
 
   saveClosingDraft(draft: CashClosingDraft): Promise<string> {

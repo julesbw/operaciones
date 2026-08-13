@@ -1,5 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CashIcon, CheckIcon, ReceiptIcon, StoreIcon } from '../components/icons'
+import { AppModal } from '../components/AppModal'
+import {
+  FilterChipGroup,
+  type FilterChipOption,
+} from '../components/filters/FilterChipGroup'
+import {
+  ALL_STORES,
+  StoreScopeSelector,
+  type StoreScopeValue,
+} from '../components/filters/StoreScopeSelector'
+import {
+  ArrowIcon,
+  CashIcon,
+  CheckIcon,
+  PlusIcon,
+  ReceiptIcon,
+  SyncIcon,
+  TransferIcon,
+} from '../components/icons'
 import { BILL_DENOMINATIONS } from '../domain/constants'
 import type {
   Bills,
@@ -13,11 +31,14 @@ import type { CashClosingRow } from '../types/database'
 import {
   applyClosingSummary,
   calculateClosingSummary,
+  type CashClosingDetail,
+  ClosingDomainError,
   closingService,
   validateClosingBillCounts,
   type ClosingOperationalSummary,
   type ClosingOperationalTotals,
 } from '../services/closingService'
+import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import { currencyFormatter } from '../utils/money'
 
@@ -74,14 +95,445 @@ function StepProgress({ currentStep }: { currentStep: CashClosingStep }) {
   )
 }
 
+type ClosingStatusFilter = 'all' | 'closed' | 'draft'
+
+const CLOSING_STATUS_OPTIONS: FilterChipOption<ClosingStatusFilter>[] = [
+  { value: 'all', label: 'Todos' },
+  { value: 'closed', label: 'Cerrados' },
+  { value: 'draft', label: 'Borradores' },
+]
+
+const CLOSING_TIME_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+type ClosingView =
+  | { kind: 'history' }
+  | { kind: 'flow'; storeId: string; businessDate: string }
+  | { kind: 'detail'; closingId: string }
+
+type ClosingHistoryEntry =
+  | { kind: 'draft'; draft: CashClosingDraft }
+  | { kind: 'closed'; closing: CashClosingRow }
+
+function formatClosingTime(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? '' : CLOSING_TIME_FORMATTER.format(date)
+}
+
+export function reconcileDraftSelection(
+  draft: CashClosingDraft,
+  candidates: ClosingOperationalSummary,
+): CashClosingDraft {
+  const expenseIds = candidates.expenses.map((expense) => expense.id)
+  const transferIds = candidates.outgoingTransfers.map((transfer) => transfer.id)
+  if (!draft.movementSelectionInitialized) {
+    return {
+      ...draft,
+      selectedExpenseIds: expenseIds,
+      selectedTransferIds: transferIds,
+      knownExpenseIds: expenseIds,
+      knownTransferIds: transferIds,
+      movementSelectionInitialized: true,
+    }
+  }
+
+  const eligibleExpenseIds = new Set(expenseIds)
+  const eligibleTransferIds = new Set(transferIds)
+  const knownExpenseIds = new Set(draft.knownExpenseIds)
+  const knownTransferIds = new Set(draft.knownTransferIds)
+  return {
+    ...draft,
+    selectedExpenseIds: [
+      ...draft.selectedExpenseIds.filter((id) => eligibleExpenseIds.has(id)),
+      ...expenseIds.filter((id) => !knownExpenseIds.has(id)),
+    ],
+    selectedTransferIds: [
+      ...draft.selectedTransferIds.filter((id) => eligibleTransferIds.has(id)),
+      ...transferIds.filter((id) => !knownTransferIds.has(id)),
+    ],
+    knownExpenseIds: expenseIds,
+    knownTransferIds: transferIds,
+  }
+}
+
+function ClosingDetailView({
+  closingId,
+  stores,
+  onBack,
+}: {
+  closingId: string
+  stores: Store[]
+  onBack: () => void
+}) {
+  const [detail, setDetail] = useState<CashClosingDetail>()
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setDetail(undefined)
+    setError('')
+    void closingService
+      .getClosedDetail(closingId)
+      .then((result) => {
+        if (active) setDetail(result)
+      })
+      .catch((cause: unknown) => {
+        console.error('No fue posible consultar el corte', cause)
+        if (active) setError('No fue posible consultar el detalle del corte.')
+      })
+    return () => {
+      active = false
+    }
+  }, [closingId])
+
+  if (error) {
+    return (
+      <section className="mx-auto max-w-3xl">
+        <button className="button-secondary" type="button" onClick={onBack}>Volver</button>
+        <p className="alert-error mt-5">{error}</p>
+      </section>
+    )
+  }
+  if (!detail) return <p className="empty-state">Cargando corte…</p>
+
+  const { closing, expenses, transfers } = detail
+  const storeName = stores.find((store) => store.id === closing.store_id)?.name
+  const grossCash =
+    Number(closing.counted_cash) + Number(closing.cash_outflows_total_snapshot)
+
+  return (
+    <section className="mx-auto max-w-3xl">
+      <button className="button-secondary" type="button" onClick={onBack}>Volver al historial</button>
+      <div className="mt-6">
+        <p className="eyebrow">Corte #{closing.closing_number}</p>
+        <h1 className="page-title mt-1">{storeName ?? 'Tienda'}</h1>
+        <p className="mt-2 text-sm text-slate-500">
+          {formatLongDate(closing.business_date)} · Cerrado {formatClosingTime(closing.closed_at)}
+        </p>
+      </div>
+
+      <div className="mt-7 space-y-5">
+        <article className="panel">
+          <p className="eyebrow">Ventas</p>
+          <dl className="mt-5 space-y-4 text-sm">
+            <div className="summary-row"><dt>Ventas brutas</dt><dd>{currencyFormatter.format(Number(closing.gross_sales))}</dd></div>
+          </dl>
+        </article>
+
+        <article className="panel">
+          <p className="eyebrow">Salidas</p>
+          <dl className="mt-5 space-y-4 text-sm">
+            <div className="summary-row"><dt>Gastos</dt><dd>{currencyFormatter.format(Number(closing.expenses_total_snapshot))}</dd></div>
+            <div className="summary-row"><dt>Transferencias</dt><dd>{currencyFormatter.format(Number(closing.outgoing_transfers_total_snapshot))}</dd></div>
+            <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Total salidas</dt><dd>{currencyFormatter.format(Number(closing.operational_outflows_total_snapshot))}</dd></div>
+          </dl>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+              <p className="bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-500">Gastos incluidos · {expenses.length}</p>
+              {expenses.length === 0 ? (
+                <p className="p-4 text-sm text-slate-400">Sin gastos incluidos.</p>
+              ) : expenses.map((expense) => (
+                <div className="summary-row border-t border-slate-100 px-4 py-3 text-sm" key={expense.expense_id}>
+                  <span className="min-w-0 truncate font-semibold text-slate-700">{expense.concept_snapshot}</span>
+                  <strong>{currencyFormatter.format(Number(expense.amount_snapshot))}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+              <p className="bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-500">Transferencias incluidas · {transfers.length}</p>
+              {transfers.length === 0 ? (
+                <p className="p-4 text-sm text-slate-400">Sin transferencias incluidas.</p>
+              ) : transfers.map((transfer) => (
+                <div className="summary-row border-t border-slate-100 px-4 py-3 text-sm" key={transfer.transfer_id}>
+                  <span className="min-w-0 truncate font-semibold text-slate-700">Ticket #{transfer.ticket_number_snapshot}</span>
+                  <strong>{currencyFormatter.format(Number(transfer.amount_snapshot))}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+        </article>
+
+        <article className="panel">
+          <p className="eyebrow">Efectivo</p>
+          <dl className="mt-5 space-y-4 text-sm">
+            <div className="summary-row"><dt>Efectivo contado</dt><dd>{currencyFormatter.format(Number(closing.counted_cash))}</dd></div>
+            <div className="summary-row"><dt>Gastos desde caja</dt><dd>{currencyFormatter.format(Number(closing.cash_outflows_total_snapshot))}</dd></div>
+            <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Efectivo bruto</dt><dd>{currencyFormatter.format(grossCash)}</dd></div>
+          </dl>
+        </article>
+
+        <article className="panel">
+          <p className="eyebrow">Saldo</p>
+          <dl className="mt-5 space-y-4 text-sm">
+            <div className="summary-row"><dt>Saldo de caja</dt><dd>{currencyFormatter.format(Number(closing.cash_balance))}</dd></div>
+            <div className="summary-row"><dt>Efectivo retirado</dt><dd>{currencyFormatter.format(Number(closing.cash_to_withdraw))}</dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+  )
+}
+
 export function ClosingsPage({ stores, user }: ClosingsPageProps) {
+  const today = getLocalDate()
   const activeStores = stores.filter((store) => store.status === 'active')
-  const [storeId, setStoreId] = useState(activeStores[0]?.id ?? '')
-  const [date, setDate] = useState(getLocalDate())
+  const [view, setView] = useState<ClosingView>({ kind: 'history' })
+  const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(ALL_STORES)
+  const [dateFrom, setDateFrom] = useState(`${today.slice(0, 8)}01`)
+  const [dateTo, setDateTo] = useState(today)
+  const [statusFilter, setStatusFilter] =
+    useState<ClosingStatusFilter>('all')
+  const [drafts, setDrafts] = useState<CashClosingDraft[]>([])
+  const [closedClosings, setClosedClosings] = useState<CashClosingRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createStoreId, setCreateStoreId] = useState(activeStores[0]?.id ?? '')
+  const [createDate, setCreateDate] = useState(today)
+  const [checkingDraft, setCheckingDraft] = useState(false)
+  const [existingDraft, setExistingDraft] = useState<CashClosingDraft>()
+  const addButtonRef = useRef<HTMLButtonElement>(null)
+
+  const queryStoreId = storeFilter === ALL_STORES ? undefined : storeFilter
+
+  async function loadHistory() {
+    setLoading(true)
+    setLoadError('')
+    try {
+      const [localDrafts, remoteClosings] = await Promise.all([
+        statusFilter === 'closed'
+          ? Promise.resolve([])
+          : closingService.listDrafts(queryStoreId, dateFrom, dateTo),
+        statusFilter === 'draft'
+          ? Promise.resolve([])
+          : closingService.listClosed(queryStoreId, dateFrom, dateTo),
+      ])
+      setDrafts(localDrafts)
+      setClosedClosings(remoteClosings)
+    } catch (cause: unknown) {
+      console.error('No fue posible consultar el historial de cortes', cause)
+      setLoadError('No fue posible consultar el historial de cortes.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (view.kind === 'history') void loadHistory()
+    // loadHistory depends only on the filter snapshot used by this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, statusFilter, storeFilter, view.kind])
+
+  const historyEntries = useMemo<ClosingHistoryEntry[]>(() => {
+    const entries: ClosingHistoryEntry[] = [
+      ...drafts.map((draft): ClosingHistoryEntry => ({ kind: 'draft', draft })),
+      ...closedClosings.map(
+        (closing): ClosingHistoryEntry => ({ kind: 'closed', closing }),
+      ),
+    ]
+    // oxlint-disable-next-line unicorn/no-array-sort
+    return entries.sort((left, right) => {
+      const leftDate = left.kind === 'draft' ? left.draft.businessDate : left.closing.business_date
+      const rightDate = right.kind === 'draft' ? right.draft.businessDate : right.closing.business_date
+      if (leftDate !== rightDate) return rightDate.localeCompare(leftDate)
+      const leftTime = left.kind === 'draft' ? left.draft.updatedAt : left.closing.closed_at
+      const rightTime = right.kind === 'draft' ? right.draft.updatedAt : right.closing.closed_at
+      return rightTime.localeCompare(leftTime)
+    })
+  }, [closedClosings, drafts])
+
+  function openCreate() {
+    const preferredStore =
+      storeFilter !== ALL_STORES && activeStores.some((store) => store.id === storeFilter)
+        ? storeFilter
+        : activeStores[0]?.id ?? ''
+    setCreateStoreId(preferredStore)
+    setCreateDate(today)
+    setExistingDraft(undefined)
+    setCreateOpen(true)
+  }
+
+  async function requestNewClosing() {
+    if (!createStoreId || !createDate) return
+    setCheckingDraft(true)
+    try {
+      const saved = await closingService.load(createStoreId, createDate, user.id)
+      if (saved) {
+        setExistingDraft(saved)
+        return
+      }
+      setCreateOpen(false)
+      setView({ kind: 'flow', storeId: createStoreId, businessDate: createDate })
+    } finally {
+      setCheckingDraft(false)
+    }
+  }
+
+  if (view.kind === 'flow') {
+    return (
+      <ClosingFlow
+        businessDate={view.businessDate}
+        storeId={view.storeId}
+        stores={stores}
+        user={user}
+        onBack={() => setView({ kind: 'history' })}
+        onClosed={(closing) => setView({ kind: 'detail', closingId: closing.id })}
+      />
+    )
+  }
+
+  if (view.kind === 'detail') {
+    return (
+      <ClosingDetailView
+        closingId={view.closingId}
+        stores={stores}
+        onBack={() => setView({ kind: 'history' })}
+      />
+    )
+  }
+
+  return (
+    <section>
+      <h1 className="page-title">Cortes</h1>
+
+      <div className="mt-4 space-y-4 sm:mt-7">
+        <div>
+          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">Tienda</p>
+          <StoreScopeSelector
+            ariaLabel="Filtrar cortes por tienda"
+            includeInactive
+            role={user.role}
+            stores={stores}
+            value={storeFilter}
+            onChange={setStoreFilter}
+          />
+        </div>
+
+        <div className="panel grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
+          <label className="field-label">Desde
+            <input className="field" max={dateTo} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+          </label>
+          <label className="field-label">Hasta
+            <input className="field" min={dateFrom} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          </label>
+        </div>
+
+        <FilterChipGroup
+          ariaLabel="Filtrar cortes por estado"
+          options={CLOSING_STATUS_OPTIONS}
+          value={statusFilter}
+          onChange={setStatusFilter}
+        />
+
+        {loadError && <p className="alert-error">{loadError}</p>}
+        {loading && <p className="empty-state">Consultando cortes…</p>}
+        {!loading && !loadError && historyEntries.length === 0 && (
+          <div className="panel empty-state">
+            <CashIcon className="mx-auto mb-3 size-8" />
+            <p>No hay cortes en este periodo.</p>
+          </div>
+        )}
+        {!loading && !loadError && historyEntries.length > 0 && (
+          <div className="space-y-3">
+            {historyEntries.map((entry) => {
+              if (entry.kind === 'draft') {
+                const storeName = stores.find((store) => store.id === entry.draft.storeId)?.name
+                return (
+                  <article className="panel border-amber-200 bg-amber-50/35" key={`draft:${entry.draft.id}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div>
+                        <p className="eyebrow text-amber-700">Corte pendiente</p>
+                        <h2 className="mt-1 text-lg font-black text-slate-950">{storeName ?? 'Tienda'}</h2>
+                        <p className="mt-1 text-sm text-slate-500">{formatLongDate(entry.draft.businessDate)} · Paso {entry.draft.currentStep} de 4</p>
+                      </div>
+                      <button className="button-primary" type="button" onClick={() => setView({ kind: 'flow', storeId: entry.draft.storeId, businessDate: entry.draft.businessDate })}>Continuar corte</button>
+                    </div>
+                  </article>
+                )
+              }
+
+              const closing = entry.closing
+              const storeName = stores.find((store) => store.id === closing.store_id)?.name
+              return (
+                <button
+                  className="panel flex w-full items-center gap-4 text-left transition hover:border-teal-200 hover:bg-teal-50/30"
+                  key={closing.id}
+                  type="button"
+                  onClick={() => setView({ kind: 'detail', closingId: closing.id })}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="eyebrow block">{formatLongDate(closing.business_date)} · Corte #{closing.closing_number}</span>
+                    <span className="mt-1 block text-lg font-black text-slate-950">{storeName ?? 'Tienda'}</span>
+                    <span className="mt-1 block text-xs font-semibold text-slate-500">Cerrado · {formatClosingTime(closing.closed_at)}</span>
+                    <span className="mt-4 grid grid-cols-3 gap-3 text-xs text-slate-500">
+                      <span><strong className="block text-sm text-slate-900">{currencyFormatter.format(Number(closing.gross_sales))}</strong>Ventas</span>
+                      <span><strong className="block text-sm text-slate-900">{currencyFormatter.format(Number(closing.operational_outflows_total_snapshot))}</strong>Salidas</span>
+                      <span><strong className="block text-sm text-slate-900">{currencyFormatter.format(Number(closing.counted_cash))}</strong>Efectivo</span>
+                    </span>
+                  </span>
+                  <ArrowIcon className="size-5 shrink-0 text-slate-400" />
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <button aria-label="Crear nuevo corte" className="app-fab" disabled={activeStores.length === 0} ref={addButtonRef} title="Nuevo corte" type="button" onClick={openCreate}>
+        <PlusIcon className="size-7" />
+      </button>
+
+      <AppModal closeDisabled={checkingDraft} closeLabel="Cerrar nuevo corte" open={createOpen} returnFocusRef={addButtonRef} title="Nuevo corte" onClose={() => setCreateOpen(false)}>
+        <div className="mt-6 space-y-5">
+          <label className="field-label">Tienda
+            <select className="field" value={createStoreId} onChange={(event) => { setCreateStoreId(event.target.value); setExistingDraft(undefined) }}>
+              {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
+            </select>
+          </label>
+          <label className="field-label">Fecha operativa
+            <input className="field" max={today} type="date" value={createDate} onChange={(event) => { setCreateDate(event.target.value); setExistingDraft(undefined) }} />
+          </label>
+          {existingDraft && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+              <p className="font-extrabold">Ya existe un corte en proceso.</p>
+              <p className="mt-1">Está guardado en el paso {existingDraft.currentStep} de 4.</p>
+              <button className="button-primary mt-4 w-full" type="button" onClick={() => { setCreateOpen(false); setView({ kind: 'flow', storeId: existingDraft.storeId, businessDate: existingDraft.businessDate }) }}>Continuar corte</button>
+            </div>
+          )}
+          {!existingDraft && (
+            <button className="button-primary w-full" disabled={checkingDraft || !createStoreId || !createDate} type="button" onClick={() => void requestNewClosing()}>
+              {checkingDraft ? 'Comprobando…' : 'Iniciar corte'}
+            </button>
+          )}
+        </div>
+      </AppModal>
+    </section>
+  )
+}
+
+type ClosingFlowProps = ClosingsPageProps & {
+  storeId: string
+  businessDate: string
+  onBack: () => void
+  onClosed: (closing: CashClosingRow) => void
+}
+
+function ClosingFlow({
+  stores,
+  user,
+  storeId: initialStoreId,
+  businessDate: initialBusinessDate,
+  onBack,
+  onClosed,
+}: ClosingFlowProps) {
+  const [storeId] = useState(initialStoreId)
+  const [date] = useState(initialBusinessDate)
   const [draft, setDraft] = useState<CashClosingDraft>()
   const draftRef = useRef<CashClosingDraft | undefined>(undefined)
-  const [pendingDraft, setPendingDraft] = useState<CashClosingDraft>()
-  const [operational, setOperational] = useState<ClosingOperationalSummary>({
+  const [candidates, setCandidates] = useState<ClosingOperationalSummary>({
     expenses: [],
     outgoingTransfers: [],
     expensesTotal: 0,
@@ -95,12 +547,22 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
   const [saving, setSaving] = useState(false)
   const [saveState, setSaveState] = useState<DraftSaveState>('idle')
   const saveSequence = useRef(0)
-  const [closedClosing, setClosedClosing] = useState<CashClosingRow>()
+  const [showCashDetails, setShowCashDetails] = useState(false)
   const [showExpenseDetails, setShowExpenseDetails] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
-  const [showCashDetails, setShowCashDetails] = useState(false)
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
+  const [selectionConflict, setSelectionConflict] = useState(false)
+
+  const operational = useMemo(
+    () =>
+      closingService.getOperationalSummary(
+        candidates,
+        draft?.selectedExpenseIds ?? [],
+        draft?.selectedTransferIds ?? [],
+      ),
+    [candidates, draft?.selectedExpenseIds, draft?.selectedTransferIds],
+  )
 
   const summary = useMemo(
     () => (draft ? calculateClosingSummary(draft, operational) : undefined),
@@ -114,12 +576,6 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
   }
 
   useEffect(() => {
-    const selectableStores = stores.filter((store) => store.status === 'active')
-    if (selectableStores.some((store) => store.id === storeId)) return
-    setStoreId(selectableStores[0]?.id ?? '')
-  }, [storeId, stores])
-
-  useEffect(() => {
     if (!storeId) {
       setLoading(false)
       setCurrentDraft(undefined)
@@ -128,30 +584,33 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
     let active = true
     setLoading(true)
-    setClosedClosing(undefined)
     setError(undefined)
     setMessage(undefined)
-    setPendingDraft(undefined)
     setCurrentDraft(undefined)
 
     void Promise.all([
       closingService.load(storeId, date, user.id),
-      closingService.getOperationalSummary(storeId, date),
+      closingService.getEligibleMovements(storeId, date),
     ])
-      .then(([savedDraft, dayOperational]) => {
+      .then(([savedDraft, eligibleMovements]) => {
         if (!active) return
-        setOperational(dayOperational)
+        setCandidates(eligibleMovements)
+        const baseDraft =
+          savedDraft ?? closingService.create(storeId, date, user.id)
+        const reconciled = reconcileDraftSelection(
+          baseDraft,
+          eligibleMovements,
+        )
+        const selected = closingService.getOperationalSummary(
+          eligibleMovements,
+          reconciled.selectedExpenseIds,
+          reconciled.selectedTransferIds,
+        )
+        const prepared = applyClosingSummary(reconciled, selected)
+        setCurrentDraft(prepared)
+        setSaveState(savedDraft ? 'saved' : 'idle')
         if (savedDraft) {
-          setPendingDraft(applyClosingSummary(savedDraft, dayOperational))
-          setSaveState('saved')
-        } else {
-          setCurrentDraft(
-            applyClosingSummary(
-              closingService.create(storeId, date, user.id),
-              dayOperational,
-            ),
-          )
-          setSaveState('idle')
+          void closingService.save(prepared, selected)
         }
       })
       .catch((cause: unknown) => {
@@ -194,7 +653,13 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
   function updateDraft(changes: Partial<CashClosingDraft>) {
     const current = draftRef.current
     if (!current) return
-    persistDraft({ ...current, ...changes })
+    const nextDraft = { ...current, ...changes }
+    const nextOperational = closingService.getOperationalSummary(
+      candidates,
+      nextDraft.selectedExpenseIds,
+      nextDraft.selectedTransferIds,
+    )
+    persistDraft(nextDraft, nextOperational)
   }
 
   async function goToStep(step: CashClosingStep) {
@@ -203,10 +668,23 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
     if (step === 4) {
       try {
-        const latestOperational =
-          await closingService.getOperationalSummary(storeId, date)
-        setOperational(latestOperational)
-        persistDraft({ ...current, currentStep: step }, latestOperational)
+        if (isSupabaseConfigured && navigator.onLine) {
+          await syncService.process()
+        }
+        const latestCandidates =
+          await closingService.getEligibleMovements(storeId, date)
+        const reconciled = reconcileDraftSelection(current, latestCandidates)
+        const latestOperational = closingService.getOperationalSummary(
+          latestCandidates,
+          reconciled.selectedExpenseIds,
+          reconciled.selectedTransferIds,
+        )
+        setCandidates(latestCandidates)
+        setSelectionConflict(false)
+        persistDraft(
+          { ...reconciled, currentStep: step },
+          latestOperational,
+        )
         return
       } catch (cause: unknown) {
         console.error('No fue posible actualizar las salidas del corte', cause)
@@ -218,32 +696,28 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
     persistDraft({ ...current, currentStep: step })
   }
 
-  function continuePendingDraft() {
-    if (!pendingDraft) return
-    setCurrentDraft(pendingDraft)
-    setPendingDraft(undefined)
-    setSaveState('saved')
-  }
-
-  async function discardPendingDraft() {
-    if (!pendingDraft) return
+  async function refreshCandidates() {
+    const current = draftRef.current
+    if (!current) return
     setSaving(true)
     setError(undefined)
     try {
-      await closingService.discard(pendingDraft.id)
-      saveSequence.current += 1
-      setPendingDraft(undefined)
-      setCurrentDraft(
-        applyClosingSummary(
-          closingService.create(storeId, date, user.id),
-          operational,
-        ),
+      const latestCandidates = await closingService.getEligibleMovements(
+        storeId,
+        date,
       )
-      setSaveState('idle')
-      setMessage('El borrador anterior fue descartado.')
+      const reconciled = reconcileDraftSelection(current, latestCandidates)
+      const latestOperational = closingService.getOperationalSummary(
+        latestCandidates,
+        reconciled.selectedExpenseIds,
+        reconciled.selectedTransferIds,
+      )
+      setCandidates(latestCandidates)
+      setSelectionConflict(false)
+      persistDraft(reconciled, latestOperational)
     } catch (cause: unknown) {
-      console.error('No fue posible descartar el borrador', cause)
-      setError('No fue posible descartar el borrador.')
+      console.error('No fue posible actualizar los movimientos', cause)
+      setError('No fue posible actualizar los movimientos elegibles.')
     } finally {
       setSaving(false)
     }
@@ -255,20 +729,23 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
     setSaving(true)
     setError(undefined)
     try {
-      const latestOperational =
-        await closingService.getOperationalSummary(storeId, date)
-      setOperational(latestOperational)
       const latestDraft = await closingService.save(
         current,
-        latestOperational,
+        operational,
       )
       const confirmedClosing = await closingService.close(latestDraft)
       saveSequence.current += 1
       setCurrentDraft(undefined)
-      setClosedClosing(confirmedClosing)
-      setMessage('Corte cerrado y confirmado en Supabase.')
+      onClosed(confirmedClosing)
     } catch (cause: unknown) {
       console.error('No fue posible cerrar el corte', cause)
+      if (
+        cause instanceof ClosingDomainError &&
+        (cause.code === 'MOVEMENT_ALREADY_ASSIGNED' ||
+          cause.code === 'SELECTED_MOVEMENT_NOT_FOUND')
+      ) {
+        setSelectionConflict(true)
+      }
       setError(
         cause instanceof Error
           ? cause.message
@@ -279,102 +756,78 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
     }
   }
 
+  async function discardDraft() {
+    const current = draftRef.current
+    if (!current) return
+    if (!window.confirm('¿Descartar este borrador de corte?')) return
+    setSaving(true)
+    setError(undefined)
+    try {
+      await closingService.discard(current.id)
+      saveSequence.current += 1
+      setCurrentDraft(undefined)
+      onBack()
+    } catch (cause: unknown) {
+      console.error('No fue posible descartar el borrador', cause)
+      setError('No fue posible descartar el borrador.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const canClose = isSupabaseConfigured && navigator.onLine
   const balanceErrors = draft ? validateClosingBillCounts(draft) : []
   const invalidCashBalance = balanceErrors.length > 0
+
+  function toggleExpense(id: string) {
+    if (!draft) return
+    updateDraft({
+      selectedExpenseIds: draft.selectedExpenseIds.includes(id)
+        ? draft.selectedExpenseIds.filter((selectedId) => selectedId !== id)
+        : [...draft.selectedExpenseIds, id],
+    })
+  }
+
+  function toggleTransfer(id: string) {
+    if (!draft) return
+    updateDraft({
+      selectedTransferIds: draft.selectedTransferIds.includes(id)
+        ? draft.selectedTransferIds.filter((selectedId) => selectedId !== id)
+        : [...draft.selectedTransferIds, id],
+    })
+  }
 
   return (
     <section className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div>
-          <h1 className="page-title">Cortes</h1>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <select
-            aria-label="Tienda"
-            className="compact-field"
-            disabled={saving}
-            value={storeId}
-            onChange={(event) => setStoreId(event.target.value)}
-          >
-            {activeStores.map((store) => (
-              <option key={store.id} value={store.id}>{store.name}</option>
-            ))}
-          </select>
-          <input
-            aria-label="Fecha"
-            className="compact-field"
-            disabled={saving}
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-          />
+          <div className="mb-4 flex flex-wrap gap-3">
+            <button className="button-secondary" disabled={saving} type="button" onClick={onBack}>Volver al historial</button>
+            {saveState === 'saved' && (
+              <button className="button-secondary text-red-700" disabled={saving} type="button" onClick={() => void discardDraft()}>Descartar borrador</button>
+            )}
+          </div>
+          <p className="eyebrow">Nuevo corte</p>
+          <h1 className="page-title mt-1">{selectedStore?.name ?? 'Corte'}</h1>
+          <p className="mt-2 text-sm text-slate-500">{formatLongDate(date)}</p>
         </div>
       </div>
 
-      {error && <p className="alert-error mt-6">{error}</p>}
+      {error && (
+        <div className="alert-error mt-6">
+          <p>{error}</p>
+          {selectionConflict && (
+            <button className="button-secondary mt-3" disabled={saving} type="button" onClick={() => void refreshCandidates()}>
+              <SyncIcon className="size-4" /> Actualizar resumen
+            </button>
+          )}
+        </div>
+      )}
       {message && (
         <p className="alert-success mt-6"><CheckIcon className="size-5" />{message}</p>
       )}
 
-      {activeStores.length === 0 && (
-        <div className="panel mt-8 border-dashed text-center">
-          <StoreIcon className="mx-auto size-8 text-slate-300" />
-          <p className="mt-3 font-bold text-slate-700">No hay tiendas activas</p>
-        </div>
-      )}
-
       {loading && <p className="empty-state">Preparando corte…</p>}
-
-      {!loading && pendingDraft && (
-        <article className="panel mx-auto mt-8 max-w-xl text-center">
-          <span className="stat-icon mx-auto bg-amber-50 text-amber-700">
-            <CashIcon className="size-5" />
-          </span>
-          <p className="eyebrow mt-5">Corte pendiente</p>
-          <h2 className="mt-2 text-2xl font-black text-slate-950">
-            {selectedStore?.name}
-          </h2>
-          <p className="mt-2 text-sm text-slate-500">
-            {formatLongDate(date)} · Paso {pendingDraft.currentStep} de 4
-          </p>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <button className="button-primary" type="button" onClick={continuePendingDraft}>
-              Continuar corte
-            </button>
-            <button
-              className="button-secondary"
-              disabled={saving}
-              type="button"
-              onClick={() => void discardPendingDraft()}
-            >
-              Descartar
-            </button>
-          </div>
-        </article>
-      )}
-
-      {!loading && closedClosing && (
-        <article className="panel mx-auto mt-8 max-w-xl text-center">
-          <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
-            <CheckIcon className="size-7" />
-          </span>
-          <h2 className="mt-5 text-2xl font-black text-slate-950">Corte confirmado</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            {selectedStore?.name} · {formatLongDate(date)}
-          </p>
-          <dl className="mt-6 space-y-3 rounded-2xl bg-slate-50 p-5 text-sm">
-            <div className="summary-row">
-              <dt>Salidas operativas</dt>
-              <dd>{currencyFormatter.format(Number(closedClosing.operational_outflows_total_snapshot))}</dd>
-            </div>
-            <div className="summary-row">
-              <dt>Salidas de efectivo</dt>
-              <dd>{currencyFormatter.format(Number(closedClosing.cash_outflows_total_snapshot))}</dd>
-            </div>
-          </dl>
-        </article>
-      )}
 
       {!loading && draft && summary && (
         <div className="mt-8">
@@ -617,93 +1070,105 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                   </dl>
 
                   <div className="mt-7 border-t border-slate-200 pt-6">
-                    <p className="eyebrow">Salidas operativas</p>
-                    <dl className="mt-4 space-y-4 text-sm">
-                      <div className="summary-row">
-                        <dt>
-                          <span className="block font-bold text-slate-700">Gastos</span>
-                          <span className="mt-0.5 block text-xs text-slate-400">
-                            {operational.expenses.length} {operational.expenses.length === 1 ? 'registro' : 'registros'}
-                          </span>
-                        </dt>
-                        <dd>{currencyFormatter.format(summary.expensesTotal)}</dd>
-                      </div>
-                      <div className="summary-row">
-                        <dt>
-                          <span className="block font-bold text-slate-700">Transferencias</span>
-                          <span className="mt-0.5 block text-xs text-slate-400">
-                            {operational.outgoingTransfers.length} {operational.outgoingTransfers.length === 1 ? 'registro' : 'registros'}
-                          </span>
-                        </dt>
-                        <dd>{currencyFormatter.format(summary.outgoingTransfersTotal)}</dd>
-                      </div>
-                      <div className="summary-row border-t border-slate-200 pt-4 font-extrabold text-slate-950">
-                        <dt>Total salidas</dt>
-                        <dd>{currencyFormatter.format(summary.operationalOutflowsTotal)}</dd>
-                      </div>
-                    </dl>
-                  </div>
+                    <div>
+                      <p className="eyebrow">Gastos</p>
+                      <p className="mt-1 text-sm font-bold text-slate-700">
+                        {draft.selectedExpenseIds.length} de {candidates.expenses.length} seleccionados · {currencyFormatter.format(summary.expensesTotal)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">Disponible: {currencyFormatter.format(candidates.expensesTotal)}</p>
+                    </div>
 
-                  <div className="mt-5 flex flex-wrap gap-x-5 gap-y-3">
                     <button
-                      className="text-action"
+                      aria-expanded={showExpenseDetails}
+                      className="text-action mt-4"
                       type="button"
                       onClick={() => setShowExpenseDetails((visible) => !visible)}
                     >
                       <ReceiptIcon className="size-4" />
                       {showExpenseDetails ? 'Ocultar gastos' : 'Ver detalle de gastos'}
                     </button>
+
+                    {showExpenseDetails && (
+                      <div className="mt-3">
+                        {candidates.expenses.length > 0 && (
+                          <div className="mb-3 flex justify-end">
+                            <button className="small-button" type="button" onClick={() => updateDraft({ selectedExpenseIds: draft.selectedExpenseIds.length === candidates.expenses.length ? [] : candidates.expenses.map((expense) => expense.id) })}>
+                              {draft.selectedExpenseIds.length === candidates.expenses.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                            </button>
+                          </div>
+                        )}
+                        <div className="overflow-hidden rounded-xl border border-slate-200">
+                          {candidates.expenses.length === 0 ? (
+                            <p className="p-4 text-sm text-slate-400">No hay gastos elegibles para este corte.</p>
+                          ) : candidates.expenses.map((expense) => (
+                            <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0" key={expense.id}>
+                              <input checked={draft.selectedExpenseIds.includes(expense.id)} className="size-5 accent-teal-700" type="checkbox" onChange={() => toggleExpense(expense.id)} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-slate-700">{expense.concept}</span>
+                                <span className="mt-0.5 block text-xs capitalize text-slate-400">{expense.paymentMethod}</span>
+                              </span>
+                              <strong className="text-sm">{currencyFormatter.format(expense.amount)}</strong>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-7 border-t border-slate-200 pt-6">
+                    <div>
+                      <p className="eyebrow">Transferencias</p>
+                      <p className="mt-1 text-sm font-bold text-slate-700">
+                        {draft.selectedTransferIds.length} de {candidates.outgoingTransfers.length} seleccionadas · {currencyFormatter.format(summary.outgoingTransfersTotal)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">Disponible: {currencyFormatter.format(candidates.outgoingTransfersTotal)}</p>
+                    </div>
+
                     <button
-                      className="text-action"
+                      aria-expanded={showTransferDetails}
+                      className="text-action mt-4"
                       type="button"
                       onClick={() => setShowTransferDetails((visible) => !visible)}
                     >
-                      <ReceiptIcon className="size-4" />
+                      <TransferIcon className="size-4" />
                       {showTransferDetails ? 'Ocultar transferencias' : 'Ver detalle de transferencias'}
                     </button>
-                  </div>
-                  {showExpenseDetails && (
-                    <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
-                      {operational.expenses.length === 0 ? (
-                        <p className="p-4 text-sm text-slate-400">No hay gastos registrados.</p>
-                      ) : (
-                        <div className="divide-y divide-slate-100">
-                          {operational.expenses.map((expense) => (
-                            <div className="flex items-center gap-3 px-4 py-3 text-sm" key={expense.id}>
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate font-semibold text-slate-700">{expense.concept}</p>
-                                <p className="mt-0.5 text-xs capitalize text-slate-400">{expense.paymentMethod}</p>
-                              </div>
-                              <strong>{currencyFormatter.format(expense.amount)}</strong>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {showTransferDetails && (
-                    <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
-                      {operational.outgoingTransfers.length === 0 ? (
-                        <p className="p-4 text-sm text-slate-400">No hay transferencias salientes registradas.</p>
-                      ) : (
-                        <div className="divide-y divide-slate-100">
-                          {operational.outgoingTransfers.map((transfer) => {
-                            const origin = stores.find((store) => store.id === transfer.originStoreId)?.name ?? 'Tienda origen'
+
+                    {showTransferDetails && (
+                      <div className="mt-3">
+                        {candidates.outgoingTransfers.length > 0 && (
+                          <div className="mb-3 flex justify-end">
+                            <button className="small-button" type="button" onClick={() => updateDraft({ selectedTransferIds: draft.selectedTransferIds.length === candidates.outgoingTransfers.length ? [] : candidates.outgoingTransfers.map((transfer) => transfer.id) })}>
+                              {draft.selectedTransferIds.length === candidates.outgoingTransfers.length ? 'Deseleccionar todas' : 'Seleccionar todas'}
+                            </button>
+                          </div>
+                        )}
+                        <div className="overflow-hidden rounded-xl border border-slate-200">
+                          {candidates.outgoingTransfers.length === 0 ? (
+                            <p className="p-4 text-sm text-slate-400">No hay transferencias elegibles para este corte.</p>
+                          ) : candidates.outgoingTransfers.map((transfer) => {
                             const destination = stores.find((store) => store.id === transfer.destinationStoreId)?.name ?? 'Tienda destino'
                             return (
-                              <div className="flex items-center gap-3 px-4 py-3 text-sm" key={transfer.id}>
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate font-semibold text-slate-700">Ticket #{transfer.ticketNumber}</p>
-                                  <p className="mt-0.5 truncate text-xs text-slate-400">{origin} → {destination}</p>
-                                </div>
-                                <strong>{currencyFormatter.format(transfer.amount)}</strong>
-                              </div>
+                              <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0" key={transfer.id}>
+                                <input checked={draft.selectedTransferIds.includes(transfer.id)} className="size-5 accent-teal-700" type="checkbox" onChange={() => toggleTransfer(transfer.id)} />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-semibold text-slate-700">Ticket #{transfer.ticketNumber}</span>
+                                  <span className="mt-0.5 block truncate text-xs text-slate-400">Destino: {destination}</span>
+                                </span>
+                                <strong className="text-sm">{currencyFormatter.format(transfer.amount)}</strong>
+                              </label>
                             )
                           })}
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    )}
+                  </div>
+
+                  <dl className="mt-7 space-y-4 border-t border-slate-200 pt-5 text-sm">
+                    <div className="summary-row"><dt>Gastos seleccionados</dt><dd>{currencyFormatter.format(summary.expensesTotal)}</dd></div>
+                    <div className="summary-row"><dt>Transferencias seleccionadas</dt><dd>{currencyFormatter.format(summary.outgoingTransfersTotal)}</dd></div>
+                    <div className="summary-row border-t border-slate-200 pt-4 font-extrabold text-slate-950"><dt>Total salidas del corte</dt><dd>{currencyFormatter.format(summary.operationalOutflowsTotal)}</dd></div>
+                  </dl>
                 </article>
 
                 <article className="panel">
@@ -781,7 +1246,12 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                     <button className="button-secondary" type="button" onClick={() => void goToStep(3)}>Anterior</button>
                     <button
                       className="button-primary"
-                      disabled={saving || !canClose || invalidCashBalance}
+                      disabled={
+                        saving ||
+                        !canClose ||
+                        invalidCashBalance ||
+                        selectionConflict
+                      }
                       type="button"
                       onClick={() => void close()}
                     >

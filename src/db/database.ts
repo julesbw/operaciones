@@ -19,6 +19,11 @@ type LegacyClosingDraft = CashClosingDraft & {
   storeCashPaymentsTotal?: number
   operationalOutflowsTotal?: number
   cashOutflowsTotal?: number
+  selectedExpenseIds?: string[]
+  selectedTransferIds?: string[]
+  knownExpenseIds?: string[]
+  knownTransferIds?: string[]
+  movementSelectionInitialized?: boolean
 }
 
 export const OPERATIONS_DATABASE_NAME = 'operaciones-db'
@@ -125,6 +130,20 @@ export class OperationsDatabase extends Dexie {
             draft.storeCashPaymentsTotal ??= 0
             draft.operationalOutflowsTotal ??= draft.expensesTotal
             draft.cashOutflowsTotal ??= draft.cashExpensesTotal
+          })
+      })
+    this.version(8)
+      .stores(schemaV6)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<LegacyClosingDraft, string>('closingDrafts')
+          .toCollection()
+          .modify((draft) => {
+            draft.selectedExpenseIds ??= []
+            draft.selectedTransferIds ??= []
+            draft.knownExpenseIds ??= []
+            draft.knownTransferIds ??= []
+            draft.movementSelectionInitialized ??= false
           })
       })
   }

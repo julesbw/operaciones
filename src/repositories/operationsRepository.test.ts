@@ -357,7 +357,7 @@ describe('OperationsRepository merchandise transfer filters', () => {
     }
   })
 
-  it('counts only unsynced expenses and outgoing transfers for a closing', async () => {
+  it('counts only selected unsynced movements for a closing', async () => {
     const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
     const repository = new OperationsRepository(database)
     const businessDate = '2026-08-12'
@@ -386,8 +386,14 @@ describe('OperationsRepository merchandise transfer filters', () => {
       ])
 
       await expect(
-        repository.countPendingClosingMovements('north', businessDate),
+        repository.countPendingSelectedClosingMovements(
+          [pendingExpense.id],
+          [pendingTransfer.id],
+        ),
       ).resolves.toEqual({ expenses: 1, transfers: 1 })
+      await expect(
+        repository.countPendingSelectedClosingMovements([], []),
+      ).resolves.toEqual({ expenses: 0, transfers: 0 })
     } finally {
       database.close()
       await database.delete()

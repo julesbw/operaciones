@@ -93,6 +93,7 @@ export type CashClosingRow = {
   id: string
   store_id: string
   business_date: string
+  closing_number: number
   gross_sales: number
   expense_total: number
   cash_expense_total: number
@@ -121,12 +122,41 @@ export type CashClosingRow = {
   updated_at: string
 }
 
+export type CashClosingExpenseItemRow = {
+  cash_closing_id: string
+  expense_id: string
+  amount_snapshot: number
+  concept_snapshot: string
+  payment_method_snapshot: PaymentMethod
+  created_at: string
+}
+
 export type CashClosingTransferItemRow = {
   cash_closing_id: string
   transfer_id: string
   amount_snapshot: number
   ticket_number_snapshot: string
   created_at: string
+}
+
+export type CashClosingCandidatesResult = {
+  expenses: Array<
+    Pick<
+      ExpenseRow,
+      | 'id'
+      | 'store_id'
+      | 'business_date'
+      | 'amount'
+      | 'concept'
+      | 'payment_method'
+      | 'notes'
+      | 'created_by'
+      | 'created_at'
+      | 'updated_at'
+      | 'version'
+    >
+  >
+  transfers: MerchandiseTransferRow[]
 }
 
 export type Database = {
@@ -223,6 +253,7 @@ export type Database = {
           | 'id'
           | 'store_id'
           | 'business_date'
+          | 'closing_number'
           | 'gross_sales'
           | 'expense_total'
           | 'cash_expense_total'
@@ -275,6 +306,18 @@ export type Database = {
             | 'closed_by'
           >
         >
+      >
+      cash_closing_expense_items: TableDefinition<
+        CashClosingExpenseItemRow,
+        Pick<
+          CashClosingExpenseItemRow,
+          | 'cash_closing_id'
+          | 'expense_id'
+          | 'amount_snapshot'
+          | 'concept_snapshot'
+          | 'payment_method_snapshot'
+        >,
+        never
       >
       cash_closing_transfer_items: TableDefinition<
         CashClosingTransferItemRow,
@@ -345,8 +388,17 @@ export type Database = {
           p_bills: Bills
           p_balance_bills: Bills
           p_notes: string | null
+          p_expense_ids: string[]
+          p_transfer_ids: string[]
         }
         Returns: CashClosingRow
+      }
+      get_cash_closing_candidates: {
+        Args: {
+          p_store_id: string
+          p_business_date: string
+        }
+        Returns: CashClosingCandidatesResult
       }
       create_collaborator: {
         Args: {

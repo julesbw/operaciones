@@ -9,6 +9,7 @@ import {
   calculateExpenseTotals,
   calculateOperationalTotals,
   calculateWithdrawBills,
+  selectClosingMovements,
   validateClosingBillCounts,
 } from './closingService'
 
@@ -51,6 +52,11 @@ const draft: CashClosingDraft = {
   storeCashPaymentsTotal: 0,
   operationalOutflowsTotal: 0,
   cashOutflowsTotal: 0,
+  selectedExpenseIds: [],
+  selectedTransferIds: [],
+  knownExpenseIds: [],
+  knownTransferIds: [],
+  movementSelectionInitialized: false,
   countedCash: 0,
   cashToWithdraw: 0,
   expectedCash: 0,
@@ -145,6 +151,34 @@ describe('calculateClosingSummary', () => {
       expectedCash: 15_100,
       grossCashReconstructed: 15_900,
       difference: -100,
+    })
+  })
+})
+
+describe('selectClosingMovements', () => {
+  it('calculates totals from selected ids only', () => {
+    const expenses = [
+      expense('included-expense', 800, 'efectivo'),
+      expense('excluded-expense', 100, 'efectivo'),
+    ]
+    const transfers = [
+      transfer('included-transfer', 2_350),
+      transfer('excluded-transfer', 900),
+    ]
+
+    expect(
+      selectClosingMovements(
+        { expenses, outgoingTransfers: transfers },
+        ['included-expense'],
+        ['included-transfer'],
+      ),
+    ).toMatchObject({
+      expenses: [{ id: 'included-expense' }],
+      outgoingTransfers: [{ id: 'included-transfer' }],
+      expensesTotal: 800,
+      outgoingTransfersTotal: 2_350,
+      operationalOutflowsTotal: 3_150,
+      cashOutflowsTotal: 800,
     })
   })
 })

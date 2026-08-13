@@ -123,6 +123,11 @@ export type CashClosingDraft = {
   storeCashPaymentsTotal: number
   operationalOutflowsTotal: number
   cashOutflowsTotal: number
+  selectedExpenseIds: string[]
+  selectedTransferIds: string[]
+  knownExpenseIds: string[]
+  knownTransferIds: string[]
+  movementSelectionInitialized: boolean
   countedCash: number
   cashToWithdraw: number
   expectedCash: number

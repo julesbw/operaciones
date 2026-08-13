@@ -46,7 +46,7 @@ describe('OperationsDatabase closing draft migration', () => {
       await upgradedDatabase.open()
       const migrated = await upgradedDatabase.closingDrafts.get('legacy-closing')
 
-      expect(upgradedDatabase.verno).toBe(7)
+      expect(upgradedDatabase.verno).toBe(8)
       expect(
         upgradedDatabase.tables.some(
           (table) => table.name === 'merchandiseTransfers',
@@ -64,6 +64,11 @@ describe('OperationsDatabase closing draft migration', () => {
         storeCashPaymentsTotal: 0,
         operationalOutflowsTotal: 0,
         cashOutflowsTotal: 0,
+        selectedExpenseIds: [],
+        selectedTransferIds: [],
+        knownExpenseIds: [],
+        knownTransferIds: [],
+        movementSelectionInitialized: false,
       })
       expect(migrated).not.toHaveProperty('openingBalance')
       expect(migrated).not.toHaveProperty('otherMovements')
