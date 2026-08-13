@@ -169,11 +169,15 @@ function ClosingDetailView({
 }) {
   const [detail, setDetail] = useState<CashClosingDetail>()
   const [error, setError] = useState('')
+  const [showExpenseDetails, setShowExpenseDetails] = useState(false)
+  const [showTransferDetails, setShowTransferDetails] = useState(false)
 
   useEffect(() => {
     let active = true
     setDetail(undefined)
     setError('')
+    setShowExpenseDetails(false)
+    setShowTransferDetails(false)
     void closingService
       .getClosedDetail(closingId)
       .then((result) => {
@@ -230,28 +234,52 @@ function ClosingDetailView({
             <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Total salidas</dt><dd>{currencyFormatter.format(Number(closing.operational_outflows_total_snapshot))}</dd></div>
           </dl>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <p className="bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-500">Gastos incluidos · {expenses.length}</p>
-              {expenses.length === 0 ? (
-                <p className="p-4 text-sm text-slate-400">Sin gastos incluidos.</p>
-              ) : expenses.map((expense) => (
-                <div className="summary-row border-t border-slate-100 px-4 py-3 text-sm" key={expense.expense_id}>
-                  <span className="min-w-0 truncate font-semibold text-slate-700">{expense.concept_snapshot}</span>
-                  <strong>{currencyFormatter.format(Number(expense.amount_snapshot))}</strong>
+          <div className="mt-6 space-y-4">
+            <div>
+              <button
+                aria-expanded={showExpenseDetails}
+                className="text-action"
+                type="button"
+                onClick={() => setShowExpenseDetails((visible) => !visible)}
+              >
+                <ReceiptIcon className="size-4" />
+                {showExpenseDetails ? 'Ocultar gastos' : `Ver detalle de gastos · ${expenses.length}`}
+              </button>
+              {showExpenseDetails && (
+                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
+                  {expenses.length === 0 ? (
+                    <p className="p-4 text-sm text-slate-400">Sin gastos incluidos.</p>
+                  ) : expenses.map((expense) => (
+                    <div className="summary-row border-b border-slate-100 px-4 py-3 text-sm last:border-b-0" key={expense.expense_id}>
+                      <span className="min-w-0 truncate font-semibold text-slate-700">{expense.concept_snapshot}</span>
+                      <strong>{currencyFormatter.format(Number(expense.amount_snapshot))}</strong>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <p className="bg-slate-50 px-4 py-3 text-xs font-extrabold uppercase tracking-wider text-slate-500">Transferencias incluidas · {transfers.length}</p>
-              {transfers.length === 0 ? (
-                <p className="p-4 text-sm text-slate-400">Sin transferencias incluidas.</p>
-              ) : transfers.map((transfer) => (
-                <div className="summary-row border-t border-slate-100 px-4 py-3 text-sm" key={transfer.transfer_id}>
-                  <span className="min-w-0 truncate font-semibold text-slate-700">Ticket #{transfer.ticket_number_snapshot}</span>
-                  <strong>{currencyFormatter.format(Number(transfer.amount_snapshot))}</strong>
+            <div>
+              <button
+                aria-expanded={showTransferDetails}
+                className="text-action"
+                type="button"
+                onClick={() => setShowTransferDetails((visible) => !visible)}
+              >
+                <TransferIcon className="size-4" />
+                {showTransferDetails ? 'Ocultar transferencias' : `Ver detalle de transferencias · ${transfers.length}`}
+              </button>
+              {showTransferDetails && (
+                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
+                  {transfers.length === 0 ? (
+                    <p className="p-4 text-sm text-slate-400">Sin transferencias incluidas.</p>
+                  ) : transfers.map((transfer) => (
+                    <div className="summary-row border-b border-slate-100 px-4 py-3 text-sm last:border-b-0" key={transfer.transfer_id}>
+                      <span className="min-w-0 truncate font-semibold text-slate-700">Ticket #{transfer.ticket_number_snapshot}</span>
+                      <strong>{currencyFormatter.format(Number(transfer.amount_snapshot))}</strong>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </article>
@@ -799,7 +827,7 @@ function ClosingFlow({
 
   return (
     <section className="mx-auto max-w-5xl">
-      <div className="flex flex-wrap items-end justify-between gap-5">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="mb-4 flex flex-wrap gap-3">
             <button className="button-secondary" disabled={saving} type="button" onClick={onBack}>Volver al historial</button>
@@ -811,6 +839,11 @@ function ClosingFlow({
           <h1 className="page-title mt-1">{selectedStore?.name ?? 'Corte'}</h1>
           <p className="mt-2 text-sm text-slate-500">{formatLongDate(date)}</p>
         </div>
+        {!loading && draft && (
+          <div className="panel w-full py-4 lg:max-w-2xl lg:flex-1">
+            <StepProgress currentStep={draft.currentStep} />
+          </div>
+        )}
       </div>
 
       {error && (
@@ -830,12 +863,7 @@ function ClosingFlow({
       {loading && <p className="empty-state">Preparando corte…</p>}
 
       {!loading && draft && summary && (
-        <div className="mt-8">
-          <div className="panel mx-auto max-w-2xl py-4">
-            <StepProgress currentStep={draft.currentStep} />
-          </div>
-
-          <div className="mx-auto mt-6 max-w-3xl">
+        <div className="mx-auto mt-6 max-w-3xl">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
               <p className="font-bold text-slate-500">
                 Paso {draft.currentStep} de 4 · {selectedStore?.name} · {formatLongDate(date)}
@@ -1069,106 +1097,108 @@ function ClosingFlow({
                     </div>
                   </dl>
 
-                  <div className="mt-7 border-t border-slate-200 pt-6">
-                    <div>
-                      <p className="eyebrow">Gastos</p>
-                      <p className="mt-1 text-sm font-bold text-slate-700">
-                        {draft.selectedExpenseIds.length} de {candidates.expenses.length} seleccionados · {currencyFormatter.format(summary.expensesTotal)}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">Disponible: {currencyFormatter.format(candidates.expensesTotal)}</p>
-                    </div>
+                  {candidates.expenses.length > 0 && (
+                    <div className="mt-7 border-t border-slate-200 pt-6">
+                      <div>
+                        <p className="eyebrow">Gastos</p>
+                        <p className="mt-1 text-sm font-bold text-slate-700">
+                          {draft.selectedExpenseIds.length} de {candidates.expenses.length} seleccionados · {currencyFormatter.format(summary.expensesTotal)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">Disponible: {currencyFormatter.format(candidates.expensesTotal)}</p>
+                      </div>
 
-                    <button
-                      aria-expanded={showExpenseDetails}
-                      className="text-action mt-4"
-                      type="button"
-                      onClick={() => setShowExpenseDetails((visible) => !visible)}
-                    >
-                      <ReceiptIcon className="size-4" />
-                      {showExpenseDetails ? 'Ocultar gastos' : 'Ver detalle de gastos'}
-                    </button>
+                      <button
+                        aria-expanded={showExpenseDetails}
+                        className="text-action mt-4"
+                        type="button"
+                        onClick={() => setShowExpenseDetails((visible) => !visible)}
+                      >
+                        <ReceiptIcon className="size-4" />
+                        {showExpenseDetails ? 'Ocultar gastos' : 'Ver detalle de gastos'}
+                      </button>
 
-                    {showExpenseDetails && (
-                      <div className="mt-3">
-                        {candidates.expenses.length > 0 && (
+                      {showExpenseDetails && (
+                        <div className="mt-3">
                           <div className="mb-3 flex justify-end">
                             <button className="small-button" type="button" onClick={() => updateDraft({ selectedExpenseIds: draft.selectedExpenseIds.length === candidates.expenses.length ? [] : candidates.expenses.map((expense) => expense.id) })}>
                               {draft.selectedExpenseIds.length === candidates.expenses.length ? 'Deseleccionar todos' : 'Seleccionar todos'}
                             </button>
                           </div>
-                        )}
-                        <div className="overflow-hidden rounded-xl border border-slate-200">
-                          {candidates.expenses.length === 0 ? (
-                            <p className="p-4 text-sm text-slate-400">No hay gastos elegibles para este corte.</p>
-                          ) : candidates.expenses.map((expense) => (
-                            <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0" key={expense.id}>
-                              <input checked={draft.selectedExpenseIds.includes(expense.id)} className="size-5 accent-teal-700" type="checkbox" onChange={() => toggleExpense(expense.id)} />
-                              <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm font-semibold text-slate-700">{expense.concept}</span>
-                                <span className="mt-0.5 block text-xs capitalize text-slate-400">{expense.paymentMethod}</span>
-                              </span>
-                              <strong className="text-sm">{currencyFormatter.format(expense.amount)}</strong>
-                            </label>
-                          ))}
+                          <div className="overflow-hidden rounded-xl border border-slate-200">
+                            {candidates.expenses.map((expense) => (
+                              <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0" key={expense.id}>
+                                <input checked={draft.selectedExpenseIds.includes(expense.id)} className="size-5 accent-teal-700" type="checkbox" onChange={() => toggleExpense(expense.id)} />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-semibold text-slate-700">{expense.concept}</span>
+                                  <span className="mt-0.5 block text-xs capitalize text-slate-400">{expense.paymentMethod}</span>
+                                </span>
+                                <strong className="text-sm">{currencyFormatter.format(expense.amount)}</strong>
+                              </label>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-7 border-t border-slate-200 pt-6">
-                    <div>
-                      <p className="eyebrow">Transferencias</p>
-                      <p className="mt-1 text-sm font-bold text-slate-700">
-                        {draft.selectedTransferIds.length} de {candidates.outgoingTransfers.length} seleccionadas · {currencyFormatter.format(summary.outgoingTransfersTotal)}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">Disponible: {currencyFormatter.format(candidates.outgoingTransfersTotal)}</p>
+                      )}
                     </div>
+                  )}
 
-                    <button
-                      aria-expanded={showTransferDetails}
-                      className="text-action mt-4"
-                      type="button"
-                      onClick={() => setShowTransferDetails((visible) => !visible)}
-                    >
-                      <TransferIcon className="size-4" />
-                      {showTransferDetails ? 'Ocultar transferencias' : 'Ver detalle de transferencias'}
-                    </button>
+                  {candidates.outgoingTransfers.length > 0 && (
+                    <div className="mt-7 border-t border-slate-200 pt-6">
+                      <div>
+                        <p className="eyebrow">Transferencias</p>
+                        <p className="mt-1 text-sm font-bold text-slate-700">
+                          {draft.selectedTransferIds.length} de {candidates.outgoingTransfers.length} seleccionadas · {currencyFormatter.format(summary.outgoingTransfersTotal)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">Disponible: {currencyFormatter.format(candidates.outgoingTransfersTotal)}</p>
+                      </div>
 
-                    {showTransferDetails && (
-                      <div className="mt-3">
-                        {candidates.outgoingTransfers.length > 0 && (
+                      <button
+                        aria-expanded={showTransferDetails}
+                        className="text-action mt-4"
+                        type="button"
+                        onClick={() => setShowTransferDetails((visible) => !visible)}
+                      >
+                        <TransferIcon className="size-4" />
+                        {showTransferDetails ? 'Ocultar transferencias' : 'Ver detalle de transferencias'}
+                      </button>
+
+                      {showTransferDetails && (
+                        <div className="mt-3">
                           <div className="mb-3 flex justify-end">
                             <button className="small-button" type="button" onClick={() => updateDraft({ selectedTransferIds: draft.selectedTransferIds.length === candidates.outgoingTransfers.length ? [] : candidates.outgoingTransfers.map((transfer) => transfer.id) })}>
                               {draft.selectedTransferIds.length === candidates.outgoingTransfers.length ? 'Deseleccionar todas' : 'Seleccionar todas'}
                             </button>
                           </div>
-                        )}
-                        <div className="overflow-hidden rounded-xl border border-slate-200">
-                          {candidates.outgoingTransfers.length === 0 ? (
-                            <p className="p-4 text-sm text-slate-400">No hay transferencias elegibles para este corte.</p>
-                          ) : candidates.outgoingTransfers.map((transfer) => {
-                            const destination = stores.find((store) => store.id === transfer.destinationStoreId)?.name ?? 'Tienda destino'
-                            return (
-                              <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0" key={transfer.id}>
-                                <input checked={draft.selectedTransferIds.includes(transfer.id)} className="size-5 accent-teal-700" type="checkbox" onChange={() => toggleTransfer(transfer.id)} />
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-sm font-semibold text-slate-700">Ticket #{transfer.ticketNumber}</span>
-                                  <span className="mt-0.5 block truncate text-xs text-slate-400">Destino: {destination}</span>
-                                </span>
-                                <strong className="text-sm">{currencyFormatter.format(transfer.amount)}</strong>
-                              </label>
-                            )
-                          })}
+                          <div className="overflow-hidden rounded-xl border border-slate-200">
+                            {candidates.outgoingTransfers.map((transfer) => {
+                              const destination = stores.find((store) => store.id === transfer.destinationStoreId)?.name ?? 'Tienda destino'
+                              return (
+                                <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0" key={transfer.id}>
+                                  <input checked={draft.selectedTransferIds.includes(transfer.id)} className="size-5 accent-teal-700" type="checkbox" onChange={() => toggleTransfer(transfer.id)} />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm font-semibold text-slate-700">Ticket #{transfer.ticketNumber}</span>
+                                    <span className="mt-0.5 block truncate text-xs text-slate-400">Destino: {destination}</span>
+                                  </span>
+                                  <strong className="text-sm">{currencyFormatter.format(transfer.amount)}</strong>
+                                </label>
+                              )
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
 
-                  <dl className="mt-7 space-y-4 border-t border-slate-200 pt-5 text-sm">
-                    <div className="summary-row"><dt>Gastos seleccionados</dt><dd>{currencyFormatter.format(summary.expensesTotal)}</dd></div>
-                    <div className="summary-row"><dt>Transferencias seleccionadas</dt><dd>{currencyFormatter.format(summary.outgoingTransfersTotal)}</dd></div>
-                    <div className="summary-row border-t border-slate-200 pt-4 font-extrabold text-slate-950"><dt>Total salidas del corte</dt><dd>{currencyFormatter.format(summary.operationalOutflowsTotal)}</dd></div>
-                  </dl>
+                  {(candidates.expenses.length > 0 || candidates.outgoingTransfers.length > 0) && (
+                    <dl className="mt-7 space-y-4 border-t border-slate-200 pt-5 text-sm">
+                      {candidates.expenses.length > 0 && (
+                        <div className="summary-row"><dt>Gastos seleccionados</dt><dd>{currencyFormatter.format(summary.expensesTotal)}</dd></div>
+                      )}
+                      {candidates.outgoingTransfers.length > 0 && (
+                        <div className="summary-row"><dt>Transferencias seleccionadas</dt><dd>{currencyFormatter.format(summary.outgoingTransfersTotal)}</dd></div>
+                      )}
+                      <div className="summary-row border-t border-slate-200 pt-4 font-extrabold text-slate-950"><dt>Total salidas del corte</dt><dd>{currencyFormatter.format(summary.operationalOutflowsTotal)}</dd></div>
+                    </dl>
+                  )}
                 </article>
 
                 <article className="panel">
@@ -1267,7 +1297,6 @@ function ClosingFlow({
                 </article>
               </div>
             )}
-          </div>
         </div>
       )}
     </section>
