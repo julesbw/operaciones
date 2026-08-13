@@ -1,23 +1,44 @@
 import { BILL_DENOMINATIONS, EMPTY_BILLS } from '../domain/constants'
-import type { Bills, CashClosingDraft, Expense } from '../domain/models'
+import type {
+  Bills,
+  CashClosingDraft,
+  Expense,
+  MerchandiseTransfer,
+} from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
+import type { CashClosingRow } from '../types/database'
 import { calculateBillsTotal } from '../utils/money'
+import { syncService } from './syncService'
 
 export type ClosingExpenseTotals = {
   total: number
   cash: number
 }
 
-export type ClosingSummary = {
+export type ClosingOperationalTotals = {
   expensesTotal: number
   cashExpensesTotal: number
+  outgoingTransfersTotal: number
+  storeCashPaymentsTotal: number
+  operationalOutflowsTotal: number
+  cashOutflowsTotal: number
+}
+
+export type ClosingOperationalSummary = ClosingOperationalTotals & {
+  expenses: Expense[]
+  outgoingTransfers: MerchandiseTransfer[]
+}
+
+export type ClosingSummary = ClosingOperationalTotals & {
   resultAfterExpenses: number
+  resultAfterOperationalOutflows: number
   countedCash: number
   cashBalance: number
   cashToWithdraw: number
   withdrawBills: Bills
   expectedCash: number
+  grossCashReconstructed: number
   difference: number
 }
 
@@ -88,9 +109,33 @@ export function calculateExpenseTotals(
   }
 }
 
+export function calculateOperationalTotals(
+  expenses: Expense[],
+  outgoingTransfers: MerchandiseTransfer[],
+): ClosingOperationalTotals {
+  const expenseTotals = calculateExpenseTotals(expenses)
+  const outgoingTransfersTotal = roundMoney(
+    outgoingTransfers.reduce((total, transfer) => total + transfer.amount, 0),
+  )
+  const storeCashPaymentsTotal = 0
+
+  return {
+    expensesTotal: expenseTotals.total,
+    cashExpensesTotal: expenseTotals.cash,
+    outgoingTransfersTotal,
+    storeCashPaymentsTotal,
+    operationalOutflowsTotal: roundMoney(
+      expenseTotals.total + outgoingTransfersTotal + storeCashPaymentsTotal,
+    ),
+    cashOutflowsTotal: roundMoney(
+      expenseTotals.cash + storeCashPaymentsTotal,
+    ),
+  }
+}
+
 export function calculateClosingSummary(
   draft: CashClosingDraft,
-  expenses: ClosingExpenseTotals,
+  operational: ClosingOperationalTotals,
 ): ClosingSummary {
   const countedCash = roundMoney(calculateBillsTotal(draft.bills))
   const cashBalance = roundMoney(calculateBillsTotal(draft.balanceBills))
@@ -99,26 +144,31 @@ export function calculateClosingSummary(
     draft.balanceBills,
   )
   const grossSales = roundMoney(draft.grossSales)
-  const expectedCash = roundMoney(grossSales - expenses.cash)
+  const expectedCash = roundMoney(grossSales - operational.cashOutflowsTotal)
 
   return {
-    expensesTotal: expenses.total,
-    cashExpensesTotal: expenses.cash,
-    resultAfterExpenses: roundMoney(grossSales - expenses.total),
+    ...operational,
+    resultAfterExpenses: roundMoney(grossSales - operational.expensesTotal),
+    resultAfterOperationalOutflows: roundMoney(
+      grossSales - operational.operationalOutflowsTotal,
+    ),
     countedCash,
     cashBalance,
     cashToWithdraw: roundMoney(calculateBillsTotal(withdrawBills)),
     withdrawBills,
     expectedCash,
+    grossCashReconstructed: roundMoney(
+      countedCash + operational.cashOutflowsTotal,
+    ),
     difference: roundMoney(countedCash - expectedCash),
   }
 }
 
 export function applyClosingSummary(
   draft: CashClosingDraft,
-  expenses: ClosingExpenseTotals,
+  operational: ClosingOperationalTotals,
 ): CashClosingDraft {
-  const summary = calculateClosingSummary(draft, expenses)
+  const summary = calculateClosingSummary(draft, operational)
   return {
     ...draft,
     grossSales: roundMoney(draft.grossSales),
@@ -126,6 +176,10 @@ export function applyClosingSummary(
     withdrawBills: summary.withdrawBills,
     expensesTotal: summary.expensesTotal,
     cashExpensesTotal: summary.cashExpensesTotal,
+    outgoingTransfersTotal: summary.outgoingTransfersTotal,
+    storeCashPaymentsTotal: summary.storeCashPaymentsTotal,
+    operationalOutflowsTotal: summary.operationalOutflowsTotal,
+    cashOutflowsTotal: summary.cashOutflowsTotal,
     countedCash: summary.countedCash,
     cashToWithdraw: summary.cashToWithdraw,
     expectedCash: summary.expectedCash,
@@ -134,6 +188,22 @@ export function applyClosingSummary(
 }
 
 class ClosingService {
+  async getOperationalSummary(
+    storeId: string,
+    businessDate: string,
+  ): Promise<ClosingOperationalSummary> {
+    const [expenses, outgoingTransfers] = await Promise.all([
+      operationsRepository.listExpenses(storeId, businessDate),
+      operationsRepository.listMerchandiseTransfers(storeId, businessDate),
+    ])
+
+    return {
+      expenses,
+      outgoingTransfers,
+      ...calculateOperationalTotals(expenses, outgoingTransfers),
+    }
+  }
+
   async load(
     storeId: string,
     businessDate: string,
@@ -168,6 +238,10 @@ class ClosingService {
       cashBalance: 0,
       expensesTotal: 0,
       cashExpensesTotal: 0,
+      outgoingTransfersTotal: 0,
+      storeCashPaymentsTotal: 0,
+      operationalOutflowsTotal: 0,
+      cashOutflowsTotal: 0,
       countedCash: 0,
       cashToWithdraw: 0,
       expectedCash: 0,
@@ -182,10 +256,10 @@ class ClosingService {
 
   async save(
     draft: CashClosingDraft,
-    expenses: ClosingExpenseTotals,
+    operational: ClosingOperationalTotals,
   ): Promise<CashClosingDraft> {
     const savedDraft = {
-      ...applyClosingSummary(draft, expenses),
+      ...applyClosingSummary(draft, operational),
       updatedAt: new Date().toISOString(),
     }
     await operationsRepository.saveClosingDraft(savedDraft)
@@ -198,12 +272,34 @@ class ClosingService {
 
   async close(
     draft: CashClosingDraft,
-    expenses: ClosingExpenseTotals,
-    userId: string,
-  ): Promise<void> {
+  ): Promise<CashClosingRow> {
     if (!supabase) throw new Error('Supabase no está configurado')
 
-    const closedDraft = applyClosingSummary(draft, expenses)
+    try {
+      await syncService.process()
+    } catch (cause: unknown) {
+      console.error('No fue posible sincronizar antes del cierre', cause)
+      throw new Error(
+        'No fue posible sincronizar los movimientos del día. Intenta nuevamente.',
+        { cause },
+      )
+    }
+
+    const pending = await operationsRepository.countPendingClosingMovements(
+      draft.storeId,
+      draft.businessDate,
+    )
+    if (pending.expenses > 0 || pending.transfers > 0) {
+      throw new Error(
+        'Hay movimientos del día pendientes de sincronizar. Sincronízalos antes de cerrar el corte.',
+      )
+    }
+
+    const operational = await this.getOperationalSummary(
+      draft.storeId,
+      draft.businessDate,
+    )
+    const closedDraft = applyClosingSummary(draft, operational)
     const billErrors = validateClosingBillCounts(closedDraft)
     if (billErrors.length > 0) throw new Error(billErrors[0])
     if (closedDraft.grossSales < 0) {
@@ -216,34 +312,23 @@ class ClosingService {
       throw new Error('El saldo de caja no puede superar el efectivo contado')
     }
 
-    const { error } = await supabase.from('cash_closings').upsert(
-      {
-        id: closedDraft.id,
-        store_id: closedDraft.storeId,
-        business_date: closedDraft.businessDate,
-        gross_sales: closedDraft.grossSales,
-        expense_total: closedDraft.expensesTotal,
-        cash_expense_total: closedDraft.cashExpensesTotal,
-        other_movements: 0,
-        opening_balance: 0,
-        counted_cash: closedDraft.countedCash,
-        cash_balance: closedDraft.cashBalance,
-        cash_to_withdraw: closedDraft.cashToWithdraw,
-        expected_cash: closedDraft.expectedCash,
-        difference: closedDraft.difference,
-        bills: closedDraft.bills,
-        balance_bills: closedDraft.balanceBills,
-        withdraw_bills: closedDraft.withdrawBills,
-        notes: closedDraft.notes ?? null,
-        status: 'closed',
-        closed_at: new Date().toISOString(),
-        closed_by: userId,
-        created_by: closedDraft.createdBy || userId,
-      },
-      { onConflict: 'id' },
-    )
+    await operationsRepository.saveClosingDraft({
+      ...closedDraft,
+      updatedAt: new Date().toISOString(),
+    })
+    const { data, error } = await supabase.rpc('close_cash_closing', {
+      p_id: closedDraft.id,
+      p_store_id: closedDraft.storeId,
+      p_business_date: closedDraft.businessDate,
+      p_gross_sales: closedDraft.grossSales,
+      p_bills: closedDraft.bills,
+      p_balance_bills: closedDraft.balanceBills,
+      p_notes: closedDraft.notes ?? null,
+    })
     if (error) throw error
+    if (!data) throw new Error('Supabase no devolvió el corte confirmado')
     await operationsRepository.deleteClosingDraft(closedDraft.id)
+    return data
   }
 }
 

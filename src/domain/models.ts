@@ -119,6 +119,10 @@ export type CashClosingDraft = {
   cashBalance: number
   expensesTotal: number
   cashExpensesTotal: number
+  outgoingTransfersTotal: number
+  storeCashPaymentsTotal: number
+  operationalOutflowsTotal: number
+  cashOutflowsTotal: number
   countedCash: number
   cashToWithdraw: number
   expectedCash: number

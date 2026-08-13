@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { CashClosingDraft, Expense } from '../domain/models'
+import type {
+  CashClosingDraft,
+  Expense,
+  MerchandiseTransfer,
+} from '../domain/models'
 import {
   calculateClosingSummary,
   calculateExpenseTotals,
+  calculateOperationalTotals,
   calculateWithdrawBills,
   validateClosingBillCounts,
 } from './closingService'
@@ -42,6 +47,10 @@ const draft: CashClosingDraft = {
   cashBalance: 2_000,
   expensesTotal: 0,
   cashExpensesTotal: 0,
+  outgoingTransfersTotal: 0,
+  storeCashPaymentsTotal: 0,
+  operationalOutflowsTotal: 0,
+  cashOutflowsTotal: 0,
   countedCash: 0,
   cashToWithdraw: 0,
   expectedCash: 0,
@@ -51,6 +60,22 @@ const draft: CashClosingDraft = {
   createdBy: 'admin-id',
   createdAt: '2026-08-10T12:00:00.000Z',
   updatedAt: '2026-08-10T12:00:00.000Z',
+}
+
+function transfer(id: string, amount: number): MerchandiseTransfer {
+  return {
+    id,
+    originStoreId: draft.storeId,
+    destinationStoreId: 'destination-id',
+    ticketNumber: id,
+    amount,
+    businessDate: draft.businessDate,
+    createdBy: 'admin-id',
+    createdAt: draft.createdAt,
+    updatedAt: draft.updatedAt,
+    version: 1,
+    syncStatus: 'synced',
+  }
 }
 
 function expense(
@@ -85,13 +110,26 @@ describe('calculateExpenseTotals', () => {
 })
 
 describe('calculateClosingSummary', () => {
-  it('uses only cash expenses to reconcile physical cash', () => {
+  it('includes transfers in operational outflows but not physical cash', () => {
+    const operational = calculateOperationalTotals(
+      [
+        expense('cash', 900, 'efectivo'),
+        expense('transfer', 100, 'transferencia'),
+      ],
+      [transfer('0018452', 2_350)],
+    )
+
     expect(
-      calculateClosingSummary(draft, { total: 1_000, cash: 900 }),
+      calculateClosingSummary(draft, operational),
     ).toEqual({
       expensesTotal: 1_000,
       cashExpensesTotal: 900,
+      outgoingTransfersTotal: 2_350,
+      storeCashPaymentsTotal: 0,
+      operationalOutflowsTotal: 3_350,
+      cashOutflowsTotal: 900,
       resultAfterExpenses: 15_000,
+      resultAfterOperationalOutflows: 12_650,
       countedCash: 15_000,
       cashBalance: 2_000,
       cashToWithdraw: 13_000,
@@ -105,6 +143,7 @@ describe('calculateClosingSummary', () => {
         monedas: 0,
       },
       expectedCash: 15_100,
+      grossCashReconstructed: 15_900,
       difference: -100,
     })
   })

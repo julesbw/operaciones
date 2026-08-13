@@ -258,6 +258,30 @@ export class OperationsRepository {
     return this.database.syncQueue.count()
   }
 
+  async countPendingClosingMovements(
+    storeId: string,
+    businessDate: string,
+  ): Promise<{ expenses: number; transfers: number }> {
+    const [expenses, transfers] = await Promise.all([
+      this.database.expenses
+        .where('[storeId+businessDate]')
+        .equals([storeId, businessDate])
+        .toArray(),
+      this.database.merchandiseTransfers
+        .where('[originStoreId+businessDate]')
+        .equals([storeId, businessDate])
+        .toArray(),
+    ])
+
+    return {
+      expenses: expenses.filter((expense) => expense.syncStatus !== 'synced')
+        .length,
+      transfers: transfers.filter(
+        (transfer) => transfer.syncStatus !== 'synced',
+      ).length,
+    }
+  }
+
   async markEntitySyncStatus(
     entityType: SyncEntity,
     entityId: string,

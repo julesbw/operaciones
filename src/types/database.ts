@@ -96,6 +96,12 @@ export type CashClosingRow = {
   gross_sales: number
   expense_total: number
   cash_expense_total: number
+  expenses_total_snapshot: number
+  cash_expenses_total_snapshot: number
+  outgoing_transfers_total_snapshot: number
+  store_cash_payments_total_snapshot: number
+  operational_outflows_total_snapshot: number
+  cash_outflows_total_snapshot: number
   other_movements: number
   opening_balance: number
   counted_cash: number
@@ -113,6 +119,14 @@ export type CashClosingRow = {
   created_by: string
   created_at: string
   updated_at: string
+}
+
+export type CashClosingTransferItemRow = {
+  cash_closing_id: string
+  transfer_id: string
+  amount_snapshot: number
+  ticket_number_snapshot: string
+  created_at: string
 }
 
 export type Database = {
@@ -226,7 +240,19 @@ export type Database = {
           | 'closed_by'
           | 'created_by'
         > &
-          Partial<Pick<CashClosingRow, 'notes' | 'status'>>,
+          Partial<
+            Pick<
+              CashClosingRow,
+              | 'expenses_total_snapshot'
+              | 'cash_expenses_total_snapshot'
+              | 'outgoing_transfers_total_snapshot'
+              | 'store_cash_payments_total_snapshot'
+              | 'operational_outflows_total_snapshot'
+              | 'cash_outflows_total_snapshot'
+              | 'notes'
+              | 'status'
+            >
+          >,
         Partial<
           Pick<
             CashClosingRow,
@@ -249,6 +275,17 @@ export type Database = {
             | 'closed_by'
           >
         >
+      >
+      cash_closing_transfer_items: TableDefinition<
+        CashClosingTransferItemRow,
+        Pick<
+          CashClosingTransferItemRow,
+          | 'cash_closing_id'
+          | 'transfer_id'
+          | 'amount_snapshot'
+          | 'ticket_number_snapshot'
+        >,
+        never
       >
     }
     Views: Record<string, never>
@@ -298,6 +335,18 @@ export type Database = {
           p_created_by: string
         }
         Returns: MerchandiseTransferRow
+      }
+      close_cash_closing: {
+        Args: {
+          p_id: string
+          p_store_id: string
+          p_business_date: string
+          p_gross_sales: number
+          p_bills: Bills
+          p_balance_bills: Bills
+          p_notes: string | null
+        }
+        Returns: CashClosingRow
       }
       create_collaborator: {
         Args: {

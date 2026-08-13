@@ -356,6 +356,43 @@ describe('OperationsRepository merchandise transfer filters', () => {
       await database.delete()
     }
   })
+
+  it('counts only unsynced expenses and outgoing transfers for a closing', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const businessDate = '2026-08-12'
+    const pendingExpense = expense('expense-pending', 'north', businessDate, `${businessDate}T10:00:00.000Z`)
+    const pendingTransfer = transfer('transfer-pending', 'north', 'center', businessDate, '100')
+    const incomingTransfer = transfer('transfer-incoming', 'center', 'north', businessDate, '101')
+
+    try {
+      await repository.saveExpenseWithQueue(
+        pendingExpense,
+        expenseQueueItem(pendingExpense.id),
+      )
+      await repository.saveMerchandiseTransferWithQueue(
+        pendingTransfer,
+        transferQueueItem(pendingTransfer.id),
+      )
+      await repository.saveMerchandiseTransferWithQueue(
+        incomingTransfer,
+        transferQueueItem(incomingTransfer.id),
+      )
+      await repository.saveRemoteExpenses([
+        {
+          ...expense('expense-synced', 'north', businessDate, `${businessDate}T09:00:00.000Z`),
+          syncStatus: 'synced',
+        },
+      ])
+
+      await expect(
+        repository.countPendingClosingMovements('north', businessDate),
+      ).resolves.toEqual({ expenses: 1, transfers: 1 })
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
 })
 
 describe('OperationsRepository collaborator filters', () => {

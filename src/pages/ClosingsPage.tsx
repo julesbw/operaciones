@@ -5,20 +5,19 @@ import type {
   Bills,
   CashClosingDraft,
   CashClosingStep,
-  Expense,
   Store,
   UserProfile,
 } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
+import type { CashClosingRow } from '../types/database'
 import {
   applyClosingSummary,
   calculateClosingSummary,
-  calculateExpenseTotals,
   closingService,
   validateClosingBillCounts,
-  type ClosingExpenseTotals,
+  type ClosingOperationalSummary,
+  type ClosingOperationalTotals,
 } from '../services/closingService'
-import { expenseService } from '../services/expenseService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import { currencyFormatter } from '../utils/money'
 
@@ -82,24 +81,30 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
   const [draft, setDraft] = useState<CashClosingDraft>()
   const draftRef = useRef<CashClosingDraft | undefined>(undefined)
   const [pendingDraft, setPendingDraft] = useState<CashClosingDraft>()
-  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [operational, setOperational] = useState<ClosingOperationalSummary>({
+    expenses: [],
+    outgoingTransfers: [],
+    expensesTotal: 0,
+    cashExpensesTotal: 0,
+    outgoingTransfersTotal: 0,
+    storeCashPaymentsTotal: 0,
+    operationalOutflowsTotal: 0,
+    cashOutflowsTotal: 0,
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveState, setSaveState] = useState<DraftSaveState>('idle')
   const saveSequence = useRef(0)
-  const [closed, setClosed] = useState(false)
+  const [closedClosing, setClosedClosing] = useState<CashClosingRow>()
   const [showExpenseDetails, setShowExpenseDetails] = useState(false)
+  const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [showCashDetails, setShowCashDetails] = useState(false)
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
 
-  const expenseTotals = useMemo(
-    () => calculateExpenseTotals(expenses),
-    [expenses],
-  )
   const summary = useMemo(
-    () => (draft ? calculateClosingSummary(draft, expenseTotals) : undefined),
-    [draft, expenseTotals],
+    () => (draft ? calculateClosingSummary(draft, operational) : undefined),
+    [draft, operational],
   )
   const selectedStore = stores.find((store) => store.id === storeId)
 
@@ -123,7 +128,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
     let active = true
     setLoading(true)
-    setClosed(false)
+    setClosedClosing(undefined)
     setError(undefined)
     setMessage(undefined)
     setPendingDraft(undefined)
@@ -131,20 +136,19 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
     void Promise.all([
       closingService.load(storeId, date, user.id),
-      expenseService.list(storeId, date),
+      closingService.getOperationalSummary(storeId, date),
     ])
-      .then(([savedDraft, dayExpenses]) => {
+      .then(([savedDraft, dayOperational]) => {
         if (!active) return
-        const totals = calculateExpenseTotals(dayExpenses)
-        setExpenses(dayExpenses)
+        setOperational(dayOperational)
         if (savedDraft) {
-          setPendingDraft(applyClosingSummary(savedDraft, totals))
+          setPendingDraft(applyClosingSummary(savedDraft, dayOperational))
           setSaveState('saved')
         } else {
           setCurrentDraft(
             applyClosingSummary(
               closingService.create(storeId, date, user.id),
-              totals,
+              dayOperational,
             ),
           )
           setSaveState('idle')
@@ -165,7 +169,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
   function persistDraft(
     nextDraft: CashClosingDraft,
-    totals: ClosingExpenseTotals = expenseTotals,
+    totals: ClosingOperationalTotals = operational,
   ) {
     const enrichedDraft = applyClosingSummary(nextDraft, totals)
     setCurrentDraft(enrichedDraft)
@@ -199,14 +203,14 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
     if (step === 4) {
       try {
-        const latestExpenses = await expenseService.list(storeId, date)
-        const totals = calculateExpenseTotals(latestExpenses)
-        setExpenses(latestExpenses)
-        persistDraft({ ...current, currentStep: step }, totals)
+        const latestOperational =
+          await closingService.getOperationalSummary(storeId, date)
+        setOperational(latestOperational)
+        persistDraft({ ...current, currentStep: step }, latestOperational)
         return
       } catch (cause: unknown) {
-        console.error('No fue posible actualizar los gastos del corte', cause)
-        setError('No fue posible actualizar los gastos del día.')
+        console.error('No fue posible actualizar las salidas del corte', cause)
+        setError('No fue posible actualizar las salidas del día.')
         return
       }
     }
@@ -232,7 +236,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
       setCurrentDraft(
         applyClosingSummary(
           closingService.create(storeId, date, user.id),
-          expenseTotals,
+          operational,
         ),
       )
       setSaveState('idle')
@@ -251,11 +255,17 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
     setSaving(true)
     setError(undefined)
     try {
-      const latestDraft = await closingService.save(current, expenseTotals)
-      await closingService.close(latestDraft, expenseTotals, user.id)
+      const latestOperational =
+        await closingService.getOperationalSummary(storeId, date)
+      setOperational(latestOperational)
+      const latestDraft = await closingService.save(
+        current,
+        latestOperational,
+      )
+      const confirmedClosing = await closingService.close(latestDraft)
       saveSequence.current += 1
       setCurrentDraft(undefined)
-      setClosed(true)
+      setClosedClosing(confirmedClosing)
       setMessage('Corte cerrado y confirmado en Supabase.')
     } catch (cause: unknown) {
       console.error('No fue posible cerrar el corte', cause)
@@ -344,7 +354,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
         </article>
       )}
 
-      {!loading && closed && (
+      {!loading && closedClosing && (
         <article className="panel mx-auto mt-8 max-w-xl text-center">
           <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-800">
             <CheckIcon className="size-7" />
@@ -353,6 +363,16 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
           <p className="mt-2 text-sm text-slate-500">
             {selectedStore?.name} · {formatLongDate(date)}
           </p>
+          <dl className="mt-6 space-y-3 rounded-2xl bg-slate-50 p-5 text-sm">
+            <div className="summary-row">
+              <dt>Salidas operativas</dt>
+              <dd>{currencyFormatter.format(Number(closedClosing.operational_outflows_total_snapshot))}</dd>
+            </div>
+            <div className="summary-row">
+              <dt>Salidas de efectivo</dt>
+              <dd>{currencyFormatter.format(Number(closedClosing.cash_outflows_total_snapshot))}</dd>
+            </div>
+          </dl>
         </article>
       )}
 
@@ -594,31 +614,61 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                         <button className="text-action text-xs" type="button" onClick={() => void goToStep(1)}>Editar</button>
                       </dd>
                     </div>
-                    <div className="summary-row text-red-700">
-                      <dt>Gastos del día</dt>
-                      <dd>− {currencyFormatter.format(summary.expensesTotal)}</dd>
-                    </div>
-                    <div className="summary-row border-t border-slate-200 pt-4 font-extrabold text-slate-950">
-                      <dt>Resultado después de gastos</dt>
-                      <dd>{currencyFormatter.format(summary.resultAfterExpenses)}</dd>
-                    </div>
                   </dl>
 
-                  <button
-                    className="text-action mt-5"
-                    type="button"
-                    onClick={() => setShowExpenseDetails((visible) => !visible)}
-                  >
-                    <ReceiptIcon className="size-4" />
-                    {showExpenseDetails ? 'Ocultar gastos' : 'Ver detalle de gastos'}
-                  </button>
+                  <div className="mt-7 border-t border-slate-200 pt-6">
+                    <p className="eyebrow">Salidas operativas</p>
+                    <dl className="mt-4 space-y-4 text-sm">
+                      <div className="summary-row">
+                        <dt>
+                          <span className="block font-bold text-slate-700">Gastos</span>
+                          <span className="mt-0.5 block text-xs text-slate-400">
+                            {operational.expenses.length} {operational.expenses.length === 1 ? 'registro' : 'registros'}
+                          </span>
+                        </dt>
+                        <dd>{currencyFormatter.format(summary.expensesTotal)}</dd>
+                      </div>
+                      <div className="summary-row">
+                        <dt>
+                          <span className="block font-bold text-slate-700">Transferencias</span>
+                          <span className="mt-0.5 block text-xs text-slate-400">
+                            {operational.outgoingTransfers.length} {operational.outgoingTransfers.length === 1 ? 'registro' : 'registros'}
+                          </span>
+                        </dt>
+                        <dd>{currencyFormatter.format(summary.outgoingTransfersTotal)}</dd>
+                      </div>
+                      <div className="summary-row border-t border-slate-200 pt-4 font-extrabold text-slate-950">
+                        <dt>Total salidas</dt>
+                        <dd>{currencyFormatter.format(summary.operationalOutflowsTotal)}</dd>
+                      </div>
+                    </dl>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-x-5 gap-y-3">
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={() => setShowExpenseDetails((visible) => !visible)}
+                    >
+                      <ReceiptIcon className="size-4" />
+                      {showExpenseDetails ? 'Ocultar gastos' : 'Ver detalle de gastos'}
+                    </button>
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={() => setShowTransferDetails((visible) => !visible)}
+                    >
+                      <ReceiptIcon className="size-4" />
+                      {showTransferDetails ? 'Ocultar transferencias' : 'Ver detalle de transferencias'}
+                    </button>
+                  </div>
                   {showExpenseDetails && (
                     <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
-                      {expenses.length === 0 ? (
+                      {operational.expenses.length === 0 ? (
                         <p className="p-4 text-sm text-slate-400">No hay gastos registrados.</p>
                       ) : (
                         <div className="divide-y divide-slate-100">
-                          {expenses.map((expense) => (
+                          {operational.expenses.map((expense) => (
                             <div className="flex items-center gap-3 px-4 py-3 text-sm" key={expense.id}>
                               <div className="min-w-0 flex-1">
                                 <p className="truncate font-semibold text-slate-700">{expense.concept}</p>
@@ -631,6 +681,29 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                       )}
                     </div>
                   )}
+                  {showTransferDetails && (
+                    <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
+                      {operational.outgoingTransfers.length === 0 ? (
+                        <p className="p-4 text-sm text-slate-400">No hay transferencias salientes registradas.</p>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {operational.outgoingTransfers.map((transfer) => {
+                            const origin = stores.find((store) => store.id === transfer.originStoreId)?.name ?? 'Tienda origen'
+                            const destination = stores.find((store) => store.id === transfer.destinationStoreId)?.name ?? 'Tienda destino'
+                            return (
+                              <div className="flex items-center gap-3 px-4 py-3 text-sm" key={transfer.id}>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate font-semibold text-slate-700">Ticket #{transfer.ticketNumber}</p>
+                                  <p className="mt-0.5 truncate text-xs text-slate-400">{origin} → {destination}</p>
+                                </div>
+                                <strong>{currencyFormatter.format(transfer.amount)}</strong>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </article>
 
                 <article className="panel">
@@ -638,14 +711,22 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
                     <div>
                       <p className="eyebrow">Conciliación de efectivo</p>
                       <h3 className="mt-2 text-xl font-black text-slate-950">Caja física</h3>
+                      <p className="mt-1 text-xs text-slate-500">Las transferencias de mercancía no modifican este cálculo.</p>
                     </div>
                     <button className="text-action text-xs" type="button" onClick={() => void goToStep(2)}>Editar</button>
                   </div>
                   <dl className="mt-6 space-y-4 text-sm">
-                    <div className="summary-row"><dt>Ventas brutas</dt><dd>{currencyFormatter.format(draft.grossSales)}</dd></div>
-                    <div className="summary-row text-red-700"><dt>Gastos en efectivo</dt><dd>− {currencyFormatter.format(summary.cashExpensesTotal)}</dd></div>
-                    <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Efectivo esperado</dt><dd>{currencyFormatter.format(summary.expectedCash)}</dd></div>
                     <div className="summary-row"><dt>Efectivo contado</dt><dd>{currencyFormatter.format(summary.countedCash)}</dd></div>
+                    <div className="summary-row text-slate-700">
+                      <dt>
+                        <span className="block">Salidas de efectivo</span>
+                        <span className="mt-0.5 block text-xs text-slate-400">Gastos desde caja</span>
+                      </dt>
+                      <dd>+ {currencyFormatter.format(summary.cashOutflowsTotal)}</dd>
+                    </div>
+                    <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Efectivo bruto reconstruido</dt><dd>{currencyFormatter.format(summary.grossCashReconstructed)}</dd></div>
+                    <div className="summary-row border-t border-slate-200 pt-4"><dt>Ventas brutas</dt><dd>{currencyFormatter.format(draft.grossSales)}</dd></div>
+                    <div className="summary-row"><dt>Efectivo esperado después de gastos de caja</dt><dd>{currencyFormatter.format(summary.expectedCash)}</dd></div>
                     <div className="summary-row">
                       <dt>Saldo en caja</dt>
                       <dd className="flex items-center gap-3">
