@@ -117,6 +117,9 @@ describe('AppShell mobile navigation', () => {
     expect(mobileNav).toContain('aria-label="Más"')
     expect(mobileNav).toContain('aria-expanded="false"')
     expect(mobileNav).toContain('aria-haspopup="menu"')
+    expect(markup.match(/data-state="closed"/g)).toHaveLength(2)
+    expect(markup).toContain('aria-hidden="true"')
+    expect(markup).toContain('inert=""')
   })
 
   it('marks Más as current on a secondary module', () => {

@@ -251,7 +251,17 @@ button:disabled {
 
   .mobile-more-backdrop {
     z-index: 35;
-    @apply fixed inset-0 bg-transparent;
+    opacity: 0;
+    pointer-events: none;
+    background: rgb(46 34 31 / 0.02);
+    transition: opacity 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    @apply fixed inset-0;
+  }
+
+  .mobile-more-backdrop[data-state='open'] {
+    opacity: 1;
+    pointer-events: auto;
+    transition-duration: 160ms;
   }
 
   .mobile-more-menu {
@@ -259,7 +269,22 @@ button:disabled {
     bottom: calc(4.5rem + env(safe-area-inset-bottom));
     width: min(18rem, calc(100vw - 1rem));
     max-height: calc(100dvh - 10rem - env(safe-area-inset-bottom));
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px) scale(0.98);
+    transform-origin: bottom right;
+    transition:
+      opacity 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    will-change: opacity, transform;
     @apply fixed z-50 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_14px_40px_rgba(46,34,31,0.18)];
+  }
+
+  .mobile-more-menu[data-state='open'] {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+    transition-duration: 180ms;
   }
 
   .mobile-more-menu-item,
@@ -273,6 +298,12 @@ button:disabled {
 
   .mobile-more-menu-item-active {
     @apply bg-teal-50 text-teal-800;
+  }
+
+  .mobile-more-menu-item:active,
+  .mobile-more-menu-item-active:active {
+    transform: scale(0.98);
+    transition-duration: 90ms;
   }
 
   .profile-overlay {
@@ -570,6 +601,22 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .mobile-nav-item,
+  .mobile-nav-active,
+  .mobile-more-backdrop,
+  .mobile-more-menu,
+  .mobile-more-menu-item,
+  .mobile-more-menu-item-active {
+    transition-duration: 1ms;
+  }
+
+  .mobile-more-menu,
+  .mobile-more-menu[data-state='open'],
+  .mobile-more-menu-item:active,
+  .mobile-more-menu-item-active:active {
+    transform: none;
+  }
+
   .profile-overlay,
   .profile-drawer,
   .app-modal-overlay,

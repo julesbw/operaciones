@@ -137,6 +137,7 @@ export function AppShell({
     (item) => item.mobilePlacement === 'more',
   )
   const moreActive = moreMobileItems.some((item) => item.id === currentPage)
+  const moreMenuState = moreMenuOpen ? 'open' : 'closed'
   const roleLabel = user.role === 'admin' ? 'Administrador' : 'Cashier'
 
   useEffect(() => {
@@ -364,7 +365,11 @@ export function AppShell({
             aria-expanded={moreMenuOpen}
             aria-haspopup="menu"
             aria-label="Más"
-            className={moreActive ? 'mobile-nav-active' : 'mobile-nav-item'}
+            className={
+              moreActive || moreMenuOpen
+                ? 'mobile-nav-active'
+                : 'mobile-nav-item'
+            }
             ref={moreButtonRef}
             type="button"
             onClick={() => setMoreMenuOpen((open) => !open)}
@@ -374,44 +379,44 @@ export function AppShell({
           </button>
         </nav>
 
-        {moreMenuOpen && (
-          <>
-            <div
-              aria-hidden="true"
-              className="mobile-more-backdrop lg:hidden"
-              onClick={() => closeMoreMenu()}
-            />
-            <div
-              aria-label="Más módulos"
-              className="mobile-more-menu lg:hidden"
-              id="mobile-more-menu"
-              role="menu"
-            >
-              {moreMobileItems.map((item) => {
-                const Icon = item.icon
-                const active = item.id === currentPage
-                return (
-                  <button
-                    aria-current={active ? 'page' : undefined}
-                    className={
-                      active
-                        ? 'mobile-more-menu-item-active'
-                        : 'mobile-more-menu-item'
-                    }
-                    key={item.id}
-                    role="menuitem"
-                    type="button"
-                    onClick={() => navigateFromMobile(item.id)}
-                  >
-                    <Icon className="size-5" />
-                    <span className="min-w-0 flex-1 text-left">{item.label}</span>
-                    <ChevronRightIcon className="size-4 text-slate-400" />
-                  </button>
-                )
-              })}
-            </div>
-          </>
-        )}
+        <div
+          aria-hidden="true"
+          className="mobile-more-backdrop lg:hidden"
+          data-state={moreMenuState}
+          onClick={() => closeMoreMenu()}
+        />
+        <div
+          aria-label="Más módulos"
+          aria-hidden={!moreMenuOpen}
+          className="mobile-more-menu lg:hidden"
+          data-state={moreMenuState}
+          id="mobile-more-menu"
+          inert={!moreMenuOpen ? true : undefined}
+          role="menu"
+        >
+          {moreMobileItems.map((item) => {
+            const Icon = item.icon
+            const active = item.id === currentPage
+            return (
+              <button
+                aria-current={active ? 'page' : undefined}
+                className={
+                  active
+                    ? 'mobile-more-menu-item-active'
+                    : 'mobile-more-menu-item'
+                }
+                key={item.id}
+                role="menuitem"
+                type="button"
+                onClick={() => navigateFromMobile(item.id)}
+              >
+                <Icon className="size-5" />
+                <span className="min-w-0 flex-1 text-left">{item.label}</span>
+                <ChevronRightIcon className="size-4 text-slate-400" />
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {profileOpen && (
