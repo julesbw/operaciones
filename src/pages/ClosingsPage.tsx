@@ -110,6 +110,12 @@ const CLOSING_TIME_FORMATTER = new Intl.DateTimeFormat('es-MX', {
   minute: '2-digit',
 })
 
+const COMPACT_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+})
+
 type ClosingView =
   | { kind: 'history' }
   | { kind: 'flow'; storeId: string; businessDate: string }
@@ -122,6 +128,13 @@ type ClosingHistoryEntry =
 function formatClosingTime(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '' : CLOSING_TIME_FORMATTER.format(date)
+}
+
+function compactDate(value: string): string {
+  return COMPACT_DATE_FORMATTER.format(new Date(`${value}T12:00:00`)).replace(
+    '.',
+    '',
+  )
 }
 
 export function reconcileDraftSelection(
@@ -365,6 +378,16 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
   const queryStoreId = storeFilter === ALL_STORES ? undefined : storeFilter
 
+  function changeDateFrom(value: string) {
+    setDateFrom(value)
+    if (value > dateTo) setDateTo(value)
+  }
+
+  function changeDateTo(value: string) {
+    setDateTo(value)
+    if (value < dateFrom) setDateFrom(value)
+  }
+
   async function loadHistory() {
     setLoading(true)
     setLoadError('')
@@ -478,12 +501,32 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
           />
         </div>
 
-        <div className="panel grid gap-4 p-4 sm:grid-cols-2 sm:p-5">
-          <label className="field-label">Desde
-            <input className="field" max={dateTo} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+        <div className="panel grid grid-cols-2 gap-x-2 gap-y-3 p-3 sm:gap-4 sm:p-5">
+          <label className="field-label min-w-0">
+            Desde
+            <span className="expense-date-control">
+              <span aria-hidden="true">{compactDate(dateFrom)}</span>
+              <input
+                aria-label="Fecha inicial"
+                max={dateTo}
+                type="date"
+                value={dateFrom}
+                onChange={(event) => changeDateFrom(event.target.value)}
+              />
+            </span>
           </label>
-          <label className="field-label">Hasta
-            <input className="field" min={dateFrom} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          <label className="field-label min-w-0">
+            Hasta
+            <span className="expense-date-control">
+              <span aria-hidden="true">{compactDate(dateTo)}</span>
+              <input
+                aria-label="Fecha final"
+                min={dateFrom}
+                type="date"
+                value={dateTo}
+                onChange={(event) => changeDateTo(event.target.value)}
+              />
+            </span>
           </label>
         </div>
 
