@@ -35,6 +35,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
-    allowedHosts: ["macbook-air-de-julio.tail84c614.ts.net"],
+    allowedHosts: [
+      "macbook-air-de-julio.tail84c614.ts.net",
+      "rog-zephyrus-julio.tail84c614.ts.net",
+    ],
   },
 });

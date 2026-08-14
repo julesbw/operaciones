@@ -6,6 +6,10 @@ import type {
   PaymentFundingSource,
   StoreStatus,
 } from '../domain/models'
+import type {
+  ExportBatchStatus,
+  OperationsExportFile,
+} from '../domain/exportContract'
 
 type TableDefinition<Row, Insert, Update> = {
   Row: Row
@@ -134,6 +138,7 @@ export type CashClosingRow = {
   store_id: string
   business_date: string
   closing_number: number
+  store_name_snapshot: string
   gross_sales: number
   expense_total: number
   cash_expense_total: number
@@ -206,6 +211,45 @@ export type CashClosingCandidatesResult = {
   >
   transfers: MerchandiseTransferRow[]
   payments: PaymentRow[]
+}
+
+export type ExportCandidateRow = {
+  id: string
+  store_id: string
+  store_name: string
+  business_date: string
+  sequence_number: number
+  gross_cash: number
+  expenses_total: number
+  cash_expenses_total: number
+  store_cash_payments_total: number
+  net_cash: number
+  cash_balance: number
+  physical_cash_amount: number
+  transfers_total: number
+  closed_at: string
+}
+
+export type ExportBatchRow = {
+  id: string
+  contract_version: '2.0'
+  status: ExportBatchStatus
+  payload_snapshot: OperationsExportFile
+  created_by: string
+  created_at: string
+  confirmed_by: string | null
+  confirmed_at: string | null
+  cancelled_by: string | null
+  cancelled_at: string | null
+}
+
+export type ExportBatchItemRow = {
+  batch_id: string
+  source_type: string
+  source_id: string
+  cash_closing_id: string | null
+  reservation_status: 'reserved' | 'confirmed' | 'released'
+  created_at: string
 }
 
 export type Database = {
@@ -313,7 +357,7 @@ export type Database = {
           | 'id'
           | 'store_id'
           | 'business_date'
-          | 'closing_number'
+              | 'closing_number'
           | 'gross_sales'
           | 'expense_total'
           | 'cash_expense_total'
@@ -340,6 +384,7 @@ export type Database = {
               | 'store_cash_payments_total_snapshot'
               | 'operational_outflows_total_snapshot'
               | 'cash_outflows_total_snapshot'
+              | 'store_name_snapshot'
               | 'notes'
               | 'status'
             >
@@ -401,6 +446,8 @@ export type Database = {
         >,
         never
       >
+      export_batches: TableDefinition<ExportBatchRow, never, never>
+      export_batch_items: TableDefinition<ExportBatchItemRow, never, never>
     }
     Views: Record<string, never>
     Functions: {
@@ -471,6 +518,29 @@ export type Database = {
           p_business_date: string
         }
         Returns: CashClosingCandidatesResult
+      }
+      get_export_candidates: {
+        Args: {
+          p_store_id: string | null
+          p_date_from: string | null
+          p_date_to: string | null
+        }
+        Returns: ExportCandidateRow[]
+      }
+      prepare_export_batch: {
+        Args: {
+          p_batch_id: string
+          p_closing_ids: string[]
+        }
+        Returns: ExportBatchRow
+      }
+      confirm_export_batch: {
+        Args: { p_batch_id: string }
+        Returns: ExportBatchRow
+      }
+      cancel_export_batch: {
+        Args: { p_batch_id: string }
+        Returns: ExportBatchRow
       }
       create_collaborator: {
         Args: {

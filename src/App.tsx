@@ -9,6 +9,7 @@ import { AttendancePage } from './pages/AttendancePage'
 import { ClosingsPage } from './pages/ClosingsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ExpensesPage } from './pages/ExpensesPage'
+import { ExportsPage } from './pages/ExportsPage'
 import { LoginPage } from './pages/LoginPage'
 import { PaymentsPage } from './pages/PaymentsPage'
 import { SettingsPage } from './pages/SettingsPage'
@@ -300,7 +301,9 @@ function App() {
 
   function navigate(nextPage: PageId) {
     if (
-      (nextPage === 'closings' || nextPage === 'payments') &&
+      (nextPage === 'closings' ||
+        nextPage === 'payments' ||
+        nextPage === 'exports') &&
       user?.role !== 'admin'
     ) {
       setPage('home')
@@ -420,6 +423,13 @@ function App() {
         <PaymentsPage stores={stores} user={user} />
       )}
       {page === 'closings' && user.role === 'admin' && <ClosingsPage stores={stores} user={user} />}
+      {page === 'exports' && user.role === 'admin' && (
+        <ExportsPage
+          networkAvailable={networkAvailable}
+          stores={stores}
+          user={user}
+        />
+      )}
       {page === 'settings' && (
         <SettingsPage stores={stores} user={user} onStoresChanged={() => void refreshLocalState()} />
       )}

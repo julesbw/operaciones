@@ -1,4 +1,5 @@
 import { db, type OperationsDatabase } from '../db/database'
+import type { ExportBatch, ExportCandidate } from '../domain/exportContract'
 import type {
   AttendanceRecord,
   CashClosingDraft,
@@ -52,6 +53,8 @@ export class OperationsRepository {
         this.database.payments,
         this.database.paymentAttendanceItems,
         this.database.compensationHistory,
+        this.database.exportCandidates,
+        this.database.exportBatches,
       ],
       async () => {
         await Promise.all([
@@ -66,6 +69,8 @@ export class OperationsRepository {
           this.database.payments.clear(),
           this.database.paymentAttendanceItems.clear(),
           this.database.compensationHistory.clear(),
+          this.database.exportCandidates.clear(),
+          this.database.exportBatches.clear(),
         ])
       },
     )
@@ -442,11 +447,15 @@ export class OperationsRepository {
       this.database.payments,
       this.database.paymentAttendanceItems,
       this.database.compensationHistory,
+      this.database.exportCandidates,
+      this.database.exportBatches,
       async () => {
         await Promise.all([
           this.database.payments.clear(),
           this.database.paymentAttendanceItems.clear(),
           this.database.compensationHistory.clear(),
+          this.database.exportCandidates.clear(),
+          this.database.exportBatches.clear(),
         ])
       },
     )
@@ -628,6 +637,83 @@ export class OperationsRepository {
 
   deleteClosingDraft(id: string): Promise<void> {
     return this.database.closingDrafts.delete(id)
+  }
+
+  async replaceExportCandidatesForScope(
+    candidates: ExportCandidate[],
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.exportCandidates,
+      async () => {
+        const existing = await this.database.exportCandidates.toArray()
+        const replacedIds = existing
+          .filter((candidate) => {
+            if (storeId && candidate.storeId !== storeId) return false
+            if (dateFrom && candidate.businessDate < dateFrom) return false
+            if (dateTo && candidate.businessDate > dateTo) return false
+            return true
+          })
+          .map((candidate) => candidate.id)
+
+        await this.database.exportCandidates.bulkDelete(replacedIds)
+        await this.database.exportCandidates.bulkPut(candidates)
+      },
+    )
+  }
+
+  async listExportCandidates(
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<ExportCandidate[]> {
+    const candidates = storeId
+      ? await this.database.exportCandidates.where('storeId').equals(storeId).toArray()
+      : await this.database.exportCandidates.toArray()
+
+    return candidates
+      .filter((candidate) => {
+        if (dateFrom && candidate.businessDate < dateFrom) return false
+        if (dateTo && candidate.businessDate > dateTo) return false
+        return true
+      })
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.businessDate.localeCompare(left.businessDate) ||
+          right.sequenceNumber - left.sequenceNumber,
+      )
+  }
+
+  saveExportBatch(batch: ExportBatch): Promise<string> {
+    return this.database.exportBatches.put(batch)
+  }
+
+  async replaceExportBatches(batches: ExportBatch[]): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.exportBatches,
+      async () => {
+        await this.database.exportBatches.clear()
+        await this.database.exportBatches.bulkPut(batches)
+      },
+    )
+  }
+
+  async listExportBatches(): Promise<ExportBatch[]> {
+    // oxlint-disable-next-line unicorn/no-array-reverse -- Dexie Collection.reverse(), not Array.reverse().
+    return this.database.exportBatches.orderBy('createdAt').reverse().toArray()
+  }
+
+  getExportBatch(id: string): Promise<ExportBatch | undefined> {
+    return this.database.exportBatches.get(id)
+  }
+
+  deleteExportCandidates(ids: readonly string[]): Promise<void> {
+    return this.database.exportCandidates.bulkDelete([...ids])
   }
 }
 

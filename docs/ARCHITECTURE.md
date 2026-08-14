@@ -35,7 +35,7 @@ UI operativa inmediata                  perfil + referencias
 
 `loading-local` sólo cubre la apertura de Dexie y la lectura del contexto. Si existe un contexto con acceso offline habilitado, React muestra inmediatamente los datos locales; la restauración de Auth, las referencias y la sincronización continúan en segundo plano. Si el dispositivo nunca fue inicializado, el primer uso sin red muestra una pantalla explícita en lugar de esperar Supabase.
 
-Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos. Dexie v10 agrega `payments`, `paymentAttendanceItems` y `compensationHistory`, además de la selección de pagos en los borradores de Corte. Estas tablas administrativas se limpian si el perfil autenticado deja de ser administrador.
+Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos. Dexie v10 agrega `payments`, `paymentAttendanceItems` y `compensationHistory`, además de la selección de pagos en los borradores de Corte. Dexie v11 agrega `exportCandidates` y `exportBatches` para consulta cacheada. Estas tablas administrativas se limpian si el perfil autenticado deja de ser administrador.
 
 Una inicialización se considera completa después de obtener el perfil y las referencias autorizadas, verificar el app shell en producción y guardar `LocalAppContext`. El service worker precachea el HTML y descubre los bundles JS/CSS con hash generados por Vite; las respuestas de Supabase no forman parte de esa caché.
 
@@ -100,3 +100,33 @@ Antes de cerrar, la PWA procesa la cola y bloquea la confirmación si un movimie
 Puede haber varios cortes cerrados para la misma tienda y fecha. Bajo un bloqueo transaccional por ese par, PostgreSQL asigna `closing_number = max + 1`; la unicidad real es `store_id + business_date + closing_number`. Cerrar un corte inmoviliza únicamente sus movimientos asociados y no impide registrar otros o crear un nuevo corte el mismo día.
 
 El saldo también se captura por denominación en `balanceBills`. `withdrawBills` se deriva restando cada valor a `bills`; ninguna denominación del saldo puede superar la cantidad contada. Dexie v5 conserva borradores anteriores representando su saldo monetario histórico dentro de `monedas`, ya que esos borradores no contenían una composición verificable de billetes.
+
+## Exportación de Cortes
+
+Exportación es un flujo administrativo online-first para sus transiciones y
+offline-readable para datos previamente cacheados. La preparación recibe IDs de
+Cortes, pero toda regla financiera se vuelve a evaluar dentro de PostgreSQL. El
+cliente descarga directamente el `payload_snapshot`; no construye ni recalcula
+el contrato.
+
+```text
+Cortes cerrados + relaciones snapshot
+                 ↓ prepare_export_batch
+        export_batches(prepared)
+                 ↓
+       JSON 2.0 descargable
+          ↙              ↘
+     cancelled         confirmed
+   libera Cortes     conserva reserva
+```
+
+Una restricción parcial sobre `export_batch_items.cash_closing_id` impide que un
+Corte esté reservado o confirmado en más de un lote. Cancelar cambia el item a
+`released`, conservando auditoría y recuperando elegibilidad. Confirmar o
+cancelar repetidamente es idempotente en su estado terminal válido.
+
+El efecto financiero y el físico están desacoplados. La rama financiera usa
+una entrada por el efectivo bruto reconstruido y salidas individuales sólo para
+gastos en efectivo y pagos `store_cash`. La rama física contiene una única
+composición por Corte: total de billetes, conteos y monto de monedas. Consulta
+[`EXPORTS_V2.md`](EXPORTS_V2.md) para el contrato completo.

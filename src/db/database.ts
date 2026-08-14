@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import { EMPTY_BILLS } from '../domain/constants'
+import type { ExportBatch, ExportCandidate } from '../domain/exportContract'
 import type {
   AttendanceRecord,
   CashClosingDraft,
@@ -46,6 +47,8 @@ export class OperationsDatabase extends Dexie {
   payments!: Table<Payment, string>
   paymentAttendanceItems!: Table<PaymentAttendanceItem, [string, string]>
   compensationHistory!: Table<CollaboratorCompensationHistory, string>
+  exportCandidates!: Table<ExportCandidate, string>
+  exportBatches!: Table<ExportBatch, string>
 
   constructor(databaseName = OPERATIONS_DATABASE_NAME) {
     super(databaseName)
@@ -82,6 +85,12 @@ export class OperationsDatabase extends Dexie {
         '&[paymentId+attendanceId], &attendanceId, paymentId, periodStart, periodEnd, workDateSnapshot',
       compensationHistory:
         '&id, collaboratorId, effectiveFrom, [collaboratorId+effectiveFrom], recordedAt',
+    }
+    const schemaV11 = {
+      ...schemaV10,
+      exportCandidates:
+        '&id, storeId, businessDate, [storeId+businessDate], closedAt, cachedAt',
+      exportBatches: '&id, status, createdAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -181,6 +190,7 @@ export class OperationsDatabase extends Dexie {
             draft.knownPaymentIds ??= []
           })
       })
+    this.version(11).stores(schemaV11)
   }
 }
 

@@ -13,6 +13,7 @@ import {
   CashIcon,
   ChevronRightIcon,
   HomeIcon,
+  ExportIcon,
   LogoutIcon,
   MenuIcon,
   ReceiptIcon,
@@ -32,6 +33,7 @@ export type PageId =
   | 'attendance'
   | 'payments'
   | 'closings'
+  | 'exports'
   | 'settings'
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
@@ -75,6 +77,13 @@ const NAVIGATION: NavigationItem[] = [
     id: 'closings',
     label: 'Cortes',
     icon: CashIcon,
+    adminOnly: true,
+    mobilePlacement: 'more',
+  },
+  {
+    id: 'exports',
+    label: 'Exportación',
+    icon: ExportIcon,
     adminOnly: true,
     mobilePlacement: 'more',
   },

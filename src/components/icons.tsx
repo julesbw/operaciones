@@ -101,6 +101,15 @@ export function WalletIcon(props: IconProps) {
   )
 }
 
+export function ExportIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 3v12M7 10l5 5 5-5" />
+      <path d="M5 14v6h14v-6" />
+    </IconBase>
+  )
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <IconBase {...props}>
