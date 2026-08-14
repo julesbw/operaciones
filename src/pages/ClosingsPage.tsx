@@ -38,6 +38,7 @@ import {
   type ClosingOperationalSummary,
   type ClosingOperationalTotals,
 } from '../services/closingService'
+import { connectivityService } from '../services/connectivityService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import { currencyFormatter } from '../utils/money'
@@ -696,7 +697,10 @@ function ClosingFlow({
 
     if (step === 4) {
       try {
-        if (isSupabaseConfigured && navigator.onLine) {
+        if (
+          isSupabaseConfigured &&
+          connectivityService.isNetworkAvailable()
+        ) {
           await syncService.process()
         }
         const latestCandidates =
@@ -803,7 +807,8 @@ function ClosingFlow({
     }
   }
 
-  const canClose = isSupabaseConfigured && navigator.onLine
+  const canClose =
+    isSupabaseConfigured && connectivityService.isNetworkAvailable()
   const balanceErrors = draft ? validateClosingBillCounts(draft) : []
   const invalidCashBalance = balanceErrors.length > 0
 

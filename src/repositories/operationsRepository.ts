@@ -4,6 +4,7 @@ import type {
   CashClosingDraft,
   Collaborator,
   Expense,
+  LocalAppContext,
   MerchandiseTransfer,
   Store,
   SyncEntity,
@@ -16,6 +17,84 @@ export class OperationsRepository {
 
   listStores(): Promise<Store[]> {
     return this.database.stores.orderBy('name').toArray()
+  }
+
+  getLocalAppContext(): Promise<LocalAppContext | undefined> {
+    return this.database.appContexts.get('current')
+  }
+
+  saveLocalAppContext(context: LocalAppContext): Promise<string> {
+    return this.database.appContexts.put(context)
+  }
+
+  async updateLocalAppContext(
+    changes: Partial<Omit<LocalAppContext, 'id' | 'userId'>>,
+  ): Promise<void> {
+    const updated = await this.database.appContexts.update('current', changes)
+    if (updated === 0) throw new Error('No existe un contexto local inicializado')
+  }
+
+  async clearCachedIdentityData(): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      [
+        this.database.stores,
+        this.database.collaborators,
+        this.database.attendanceRecords,
+        this.database.expenses,
+        this.database.merchandiseTransfers,
+        this.database.syncQueue,
+        this.database.closingDrafts,
+        this.database.appContexts,
+      ],
+      async () => {
+        await Promise.all([
+          this.database.stores.clear(),
+          this.database.collaborators.clear(),
+          this.database.attendanceRecords.clear(),
+          this.database.expenses.clear(),
+          this.database.merchandiseTransfers.clear(),
+          this.database.syncQueue.clear(),
+          this.database.closingDrafts.clear(),
+          this.database.appContexts.clear(),
+        ])
+      },
+    )
+  }
+
+  async getLocalProtectionSummary(): Promise<{
+    protectedCount: number
+    ownerIds: string[]
+    unresolvedCount: number
+  }> {
+    const [queue, drafts] = await Promise.all([
+      this.database.syncQueue.toArray(),
+      this.database.closingDrafts.toArray(),
+    ])
+    const queuedOwners = await Promise.all(
+      queue.map(async (item) => {
+        if (item.entityType === 'expense') {
+          return (await this.database.expenses.get(item.entityId))?.createdBy
+        }
+        if (item.entityType === 'attendance') {
+          return (await this.database.attendanceRecords.get(item.entityId))
+            ?.recordedBy
+        }
+        return (
+          await this.database.merchandiseTransfers.get(item.entityId)
+        )?.createdBy
+      }),
+    )
+    const owners = [
+      ...queuedOwners,
+      ...drafts.map((draft) => draft.createdBy || undefined),
+    ]
+
+    return {
+      protectedCount: queue.length + drafts.length,
+      ownerIds: [...new Set(owners.filter((owner): owner is string => Boolean(owner)))],
+      unresolvedCount: owners.filter((owner) => !owner).length,
+    }
   }
 
   saveStores(stores: Store[]): Promise<void> {

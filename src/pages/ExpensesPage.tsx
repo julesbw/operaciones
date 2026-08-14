@@ -29,6 +29,7 @@ import {
   expenseService,
   ExpenseValidationError,
 } from '../services/expenseService'
+import { connectivityService } from '../services/connectivityService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import { currencyFormatter } from '../utils/money'
@@ -258,7 +259,11 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
         user.id,
       )
       await load()
-      setFeedback('Gasto guardado en este dispositivo.')
+      setFeedback(
+        connectivityService.isNetworkAvailable()
+          ? 'Gasto registrado'
+          : 'Gasto registrado. Pendiente de sincronizar.',
+      )
       setFormOpen(false)
       onDataChanged()
       void syncService

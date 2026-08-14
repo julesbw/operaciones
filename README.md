@@ -14,6 +14,8 @@ npm run dev
 
 Sin variables de Supabase la aplicación inicia en modo demostración, con perfiles de cajera y administración. Los datos se guardan en la base IndexedDB `operaciones-db`.
 
+Después de una inicialización online completa, la PWA puede arrancar desde cero sin conexión. El contexto local permite presentar el perfil y los datos cacheados, pero Supabase Auth, RLS y las RPC siguen siendo la única autoridad para sincronizar y para operaciones definitivas como cerrar un corte. El primer uso del dispositivo siempre requiere conexión.
+
 Conecta el mismo proyecto de Arrendamientos usando únicamente credenciales públicas:
 
 ```env

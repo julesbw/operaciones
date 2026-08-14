@@ -1,6 +1,7 @@
 import type { Store } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
+import { connectivityService } from './connectivityService'
 
 class StoreService {
   list() {
@@ -20,6 +21,9 @@ class StoreService {
     }
 
     if (supabase) {
+      connectivityService.requireOnline(
+        'Se necesita conexión para crear una tienda.',
+      )
       const { error } = await supabase.from('stores').insert({
         id: store.id,
         name: store.name,
@@ -45,6 +49,9 @@ class StoreService {
     }
 
     if (supabase) {
+      connectivityService.requireOnline(
+        'Se necesita conexión para modificar una tienda.',
+      )
       const { error } = await supabase
         .from('stores')
         .update({

@@ -5,6 +5,7 @@ import type {
   CashClosingDraft,
   Collaborator,
   Expense,
+  LocalAppContext,
   MerchandiseTransfer,
   Store,
   SyncQueueItem,
@@ -36,6 +37,7 @@ export class OperationsDatabase extends Dexie {
   merchandiseTransfers!: Table<MerchandiseTransfer, string>
   syncQueue!: Table<SyncQueueItem, string>
   closingDrafts!: Table<CashClosingDraft, string>
+  appContexts!: Table<LocalAppContext, string>
 
   constructor(databaseName = OPERATIONS_DATABASE_NAME) {
     super(databaseName)
@@ -59,6 +61,10 @@ export class OperationsDatabase extends Dexie {
       ...schemaV3,
       merchandiseTransfers:
         '&id, originStoreId, destinationStoreId, businessDate, [originStoreId+businessDate], [destinationStoreId+businessDate], ticketNumber, syncStatus, createdAt',
+    }
+    const schemaV9 = {
+      ...schemaV6,
+      appContexts: '&id, userId, accessState, updatedAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -146,6 +152,7 @@ export class OperationsDatabase extends Dexie {
             draft.movementSelectionInitialized ??= false
           })
       })
+    this.version(9).stores(schemaV9)
   }
 }
 

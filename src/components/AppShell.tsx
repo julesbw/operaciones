@@ -54,10 +54,12 @@ const NAVIGATION: NavigationItem[] = [
 ]
 
 type AppShellProps = {
+  backendReachable?: boolean
   children: ReactNode
   currentPage: PageId
-  online: boolean
+  networkAvailable: boolean
   pendingCount: number
+  syncError?: string
   syncing: boolean
   user: UserProfile
   onNavigate: (page: PageId) => void
@@ -75,10 +77,12 @@ function initials(name: string): string {
 }
 
 export function AppShell({
+  backendReachable,
   children,
   currentPage,
-  online,
+  networkAvailable,
   pendingCount,
+  syncError,
   syncing,
   user,
   onNavigate,
@@ -223,19 +227,23 @@ export function AppShell({
 
           <div className="ml-auto flex items-center gap-2">
             <button
-              className={`sync-pill ${!online ? 'sync-pill-offline' : ''}`}
-              disabled={syncing}
+              aria-label={syncError ?? 'Sincronizar datos'}
+              className={`sync-pill ${!networkAvailable || backendReachable === false ? 'sync-pill-offline' : ''}`}
+              disabled={syncing || !networkAvailable}
+              title={syncError}
               type="button"
               onClick={onSync}
             >
-              {!online ? (
+              {!networkAvailable || backendReachable === false ? (
                 <WifiOffIcon className="size-4" />
               ) : (
                 <SyncIcon className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
               )}
               <span className="hidden sm:inline">
-                {!online
+                {!networkAvailable
                   ? 'Sin conexión'
+                  : backendReachable === false
+                    ? 'Error de sincronización'
                   : syncing
                     ? 'Sincronizando'
                     : pendingCount > 0

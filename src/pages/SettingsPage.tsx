@@ -9,6 +9,7 @@ import {
 import type { Collaborator, Store, UserProfile } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { collaboratorService } from '../services/collaboratorService'
+import { connectivityService } from '../services/connectivityService'
 import { referenceDataService } from '../services/referenceDataService'
 import { storeService } from '../services/storeService'
 import { WEEKDAYS } from '../domain/constants'
@@ -60,7 +61,10 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const collaboratorFabRef = useRef<HTMLButtonElement>(null)
   const storeNameInputRef = useRef<HTMLInputElement>(null)
   const collaboratorNameInputRef = useRef<HTMLInputElement>(null)
-  const canMutate = isAdmin && (user.demo || (!isSupabaseConfigured ? false : navigator.onLine))
+  const canMutate =
+    isAdmin &&
+    (user.demo ||
+      (isSupabaseConfigured && connectivityService.isNetworkAvailable()))
   const activeStores = stores.filter((store) => store.status === 'active')
 
   useEffect(() => {

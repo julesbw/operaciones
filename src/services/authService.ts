@@ -43,18 +43,31 @@ async function loadRemoteProfile(userId: string): Promise<UserProfile> {
 }
 
 class AuthService {
-  async restore(): Promise<UserProfile | undefined> {
+  async getSessionUserId(): Promise<string | undefined> {
     if (!isSupabaseConfigured) {
       const savedRole = localStorage.getItem(DEMO_SESSION_KEY)
-      if (savedRole === 'admin') return DEMO_ADMIN
-      if (savedRole === 'cashier') return DEMO_CASHIER
+      if (savedRole === 'admin') return DEMO_ADMIN.id
+      if (savedRole === 'cashier') return DEMO_CASHIER.id
       return undefined
     }
 
     const { data, error } = await supabase!.auth.getSession()
     if (error) throw error
-    if (!data.session) return undefined
-    return loadRemoteProfile(data.session.user.id)
+    return data.session?.user.id
+  }
+
+  async loadProfile(userId: string): Promise<UserProfile> {
+    if (!isSupabaseConfigured) {
+      if (userId === DEMO_ADMIN.id) return DEMO_ADMIN
+      if (userId === DEMO_CASHIER.id) return DEMO_CASHIER
+      throw new Error('La sesión de demostración no es válida')
+    }
+    return loadRemoteProfile(userId)
+  }
+
+  async restore(): Promise<UserProfile | undefined> {
+    const userId = await this.getSessionUserId()
+    return userId ? this.loadProfile(userId) : undefined
   }
 
   async signIn(email: string, password: string): Promise<UserProfile> {

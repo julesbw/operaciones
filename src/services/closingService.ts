@@ -13,6 +13,7 @@ import type {
   CashClosingTransferItemRow,
 } from '../types/database'
 import { calculateBillsTotal } from '../utils/money'
+import { connectivityService } from './connectivityService'
 import { syncService } from './syncService'
 
 export type ClosingExpenseTotals = {
@@ -236,51 +237,58 @@ class ClosingService {
     storeId: string,
     businessDate: string,
   ): Promise<ClosingOperationalSummary> {
-    if (supabase && (typeof navigator === 'undefined' || navigator.onLine)) {
-      const { data, error } = await supabase.rpc(
-        'get_cash_closing_candidates',
-        {
-          p_store_id: storeId,
-          p_business_date: businessDate,
-        },
-      )
-      if (error) throw error
+    if (supabase && connectivityService.isNetworkAvailable()) {
+      try {
+        const { data, error } = await supabase.rpc(
+          'get_cash_closing_candidates',
+          {
+            p_store_id: storeId,
+            p_business_date: businessDate,
+          },
+        )
+        if (error) throw error
 
-      const expenses: Expense[] = (data?.expenses ?? []).map((expense) => ({
-        id: expense.id,
-        storeId: expense.store_id,
-        businessDate: expense.business_date,
-        amount: Number(expense.amount),
-        concept: expense.concept,
-        paymentMethod: expense.payment_method,
-        notes: expense.notes ?? undefined,
-        createdBy: expense.created_by,
-        createdAt: expense.created_at,
-        updatedAt: expense.updated_at,
-        version: expense.version,
-        syncStatus: 'synced',
-      }))
-      const outgoingTransfers: MerchandiseTransfer[] = (
-        data?.transfers ?? []
-      ).map((transfer) => ({
-        id: transfer.id,
-        originStoreId: transfer.origin_store_id,
-        destinationStoreId: transfer.destination_store_id,
-        ticketNumber: transfer.ticket_number,
-        amount: Number(transfer.amount),
-        businessDate: transfer.business_date,
-        notes: transfer.notes ?? undefined,
-        createdBy: transfer.created_by,
-        createdAt: transfer.created_at,
-        updatedAt: transfer.updated_at,
-        version: transfer.version,
-        syncStatus: 'synced',
-      }))
+        const expenses: Expense[] = (data?.expenses ?? []).map((expense) => ({
+          id: expense.id,
+          storeId: expense.store_id,
+          businessDate: expense.business_date,
+          amount: Number(expense.amount),
+          concept: expense.concept,
+          paymentMethod: expense.payment_method,
+          notes: expense.notes ?? undefined,
+          createdBy: expense.created_by,
+          createdAt: expense.created_at,
+          updatedAt: expense.updated_at,
+          version: expense.version,
+          syncStatus: 'synced',
+        }))
+        const outgoingTransfers: MerchandiseTransfer[] = (
+          data?.transfers ?? []
+        ).map((transfer) => ({
+          id: transfer.id,
+          originStoreId: transfer.origin_store_id,
+          destinationStoreId: transfer.destination_store_id,
+          ticketNumber: transfer.ticket_number,
+          amount: Number(transfer.amount),
+          businessDate: transfer.business_date,
+          notes: transfer.notes ?? undefined,
+          createdBy: transfer.created_by,
+          createdAt: transfer.created_at,
+          updatedAt: transfer.updated_at,
+          version: transfer.version,
+          syncStatus: 'synced',
+        }))
 
-      return {
-        expenses,
-        outgoingTransfers,
-        ...calculateOperationalTotals(expenses, outgoingTransfers),
+        return {
+          expenses,
+          outgoingTransfers,
+          ...calculateOperationalTotals(expenses, outgoingTransfers),
+        }
+      } catch (cause: unknown) {
+        console.error(
+          'No fue posible consultar candidatos remotos; se usarán los datos locales',
+          cause,
+        )
       }
     }
 
@@ -288,12 +296,8 @@ class ClosingService {
       operationsRepository.listExpenses(storeId, businessDate),
       operationsRepository.listMerchandiseTransfers(storeId, businessDate),
     ])
-    const expenses = supabase
-      ? localExpenses.filter((expense) => expense.syncStatus === 'synced')
-      : localExpenses
-    const outgoingTransfers = supabase
-      ? localTransfers.filter((transfer) => transfer.syncStatus === 'synced')
-      : localTransfers
+    const expenses = localExpenses
+    const outgoingTransfers = localTransfers
 
     return {
       expenses,
@@ -323,22 +327,33 @@ class ClosingService {
     dateFrom?: string,
     dateTo = dateFrom,
   ): Promise<CashClosingRow[]> {
-    if (!supabase) return []
+    if (!supabase || !connectivityService.isNetworkAvailable()) return []
 
     let query = supabase.from('cash_closings').select('*').eq('status', 'closed')
     if (storeId) query = query.eq('store_id', storeId)
     if (dateFrom) query = query.gte('business_date', dateFrom)
     if (dateTo) query = query.lte('business_date', dateTo)
 
-    const { data, error } = await query
-      .order('business_date', { ascending: false })
-      .order('closing_number', { ascending: false })
-    if (error) throw error
-    return data
+    try {
+      const { data, error } = await query
+        .order('business_date', { ascending: false })
+        .order('closing_number', { ascending: false })
+      if (error) throw error
+      return data
+    } catch (cause: unknown) {
+      console.error(
+        'No fue posible consultar cortes cerrados; se conservarán los borradores locales',
+        cause,
+      )
+      return []
+    }
   }
 
   async getClosedDetail(id: string): Promise<CashClosingDetail> {
     if (!supabase) throw new Error('Supabase no está configurado')
+    connectivityService.requireOnline(
+      'Se necesita conexión para consultar un corte cerrado.',
+    )
 
     const [closingResult, expensesResult, transfersResult] = await Promise.all([
       supabase.from('cash_closings').select('*').eq('id', id).single(),
@@ -439,6 +454,9 @@ class ClosingService {
     draft: CashClosingDraft,
   ): Promise<CashClosingRow> {
     if (!supabase) throw new Error('Supabase no está configurado')
+    connectivityService.requireOnline(
+      'Se necesita conexión para cerrar el corte.',
+    )
 
     try {
       await syncService.process()

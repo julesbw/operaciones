@@ -46,10 +46,15 @@ describe('OperationsDatabase closing draft migration', () => {
       await upgradedDatabase.open()
       const migrated = await upgradedDatabase.closingDrafts.get('legacy-closing')
 
-      expect(upgradedDatabase.verno).toBe(8)
+      expect(upgradedDatabase.verno).toBe(9)
       expect(
         upgradedDatabase.tables.some(
           (table) => table.name === 'merchandiseTransfers',
+        ),
+      ).toBe(true)
+      expect(
+        upgradedDatabase.tables.some(
+          (table) => table.name === 'appContexts',
         ),
       ).toBe(true)
       expect(migrated).toMatchObject({

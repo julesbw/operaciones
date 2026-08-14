@@ -20,6 +20,25 @@ La captura cotidiana escribe primero en Dexie y actualiza la interfaz sin espera
 
 Las operaciones administrativas críticas (tiendas y cierre definitivo) requieren conexión. Los cortes incompletos se conservan como borradores locales.
 
+## Arranque offline-first
+
+El arranque tiene dos fases independientes:
+
+```text
+Local bootstrap                         Remote bootstrap
+Dexie + LocalAppContext                 sesión Supabase
+        ↓                                      ↓
+UI operativa inmediata                  perfil + referencias
+                                               ↓
+                                         push + pull
+```
+
+`loading-local` sólo cubre la apertura de Dexie y la lectura del contexto. Si existe un contexto con acceso offline habilitado, React muestra inmediatamente los datos locales; la restauración de Auth, las referencias y la sincronización continúan en segundo plano. Si el dispositivo nunca fue inicializado, el primer uso sin red muestra una pantalla explícita en lugar de esperar Supabase.
+
+Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos.
+
+Una inicialización se considera completa después de obtener el perfil y las referencias autorizadas, verificar el app shell en producción y guardar `LocalAppContext`. El service worker precachea el HTML y descubre los bundles JS/CSS con hash generados por Vite; las respuestas de Supabase no forman parte de esa caché.
+
 ## Decisiones de seguridad
 
 - La UI oculta funciones por rol, pero PostgreSQL RLS es la autoridad.
@@ -29,10 +48,15 @@ Las operaciones administrativas críticas (tiendas y cierre definitivo) requiere
 - Los históricos referencian UUID; renombrar o desactivar una tienda no rompe relaciones.
 - No se eliminan físicamente tiendas, colaboradores ni transferencias desde la aplicación.
 - Una cashier puede descargar el catálogo de tiendas activas para elegir un destino y conserva acceso al nombre de su tienda asignada si se desactiva, pero RLS sólo le entrega transferencias cuyo `origin_store_id` coincide con su perfil.
+- El perfil guardado en Dexie sólo autoriza la presentación local. Antes de procesar `syncQueue`, `SyncService` exige que el usuario de la sesión Supabase coincida con el propietario del contexto; RLS y las RPC siguen decidiendo cada escritura remota.
+- El dispositivo conserva una sola identidad cacheada. Un cambio de usuario limpia datos sincronizados y reconstruye la caché con el nuevo scope. Si existen elementos en `syncQueue` o borradores, el cambio se bloquea y los datos quedan ocultos hasta autenticar a su propietario.
+- Cerrar sesión deshabilita el acceso offline automático pero no borra la cola ni los borradores. Una sesión expirada sigue la misma regla y puede reanudarse al autenticar nuevamente al mismo usuario.
 
 ## Conflictos y reintentos
 
 Los registros locales mantienen `pending`, `syncing`, `synced` o `error`. La cola usa backoff exponencial con máximo de cinco minutos. Las RPC `sync_expense`, `sync_attendance` y `sync_merchandise_transfer` usan el UUID como clave idempotente, validan tienda/autor en PostgreSQL y rechazan una versión local anterior a la remota.
+
+`SyncService` reutiliza una única promesa mientras hay un proceso activo, por lo que el arranque remoto, el evento `online`, las capturas y el botón manual no ejecutan colas simultáneas. Cuando el navegador declara que no hay red, la cola permanece pendiente sin registrar un intento fallido; si hay red pero Supabase no responde, el error de cada request se conserva como error remoto.
 
 La primera versión no resuelve silenciosamente conflictos administrativos. La restricción de asistencia por `collaborator_id + attendance_date` existe en Dexie y PostgreSQL.
 

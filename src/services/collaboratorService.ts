@@ -1,6 +1,7 @@
 import type { Collaborator } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
+import { connectivityService } from './connectivityService'
 
 export type CollaboratorInput = {
   name: string
@@ -36,6 +37,9 @@ class CollaboratorService {
     }
 
     if (supabase) {
+      connectivityService.requireOnline(
+        'Se necesita conexión para crear un colaborador.',
+      )
       const { data, error } = await supabase.rpc('create_collaborator', {
         p_id: id,
         p_name: name,

@@ -1,7 +1,6 @@
-const CACHE_NAME = 'la-piedad-operaciones-shell-v3'
+const CACHE_PREFIX = 'la-piedad-operaciones-shell-'
+const CACHE_NAME = `${CACHE_PREFIX}v4`
 const APP_SHELL = [
-  '/',
-  '/index.html',
   '/manifest.webmanifest',
   '/favicon.ico',
   '/pwa-64x64.png',
@@ -12,13 +11,42 @@ const APP_SHELL = [
   '/la-piedad-operaciones-ui.png',
 ]
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting()),
+function assetsFromHtml(html) {
+  return [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+    .map((match) => match[1])
+    .filter((path) => path.startsWith('/assets/'))
+}
+
+async function cacheAppShell() {
+  const cache = await caches.open(CACHE_NAME)
+  const indexResponse = await fetch('/index.html', { cache: 'reload' })
+  if (!indexResponse.ok) {
+    throw new Error('No fue posible descargar el app shell')
+  }
+
+  const html = await indexResponse.clone().text()
+  const buildAssets = assetsFromHtml(html)
+  await Promise.all([
+    cache.put('/', indexResponse.clone()),
+    cache.put('/index.html', indexResponse),
+    cache.addAll([...APP_SHELL, ...buildAssets]),
+  ])
+}
+
+async function isAppShellReady() {
+  const cache = await caches.open(CACHE_NAME)
+  const indexResponse = await cache.match('/index.html')
+  if (!indexResponse) return false
+  const html = await indexResponse.text()
+  const requiredPaths = [...APP_SHELL, ...assetsFromHtml(html)]
+  const cached = await Promise.all(
+    requiredPaths.map((path) => cache.match(path)),
   )
+  return cached.every(Boolean)
+}
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(cacheAppShell().then(() => self.skipWaiting()))
 })
 
 self.addEventListener('activate', (event) => {
@@ -28,11 +56,22 @@ self.addEventListener('activate', (event) => {
       .then((names) =>
         Promise.all(
           names
-            .filter((name) => name !== CACHE_NAME)
+            .filter(
+              (name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME,
+            )
             .map((name) => caches.delete(name)),
         ),
       )
       .then(() => self.clients.claim()),
+  )
+})
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type !== 'VERIFY_APP_SHELL') return
+  event.waitUntil(
+    isAppShellReady().then((ready) => {
+      event.ports[0]?.postMessage({ ready })
+    }),
   )
 })
 
@@ -46,8 +85,15 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone()
-          void caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy))
+          if (response.ok) {
+            const copy = response.clone()
+            void caches.open(CACHE_NAME).then((cache) =>
+              Promise.all([
+                cache.put('/', copy.clone()),
+                cache.put('/index.html', copy),
+              ]),
+            )
+          }
           return response
         })
         .catch(() => caches.match('/index.html')),
@@ -55,17 +101,20 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  const isShellRequest =
+    url.pathname.startsWith('/assets/') || APP_SHELL.includes(url.pathname)
+  if (!isShellRequest) return
+
   event.respondWith(
     caches.match(request).then((cached) => {
-      const network = fetch(request).then((response) => {
+      if (cached) return cached
+      return fetch(request).then((response) => {
         if (response.ok) {
           const copy = response.clone()
           void caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
         }
         return response
       })
-
-      return cached ?? network
     }),
   )
 })

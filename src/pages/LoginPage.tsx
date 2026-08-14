@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import type { AppRole, UserProfile } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { authService } from '../services/authService'
+import { connectivityService } from '../services/connectivityService'
 
 type LoginPageProps = {
   notice?: string
@@ -22,7 +23,14 @@ export function LoginPage({ notice, onSignedIn }: LoginPageProps) {
       onSignedIn(await authService.signIn(email, password))
     } catch (cause: unknown) {
       console.error('No fue posible iniciar sesión', cause)
-      setError('Revisa tu correo y contraseña e intenta de nuevo.')
+      const message = cause instanceof Error ? cause.message.toLowerCase() : ''
+      setError(
+        !connectivityService.isNetworkAvailable() ||
+          cause instanceof TypeError ||
+          message.includes('fetch')
+          ? 'No fue posible contactar a Supabase. Revisa tu conexión e intenta de nuevo.'
+          : 'Revisa tu correo y contraseña e intenta de nuevo.',
+      )
     } finally {
       setLoading(false)
     }

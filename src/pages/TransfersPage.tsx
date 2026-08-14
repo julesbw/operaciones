@@ -24,6 +24,7 @@ import type {
   UserProfile,
 } from '../domain/models'
 import { syncService } from '../services/syncService'
+import { connectivityService } from '../services/connectivityService'
 import {
   filterTransfersByTicket,
   sumTransferAmounts,
@@ -274,7 +275,11 @@ export function TransfersPage({
         user.id,
       )
       await load()
-      setFeedback('Transferencia registrada')
+      setFeedback(
+        connectivityService.isNetworkAvailable()
+          ? 'Transferencia registrada'
+          : 'Transferencia registrada. Pendiente de sincronizar.',
+      )
       setFormOpen(false)
       onDataChanged()
       void syncService

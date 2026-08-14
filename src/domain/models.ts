@@ -42,6 +42,26 @@ export type UserProfile = {
   demo?: boolean
 }
 
+export type LocalAccessState =
+  | 'enabled'
+  | 'reauthentication-required'
+  | 'signed-out'
+
+export type LocalAppContext = {
+  id: 'current'
+  userId: string
+  displayName: string
+  role: AppRole
+  storeId?: string
+  storeName?: string
+  demo?: boolean
+  accessState: LocalAccessState
+  initializedAt: string
+  lastAuthenticatedAt: string
+  lastSuccessfulSyncAt?: string
+  updatedAt: string
+}
+
 export type Expense = {
   id: string
   storeId: string

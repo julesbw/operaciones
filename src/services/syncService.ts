@@ -6,11 +6,19 @@ import type {
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
+import { connectivityService } from './connectivityService'
 
 export type SyncResult = {
   synced: number
   failed: number
   pending: number
+}
+
+export class SyncAuthenticationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'SyncAuthenticationError'
+  }
 }
 
 type ExpenseRow = {
@@ -118,6 +126,23 @@ class SyncService {
     const items = await operationsRepository.listPendingQueue()
     if (!supabase) {
       return { synced: 0, failed: 0, pending: items.length }
+    }
+    if (!connectivityService.isNetworkAvailable()) {
+      return { synced: 0, failed: 0, pending: items.length }
+    }
+
+    const context = await operationsRepository.getLocalAppContext()
+    const { data, error } = await supabase.auth.getSession()
+    if (error) throw error
+    if (!context || !data.session) {
+      throw new SyncAuthenticationError(
+        'Inicia sesión para sincronizar los cambios guardados.',
+      )
+    }
+    if (context.userId !== data.session.user.id) {
+      throw new SyncAuthenticationError(
+        'La sesión actual no corresponde a los datos guardados en este dispositivo.',
+      )
     }
 
     const now = new Date().toISOString()

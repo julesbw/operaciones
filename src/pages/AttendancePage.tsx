@@ -183,7 +183,12 @@ export function AttendancePage({
       )
       setSaved(true)
       onDataChanged()
-      void syncService.process().then(onDataChanged)
+      void syncService
+        .process()
+        .then(onDataChanged)
+        .catch((cause: unknown) => {
+          console.error('No fue posible sincronizar la asistencia', cause)
+        })
     } catch (cause: unknown) {
       console.error('No fue posible guardar la asistencia', cause)
       setError('No fue posible guardar la asistencia en este dispositivo.')

@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell, type PageId } from './components/AppShell'
 import {
   ALL_STORES,
   type StoreScopeValue,
 } from './components/filters/StoreScopeSelector'
-import type { Store, UserProfile } from './domain/models'
+import type { LocalAppContext, Store, UserProfile } from './domain/models'
 import { AttendancePage } from './pages/AttendancePage'
 import { ClosingsPage } from './pages/ClosingsPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -14,28 +14,70 @@ import { SettingsPage } from './pages/SettingsPage'
 import { TransfersPage } from './pages/TransfersPage'
 import { authService } from './services/authService'
 import { bootstrapService } from './services/bootstrapService'
+import { connectivityService } from './services/connectivityService'
+import {
+  localContextService,
+  profileFromLocalContext,
+  UserSwitchBlockedError,
+} from './services/localContextService'
 import { referenceDataService } from './services/referenceDataService'
+import {
+  RemoteBootstrapCancelledError,
+  remoteBootstrapService,
+} from './services/remoteBootstrapService'
 import { syncService } from './services/syncService'
 
-type AppState = 'loading' | 'ready' | 'error'
+type AppBootstrapState =
+  | 'loading-local'
+  | 'requires-first-login'
+  | 'ready-offline'
+  | 'ready-online'
+  | 'recovering-session'
+  | 'fatal-error'
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Error desconocido'
 }
 
+function isAuthenticationFailure(cause: unknown): boolean {
+  if (!cause || typeof cause !== 'object') return false
+  const status = 'status' in cause ? cause.status : undefined
+  const message =
+    'message' in cause && typeof cause.message === 'string'
+      ? cause.message.toLocaleLowerCase('es-MX')
+      : ''
+  return (
+    status === 401 ||
+    message.includes('jwt') ||
+    message.includes('refresh token') ||
+    message.includes('invalid session')
+  )
+}
+
 function App() {
-  const [state, setState] = useState<AppState>('loading')
+  const [state, setState] =
+    useState<AppBootstrapState>('loading-local')
   const [startupError, setStartupError] = useState<string>()
   const [startupNotice, setStartupNotice] = useState<string>()
+  const [localContext, setLocalContext] = useState<LocalAppContext>()
   const [user, setUser] = useState<UserProfile>()
+  const userRef = useRef<UserProfile | undefined>(undefined)
   const [page, setPage] = useState<PageId>('home')
   const [attendanceStoreFilter, setAttendanceStoreFilter] =
     useState<StoreScopeValue>(ALL_STORES)
   const [stores, setStores] = useState<Store[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
-  const [online, setOnline] = useState(navigator.onLine)
+  const [syncError, setSyncError] = useState<string>()
+  const [networkAvailable, setNetworkAvailable] = useState(
+    connectivityService.isNetworkAvailable(),
+  )
+  const [backendReachable, setBackendReachable] = useState<boolean>()
   const [revision, setRevision] = useState(0)
+
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
 
   const refreshLocalState = useCallback(async () => {
     const [availableStores, pending] = await Promise.all([
@@ -47,124 +89,211 @@ function App() {
     setRevision((value) => value + 1)
   }, [])
 
-  const synchronize = useCallback(async () => {
-    if (syncing) return
-    setSyncing(true)
-    try {
-      await syncService.process()
-      await refreshLocalState()
-    } catch (cause: unknown) {
-      console.error('No fue posible sincronizar', cause)
-    } finally {
-      setSyncing(false)
+  const restoreLocalFallback = useCallback(async () => {
+    const context = await localContextService.load()
+    setLocalContext(context)
+    if (context?.accessState === 'enabled') {
+      const profile = profileFromLocalContext(context)
+      setUser(profile)
+      setState('ready-offline')
+      return profile
     }
-  }, [refreshLocalState, syncing])
+
+    setUser(undefined)
+    setState('requires-first-login')
+    return undefined
+  }, [])
+
+  const runRemoteBootstrap = useCallback(
+    async (profile?: UserProfile) => {
+      if (!connectivityService.isNetworkAvailable()) {
+        setNetworkAvailable(false)
+        setBackendReachable(undefined)
+        await restoreLocalFallback()
+        return
+      }
+
+      setNetworkAvailable(true)
+      setBackendReachable(undefined)
+      setSyncing(true)
+      setSyncError(undefined)
+      setState('recovering-session')
+
+      try {
+        const result = await remoteBootstrapService.process({
+          profile,
+          onIdentityResolved: (remoteUserId) => {
+            setUser((current) =>
+              remoteUserId && current?.id === remoteUserId
+                ? current
+                : undefined,
+            )
+          },
+        })
+
+        if (result.status === 'requires-login') {
+          const context = await localContextService.load()
+          setLocalContext(context)
+          setUser(undefined)
+          setBackendReachable(true)
+          setStartupNotice(
+            context
+              ? 'Tu sesión necesita validarse nuevamente. Los cambios pendientes siguen guardados en este dispositivo.'
+              : undefined,
+          )
+          setState('requires-first-login')
+          return
+        }
+
+        setLocalContext(result.context)
+        setUser(result.profile)
+        setBackendReachable(true)
+        setStartupNotice(undefined)
+        setSyncError(
+          result.sync.failed > 0
+            ? `${result.sync.failed} cambio${result.sync.failed === 1 ? '' : 's'} no se pudo sincronizar.`
+            : undefined,
+        )
+        await refreshLocalState()
+        setState(
+          connectivityService.isNetworkAvailable()
+            ? 'ready-online'
+            : 'ready-offline',
+        )
+      } catch (cause: unknown) {
+        if (cause instanceof RemoteBootstrapCancelledError) return
+
+        console.error('No fue posible completar el arranque remoto', cause)
+
+        if (cause instanceof UserSwitchBlockedError) {
+          try {
+            await authService.signOut()
+          } catch (signOutCause: unknown) {
+            console.error(
+              'No fue posible cerrar la sesión que no corresponde al contexto local',
+              signOutCause,
+            )
+          }
+          setBackendReachable(true)
+          setStartupNotice(cause.message)
+          setSyncError(cause.message)
+          await restoreLocalFallback()
+          return
+        }
+
+        if (isAuthenticationFailure(cause)) {
+          await localContextService.setAccessState(
+            'reauthentication-required',
+          )
+          setUser(undefined)
+          setBackendReachable(true)
+          setStartupNotice(
+            'La sesión expiró. Inicia sesión nuevamente; tus cambios locales no se eliminaron.',
+          )
+          setState('requires-first-login')
+          return
+        }
+
+        setBackendReachable(false)
+        setSyncError(
+          'No fue posible contactar a Supabase. Se conservaron los datos locales.',
+        )
+        setStartupNotice(
+          'Supabase no respondió. Puedes reintentar cuando tengas conexión.',
+        )
+        await restoreLocalFallback()
+      } finally {
+        setSyncing(false)
+      }
+    },
+    [refreshLocalState, restoreLocalFallback],
+  )
 
   useEffect(() => {
     let active = true
 
     async function initializeApplication() {
+      let context: LocalAppContext | undefined
       try {
-        await bootstrapService.initialize()
+        context = await bootstrapService.initializeLocal()
         await refreshLocalState()
       } catch (cause: unknown) {
         console.error('No fue posible preparar el almacenamiento local', cause)
         if (active) {
           setStartupError(errorMessage(cause))
-          setState('error')
+          setState('fatal-error')
         }
         return
       }
 
-      let restoredUser: UserProfile | undefined
-      try {
-        restoredUser = await authService.restore()
-      } catch (cause: unknown) {
-        console.error('No fue posible restaurar la sesión anterior', cause)
-        if (active) {
-          setStartupNotice(
-            'No se pudo restaurar la sesión anterior. Inicia sesión nuevamente.',
-          )
-        }
-      }
-
-      if (restoredUser && !restoredUser.demo) {
-        try {
-          await referenceDataService.refresh()
-          await refreshLocalState()
-        } catch (cause: unknown) {
-          console.error('No fue posible actualizar los datos remotos', cause)
-          if (active) {
-            setStartupNotice(
-              'Supabase no respondió correctamente. Se conservaron los datos locales.',
-            )
-          }
-        }
-      }
-
       if (!active) return
-      setUser(restoredUser)
-      setState('ready')
-      void syncService
-        .process()
-        .then(refreshLocalState)
-        .catch((cause: unknown) =>
-          console.error('No fue posible actualizar datos remotos', cause),
+      setLocalContext(context)
+      if (context?.accessState === 'enabled') {
+        setUser(profileFromLocalContext(context))
+        setState(
+          connectivityService.isNetworkAvailable()
+            ? 'recovering-session'
+            : 'ready-offline',
         )
+      } else {
+        setUser(undefined)
+        setState('requires-first-login')
+      }
+
+      if (connectivityService.isNetworkAvailable()) {
+        void runRemoteBootstrap()
+      }
     }
 
     void initializeApplication()
     return () => {
       active = false
     }
-  }, [refreshLocalState])
+  }, [refreshLocalState, runRemoteBootstrap])
 
   useEffect(() => {
-    const handleOnline = () => {
-      setOnline(true)
-      void synchronize()
-    }
-    const handleOffline = () => setOnline(false)
-    window.addEventListener('online', handleOnline)
-    window.addEventListener('offline', handleOffline)
-    return () => {
-      window.removeEventListener('online', handleOnline)
-      window.removeEventListener('offline', handleOffline)
-    }
-  }, [synchronize])
+    return connectivityService.subscribe((available) => {
+      setNetworkAvailable(available)
+      if (available) {
+        void runRemoteBootstrap()
+        return
+      }
+
+      setBackendReachable(undefined)
+      setSyncing(false)
+      setState(
+        userRef.current ? 'ready-offline' : 'requires-first-login',
+      )
+    })
+  }, [runRemoteBootstrap])
 
   async function signedIn(profile: UserProfile) {
-    setUser(profile)
     setAttendanceStoreFilter(ALL_STORES)
     setStartupNotice(undefined)
-    if (!profile.demo) {
-      try {
-        await referenceDataService.refresh()
-      } catch (cause: unknown) {
-        console.error('No fue posible actualizar los datos remotos', cause)
-        setStartupNotice(
-          'La sesión inició, pero Supabase no devolvió los datos operativos.',
-        )
-      }
-    }
-    await refreshLocalState()
-    void syncService
-      .process()
-      .then(refreshLocalState)
-      .catch((cause: unknown) =>
-        console.error('No fue posible actualizar datos remotos', cause),
-      )
+    await runRemoteBootstrap(profile)
   }
 
   async function signOut() {
-    try {
-      await authService.signOut()
-    } catch (cause: unknown) {
-      console.error('No fue posible cerrar la sesión remota', cause)
-    } finally {
-      setUser(undefined)
-      setPage('home')
-      setAttendanceStoreFilter(ALL_STORES)
+    const remoteStopped = remoteBootstrapService.cancelForSignOut()
+    setUser(undefined)
+    setPage('home')
+    setAttendanceStoreFilter(ALL_STORES)
+    setState('requires-first-login')
+    const [, remoteSignOut] = await Promise.allSettled([
+      localContextService.setAccessState('signed-out'),
+      authService.signOut(),
+      remoteStopped,
+    ])
+    await localContextService.setAccessState('signed-out')
+    setLocalContext(await localContextService.load())
+    if (remoteSignOut.status === 'rejected') {
+      console.error(
+        'No fue posible cerrar la sesión remota',
+        remoteSignOut.reason,
+      )
+      setStartupNotice(
+        'La sesión local se cerró. La sesión remota se validará al volver a conectarte.',
+      )
     }
   }
 
@@ -177,7 +306,7 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  if (state !== 'ready') {
+  if (state === 'loading-local' || state === 'fatal-error') {
     return (
       <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-6">
         <div className="text-center">
@@ -188,15 +317,15 @@ function App() {
           />
           <p className="brand-display mt-4 text-2xl font-bold text-slate-950">La Piedad</p>
           <p className="brand-kicker mt-1">Operaciones</p>
-          <p className={`mt-5 text-sm font-semibold ${state === 'error' ? 'text-red-700' : 'text-slate-500'}`}>
-            {state === 'error' ? 'No fue posible preparar la aplicación.' : 'Preparando la aplicación…'}
+          <p className={`mt-5 text-sm font-semibold ${state === 'fatal-error' ? 'text-red-700' : 'text-slate-500'}`}>
+            {state === 'fatal-error' ? 'No fue posible abrir los datos locales.' : 'Preparando Operaciones…'}
           </p>
-          {state === 'error' && startupError && (
+          {state === 'fatal-error' && startupError && (
             <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-500">
               {startupError}
             </p>
           )}
-          {state === 'error' && (
+          {state === 'fatal-error' && (
             <button
               className="button-secondary mt-5"
               type="button"
@@ -211,6 +340,39 @@ function App() {
   }
 
   if (!user) {
+    if (!networkAvailable) {
+      const wasInitialized = Boolean(localContext)
+      return (
+        <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-6">
+          <section className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+            <img
+              alt="La Piedad Operaciones"
+              className="mx-auto size-24 rounded-full border border-slate-200 object-cover shadow-lg"
+              src="/la-piedad-operaciones-ui.png"
+            />
+            <p className="brand-kicker mt-5">Sin conexión</p>
+            <h1 className="brand-display mt-3 text-3xl font-bold text-slate-950">
+              {wasInitialized
+                ? 'Necesitas iniciar sesión nuevamente'
+                : 'Configura este dispositivo primero'}
+            </h1>
+            <p className="mt-4 text-sm leading-6 text-slate-600">
+              {wasInitialized
+                ? 'Los datos y cambios pendientes siguen guardados. Conéctate e inicia sesión con la cuenta correspondiente para continuar.'
+                : 'Este dispositivo todavía no ha sido configurado para trabajar sin conexión. Conéctate a internet e inicia sesión una vez.'}
+            </p>
+            <button
+              className="button-secondary mt-6"
+              type="button"
+              onClick={() => void runRemoteBootstrap()}
+            >
+              Reintentar
+            </button>
+          </section>
+        </main>
+      )
+    }
+
     return (
       <LoginPage
         notice={startupNotice}
@@ -221,14 +383,16 @@ function App() {
 
   return (
     <AppShell
+      backendReachable={backendReachable}
       currentPage={page}
-      online={online}
+      networkAvailable={networkAvailable}
       pendingCount={pendingCount}
-      syncing={syncing}
+      syncError={syncError}
+      syncing={syncing || state === 'recovering-session'}
       user={user}
       onNavigate={navigate}
       onSignOut={() => void signOut()}
-      onSync={() => void synchronize()}
+      onSync={() => void runRemoteBootstrap()}
     >
       {page === 'home' && (
         <DashboardPage pendingCount={pendingCount} revision={revision} stores={stores} user={user} onNavigate={navigate} />
