@@ -56,6 +56,22 @@ export function TransferIcon(props: IconProps) {
   )
 }
 
+export function MenuIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </IconBase>
+  )
+}
+
+export function ChevronRightIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m9 18 6-6-6-6" />
+    </IconBase>
+  )
+}
+
 export function UsersIcon(props: IconProps) {
   return (
     <IconBase {...props}>

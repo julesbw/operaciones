@@ -11,8 +11,10 @@ import type { UserProfile } from '../domain/models'
 import {
   ArrowIcon,
   CashIcon,
+  ChevronRightIcon,
   HomeIcon,
   LogoutIcon,
+  MenuIcon,
   ReceiptIcon,
   SettingsIcon,
   SyncIcon,
@@ -37,24 +39,52 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
 type NavigationItem = {
   id: PageId
   label: string
-  mobileLabel?: string
   icon: IconComponent
   adminOnly?: boolean
+  mobilePlacement: 'primary' | 'more'
 }
 
 const NAVIGATION: NavigationItem[] = [
-  { id: 'home', label: 'Inicio', icon: HomeIcon },
-  { id: 'expenses', label: 'Gastos', icon: ReceiptIcon },
+  { id: 'home', label: 'Inicio', icon: HomeIcon, mobilePlacement: 'primary' },
+  {
+    id: 'expenses',
+    label: 'Gastos',
+    icon: ReceiptIcon,
+    mobilePlacement: 'primary',
+  },
   {
     id: 'transfers',
     label: 'Transferencias',
-    mobileLabel: 'Transfer.',
     icon: TransferIcon,
+    mobilePlacement: 'primary',
   },
-  { id: 'attendance', label: 'Asistencias', icon: UsersIcon },
-  { id: 'payments', label: 'Pagos', icon: WalletIcon, adminOnly: true },
-  { id: 'closings', label: 'Cortes', icon: CashIcon, adminOnly: true },
+  {
+    id: 'attendance',
+    label: 'Asistencias',
+    icon: UsersIcon,
+    mobilePlacement: 'more',
+  },
+  {
+    id: 'payments',
+    label: 'Pagos',
+    icon: WalletIcon,
+    adminOnly: true,
+    mobilePlacement: 'more',
+  },
+  {
+    id: 'closings',
+    label: 'Cortes',
+    icon: CashIcon,
+    adminOnly: true,
+    mobilePlacement: 'more',
+  },
 ]
+
+export function navigationItemsForRole(
+  role: UserProfile['role'],
+): NavigationItem[] {
+  return NAVIGATION.filter((item) => !item.adminOnly || role === 'admin')
+}
 
 type AppShellProps = {
   backendReachable?: boolean
@@ -93,14 +123,35 @@ export function AppShell({
   onSync,
 }: AppShellProps) {
   const [profileOpen, setProfileOpen] = useState(false)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const profileButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const moreButtonRef = useRef<HTMLButtonElement>(null)
   const swipeStartRef = useRef<{ x: number; y: number } | undefined>(undefined)
   const restoreScrollRef = useRef(true)
-  const items = NAVIGATION.filter(
-    (item) => !item.adminOnly || user.role === 'admin',
+  const items = navigationItemsForRole(user.role)
+  const primaryMobileItems = items.filter(
+    (item) => item.mobilePlacement === 'primary',
   )
+  const moreMobileItems = items.filter(
+    (item) => item.mobilePlacement === 'more',
+  )
+  const moreActive = moreMobileItems.some((item) => item.id === currentPage)
   const roleLabel = user.role === 'admin' ? 'Administrador' : 'Cashier'
+
+  useEffect(() => {
+    setMoreMenuOpen(false)
+  }, [currentPage])
+
+  useEffect(() => {
+    if (!moreMenuOpen) return
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMoreMenu()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [moreMenuOpen])
 
   useEffect(() => {
     if (!profileOpen) return
@@ -143,6 +194,18 @@ export function AppShell({
     if (restoreFocus) {
       window.requestAnimationFrame(() => profileButtonRef.current?.focus())
     }
+  }
+
+  function closeMoreMenu(restoreFocus = true) {
+    setMoreMenuOpen(false)
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => moreButtonRef.current?.focus())
+    }
+  }
+
+  function navigateFromMobile(page: PageId) {
+    closeMoreMenu(false)
+    onNavigate(page)
   }
 
   function navigateToSettings() {
@@ -278,7 +341,7 @@ export function AppShell({
         </main>
 
         <nav className="mobile-nav lg:hidden" aria-label="Navegación principal">
-          {items.map((item) => {
+          {primaryMobileItems.map((item) => {
             const Icon = item.icon
             const active = item.id === currentPage
             return (
@@ -288,14 +351,67 @@ export function AppShell({
                 className={active ? 'mobile-nav-active' : 'mobile-nav-item'}
                 key={item.id}
                 type="button"
-                onClick={() => onNavigate(item.id)}
+                onClick={() => navigateFromMobile(item.id)}
               >
                 <Icon className="size-[22px]" />
-                <span>{item.mobileLabel ?? item.label}</span>
+                <span>{item.label}</span>
               </button>
             )
           })}
+          <button
+            aria-controls="mobile-more-menu"
+            aria-current={moreActive ? 'page' : undefined}
+            aria-expanded={moreMenuOpen}
+            aria-haspopup="menu"
+            aria-label="Más"
+            className={moreActive ? 'mobile-nav-active' : 'mobile-nav-item'}
+            ref={moreButtonRef}
+            type="button"
+            onClick={() => setMoreMenuOpen((open) => !open)}
+          >
+            <MenuIcon className="size-[22px]" />
+            <span>Más</span>
+          </button>
         </nav>
+
+        {moreMenuOpen && (
+          <>
+            <div
+              aria-hidden="true"
+              className="mobile-more-backdrop lg:hidden"
+              onClick={() => closeMoreMenu()}
+            />
+            <div
+              aria-label="Más módulos"
+              className="mobile-more-menu lg:hidden"
+              id="mobile-more-menu"
+              role="menu"
+            >
+              {moreMobileItems.map((item) => {
+                const Icon = item.icon
+                const active = item.id === currentPage
+                return (
+                  <button
+                    aria-current={active ? 'page' : undefined}
+                    className={
+                      active
+                        ? 'mobile-more-menu-item-active'
+                        : 'mobile-more-menu-item'
+                    }
+                    key={item.id}
+                    role="menuitem"
+                    type="button"
+                    onClick={() => navigateFromMobile(item.id)}
+                  >
+                    <Icon className="size-5" />
+                    <span className="min-w-0 flex-1 text-left">{item.label}</span>
+                    <ChevronRightIcon className="size-4 text-slate-400" />
+                  </button>
+                )
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {profileOpen && (
