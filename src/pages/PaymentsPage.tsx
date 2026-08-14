@@ -82,7 +82,6 @@ export function PaymentsPage({ stores, user }: PaymentsPageProps) {
     useState<CollaboratorPaymentState>()
   const [selectedHistory, setSelectedHistory] = useState<ConfirmedPayment>()
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string>()
   const [message, setMessage] = useState<string>()
   const [networkAvailable, setNetworkAvailable] = useState(
@@ -108,7 +107,6 @@ export function PaymentsPage({ stores, user }: PaymentsPageProps) {
   }, [])
 
   const refresh = useCallback(async () => {
-    setRefreshing(true)
     setError(undefined)
     try {
       await paymentService.refreshRemote()
@@ -120,8 +118,6 @@ export function PaymentsPage({ stores, user }: PaymentsPageProps) {
           ? cause.message
           : 'No fue posible actualizar los pagos.',
       )
-    } finally {
-      setRefreshing(false)
     }
   }, [loadLocal])
 
@@ -198,22 +194,7 @@ export function PaymentsPage({ stores, user }: PaymentsPageProps) {
 
   return (
     <section className="mx-auto max-w-5xl">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="page-title">Pagos</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            Liquida días trabajados y conserva su evidencia histórica.
-          </p>
-        </div>
-        <button
-          className="button-secondary"
-          disabled={!networkAvailable || refreshing}
-          type="button"
-          onClick={() => void refresh()}
-        >
-          {refreshing ? 'Actualizando…' : 'Actualizar'}
-        </button>
-      </div>
+      <h1 className="page-title">Pagos</h1>
 
       {!networkAvailable && (
         <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">

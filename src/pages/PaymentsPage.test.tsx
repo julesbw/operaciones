@@ -28,6 +28,10 @@ describe('PaymentsPage access', () => {
     expect(markup).toContain('Pendientes')
     expect(markup).toContain('Historial')
     expect(markup).toContain('Filtrar pagos por tienda asignada')
+    expect(markup).not.toContain('Actualizar')
+    expect(markup).not.toContain(
+      'Liquida días trabajados y conserva su evidencia histórica.',
+    )
   })
 
   it('renders nothing for a cashier even if invoked directly', () => {
