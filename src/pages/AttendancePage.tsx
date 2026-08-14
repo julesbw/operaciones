@@ -205,7 +205,7 @@ export function AttendancePage({
 
   return (
     <section className="mx-auto max-w-5xl">
-      <div className="flex flex-wrap items-end justify-between gap-5">
+      <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
           <h1 className="page-title">Asistencias</h1>
           {user.role === 'cashier' && (
