@@ -21,6 +21,7 @@ type CollaboratorRow = {
   name: string
   store_id: string
   rest_day: number
+  pay_cycle_end_weekday: number | null
   status: EntityStatus
   created_at: string
   updated_at: string
@@ -50,7 +51,7 @@ class ReferenceDataService {
         .returns<StoreRow[]>(),
       supabase
         .from('collaborators')
-        .select('id, name, store_id, rest_day, status, created_at, updated_at')
+        .select('id, name, store_id, rest_day, pay_cycle_end_weekday, status, created_at, updated_at')
         .eq('status', 'active')
         .returns<CollaboratorRow[]>(),
       supabase
@@ -83,6 +84,8 @@ class ReferenceDataService {
         name: collaborator.name,
         storeId: collaborator.store_id,
         restDay: collaborator.rest_day,
+        payCycleEndWeekday:
+          collaborator.pay_cycle_end_weekday ?? undefined,
         status: collaborator.status,
         weeklyPay: compensationByCollaborator.get(collaborator.id),
         createdAt: collaborator.created_at,

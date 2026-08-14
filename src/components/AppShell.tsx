@@ -19,6 +19,7 @@ import {
   TransferIcon,
   UsersIcon,
   WifiOffIcon,
+  WalletIcon,
   XIcon,
 } from './icons'
 
@@ -27,6 +28,7 @@ export type PageId =
   | 'expenses'
   | 'transfers'
   | 'attendance'
+  | 'payments'
   | 'closings'
   | 'settings'
 
@@ -50,6 +52,7 @@ const NAVIGATION: NavigationItem[] = [
     icon: TransferIcon,
   },
   { id: 'attendance', label: 'Asistencias', icon: UsersIcon },
+  { id: 'payments', label: 'Pagos', icon: WalletIcon, adminOnly: true },
   { id: 'closings', label: 'Cortes', icon: CashIcon, adminOnly: true },
 ]
 

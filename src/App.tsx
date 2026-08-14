@@ -10,6 +10,7 @@ import { ClosingsPage } from './pages/ClosingsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { LoginPage } from './pages/LoginPage'
+import { PaymentsPage } from './pages/PaymentsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TransfersPage } from './pages/TransfersPage'
 import { authService } from './services/authService'
@@ -298,7 +299,10 @@ function App() {
   }
 
   function navigate(nextPage: PageId) {
-    if (nextPage === 'closings' && user?.role !== 'admin') {
+    if (
+      (nextPage === 'closings' || nextPage === 'payments') &&
+      user?.role !== 'admin'
+    ) {
       setPage('home')
       return
     }
@@ -411,6 +415,9 @@ function App() {
           onDataChanged={() => void refreshLocalState()}
           onStoreFilterChange={setAttendanceStoreFilter}
         />
+      )}
+      {page === 'payments' && user.role === 'admin' && (
+        <PaymentsPage stores={stores} user={user} />
       )}
       {page === 'closings' && user.role === 'admin' && <ClosingsPage stores={stores} user={user} />}
       {page === 'settings' && (

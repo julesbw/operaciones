@@ -4,9 +4,12 @@ import type {
   AttendanceRecord,
   CashClosingDraft,
   Collaborator,
+  CollaboratorCompensationHistory,
   Expense,
   LocalAppContext,
   MerchandiseTransfer,
+  Payment,
+  PaymentAttendanceItem,
   Store,
   SyncQueueItem,
 } from '../domain/models'
@@ -24,6 +27,8 @@ type LegacyClosingDraft = CashClosingDraft & {
   selectedTransferIds?: string[]
   knownExpenseIds?: string[]
   knownTransferIds?: string[]
+  selectedPaymentIds?: string[]
+  knownPaymentIds?: string[]
   movementSelectionInitialized?: boolean
 }
 
@@ -38,6 +43,9 @@ export class OperationsDatabase extends Dexie {
   syncQueue!: Table<SyncQueueItem, string>
   closingDrafts!: Table<CashClosingDraft, string>
   appContexts!: Table<LocalAppContext, string>
+  payments!: Table<Payment, string>
+  paymentAttendanceItems!: Table<PaymentAttendanceItem, [string, string]>
+  compensationHistory!: Table<CollaboratorCompensationHistory, string>
 
   constructor(databaseName = OPERATIONS_DATABASE_NAME) {
     super(databaseName)
@@ -65,6 +73,15 @@ export class OperationsDatabase extends Dexie {
     const schemaV9 = {
       ...schemaV6,
       appContexts: '&id, userId, accessState, updatedAt',
+    }
+    const schemaV10 = {
+      ...schemaV9,
+      payments:
+        '&id, collaboratorId, businessDate, [collaboratorId+businessDate], fundingSource, sourceStoreId, [sourceStoreId+businessDate], paidAt',
+      paymentAttendanceItems:
+        '&[paymentId+attendanceId], &attendanceId, paymentId, periodStart, periodEnd, workDateSnapshot',
+      compensationHistory:
+        '&id, collaboratorId, effectiveFrom, [collaboratorId+effectiveFrom], recordedAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -153,6 +170,17 @@ export class OperationsDatabase extends Dexie {
           })
       })
     this.version(9).stores(schemaV9)
+    this.version(10)
+      .stores(schemaV10)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<LegacyClosingDraft, string>('closingDrafts')
+          .toCollection()
+          .modify((draft) => {
+            draft.selectedPaymentIds ??= []
+            draft.knownPaymentIds ??= []
+          })
+      })
   }
 }
 

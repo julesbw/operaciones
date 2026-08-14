@@ -18,7 +18,7 @@ Supabase + PostgreSQL RLS
 
 La captura cotidiana escribe primero en Dexie y actualiza la interfaz sin esperar la red. Cada escritura sincronizable crea, en la misma transacción local, un elemento idempotente en `syncQueue`. Los UUID se generan en el cliente y son los mismos en PostgreSQL.
 
-Las operaciones administrativas críticas (tiendas y cierre definitivo) requieren conexión. Los cortes incompletos se conservan como borradores locales.
+Las operaciones administrativas críticas (tiendas, confirmación de pagos y cierre definitivo) requieren conexión. Los cortes incompletos se conservan como borradores locales; la selección de un pago puede prepararse offline, pero nunca se encola como una confirmación pendiente.
 
 ## Arranque offline-first
 
@@ -35,7 +35,7 @@ UI operativa inmediata                  perfil + referencias
 
 `loading-local` sólo cubre la apertura de Dexie y la lectura del contexto. Si existe un contexto con acceso offline habilitado, React muestra inmediatamente los datos locales; la restauración de Auth, las referencias y la sincronización continúan en segundo plano. Si el dispositivo nunca fue inicializado, el primer uso sin red muestra una pantalla explícita en lugar de esperar Supabase.
 
-Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos.
+Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos. Dexie v10 agrega `payments`, `paymentAttendanceItems` y `compensationHistory`, además de la selección de pagos en los borradores de Corte. Estas tablas administrativas se limpian si el perfil autenticado deja de ser administrador.
 
 Una inicialización se considera completa después de obtener el perfil y las referencias autorizadas, verificar el app shell en producción y guardar `LocalAppContext`. El service worker precachea el HTML y descubre los bundles JS/CSS con hash generados por Vite; las respuestas de Supabase no forman parte de esa caché.
 
@@ -51,6 +51,7 @@ Una inicialización se considera completa después de obtener el perfil y las re
 - El perfil guardado en Dexie sólo autoriza la presentación local. Antes de procesar `syncQueue`, `SyncService` exige que el usuario de la sesión Supabase coincida con el propietario del contexto; RLS y las RPC siguen decidiendo cada escritura remota.
 - El dispositivo conserva una sola identidad cacheada. Un cambio de usuario limpia datos sincronizados y reconstruye la caché con el nuevo scope. Si existen elementos en `syncQueue` o borradores, el cambio se bloquea y los datos quedan ocultos hasta autenticar a su propietario.
 - Cerrar sesión deshabilita el acceso offline automático pero no borra la cola ni los borradores. Una sesión expirada sigue la misma regla y puede reanudarse al autenticar nuevamente al mismo usuario.
+- Los salarios actuales sólo pueden modificarse mediante la RPC administrativa que escribe simultáneamente una versión en `collaborator_compensation_history`. Los pagos y sus días sólo admiten lectura directa; la creación ocurre mediante una RPC `security definer` que vuelve a validar permisos y reglas.
 
 ## Conflictos y reintentos
 
@@ -59,6 +60,20 @@ Los registros locales mantienen `pending`, `syncing`, `synced` o `error`. La col
 `SyncService` reutiliza una única promesa mientras hay un proceso activo, por lo que el arranque remoto, el evento `online`, las capturas y el botón manual no ejecutan colas simultáneas. Cuando el navegador declara que no hay red, la cola permanece pendiente sin registrar un intento fallido; si hay red pero Supabase no responde, el error de cada request se conserva como error remoto.
 
 La primera versión no resuelve silenciosamente conflictos administrativos. La restricción de asistencia por `collaborator_id + attendance_date` existe en Dexie y PostgreSQL.
+
+## Pagos por asistencias
+
+`pay_cycle_end_weekday` pertenece al colaborador y define el final de su periodo individual. La migración no completa este campo para registros existentes: hasta que un administrador lo configure, la UI y `confirm_collaborator_payment` bloquean el pago. Para altas nuevas, un trigger y la nueva firma de `create_collaborator` lo exigen explícitamente.
+
+La vista Pagos se construye desde Dexie con colaboradores, todas las asistencias históricas, pagos, días cubiertos y salarios efectivos. Los periodos y sus estados son derivados; no existe una semana global. Sólo una asistencia `present` con fecha no futura puede seleccionarse. La fecha operacional se calcula siempre en `America/Mexico_City`, tanto en React como en PostgreSQL.
+
+El monto diario es `floor(weeklyPay / 6)`. Un periodo terminado con seis días tiene como objetivo exacto `weeklyPay`; el resto usa `dailyPay × workedDays`. Las parcialidades guardan `suggested_allocation` por asistencia. Cuando una selección cubre todos los días todavía pendientes, el sugerido se calcula como objetivo del periodo menos lo ya asignado, absorbiendo el residuo semanal. El monto realmente pagado permanece separado y puede ser decidido por administración.
+
+`collaborator_compensation_history` conserva versiones efectivas por fecha. La migración siembra la compensación actual y los snapshots salariales disponibles en `weekly_payments`; no inventa versiones ausentes. Un periodo que ya recibió una parcialidad reutiliza siempre sus snapshots; uno sin pagos toma la versión efectiva al cierre del periodo, o a la fecha actual si sigue abierto. Por ello un cambio salarial posterior no recalcula deuda histórica ni parcialidades previas.
+
+Confirmar es online-required. El cliente genera `payment_id`, sincroniza asistencias, refresca el cache y revalida la selección antes de invocar `confirm_collaborator_payment`. La RPC toma bloqueos por UUID y colaborador, vuelve a calcular periodos/sugerencias y no recibe `suggested_amount` del cliente. `UNIQUE(attendance_id)` impide pagar el mismo día dos veces; un trigger vuelve inmutable toda asistencia pagada. Repetir la RPC con el mismo UUID devuelve el pago ya confirmado.
+
+`weekly_payments` se conserva únicamente para compatibilidad histórica. Su RPC queda sin permiso de ejecución y ningún pago nuevo genera un registro en `expenses`; `collaborator_payments` es la única fuente de verdad nueva. El nombre remoto evita colisionar con `public.payments`, que pertenece a Arrendamientos en el proyecto Supabase compartido; Dexie mantiene `payments` como almacén local del módulo.
 
 ## Contexto de tienda en asistencias
 
@@ -78,9 +93,9 @@ Para Cortes, una transferencia saliente se consulta por `origin_store_id + busin
 
 La sección abre en un historial que combina cortes cerrados de Supabase con borradores locales de Dexie. Crear es una acción explícita; sólo entonces se inicia el flujo de cuatro fases. Cada cambio se persiste en `closingDrafts` y existe como máximo un borrador local por tienda/fecha para evitar flujos accidentales duplicados.
 
-El Resumen consulta por RPC los gastos y transferencias salientes elegibles de la tienda/fecha. Los IDs seleccionados y conocidos viven en el borrador, pero no reservan movimientos. Todos se seleccionan inicialmente; una exclusión se conserva y los movimientos nuevos se seleccionan al refrescar. `operationalOutflowsTotal` incluye gastos, transferencias y el espacio reservado para pagos; `cashOutflowsTotal` incluye únicamente salidas físicas de efectivo.
+El Resumen consulta por RPC los gastos, transferencias salientes y pagos desde caja elegibles de la tienda/fecha. Los IDs seleccionados y conocidos viven en el borrador, pero no reservan movimientos. Todos se seleccionan inicialmente; una exclusión se conserva y los movimientos nuevos se seleccionan al refrescar. `operationalOutflowsTotal` incluye gastos, transferencias y pagos `store_cash`; `cashOutflowsTotal` incluye gastos pagados en efectivo y pagos `store_cash`. Los pagos `central_cash` nunca son candidatos.
 
-Antes de cerrar, la PWA procesa la cola y bloquea la confirmación si un movimiento seleccionado sigue sin sincronizar. La RPC `close_cash_closing` valida los IDs, recalcula los totales en PostgreSQL y crea `cash_closing_expense_items` y `cash_closing_transfer_items` con snapshots. Las restricciones `UNIQUE(expense_id)` y `UNIQUE(transfer_id)` impiden reutilización incluso entre clientes concurrentes.
+Antes de cerrar, la PWA procesa la cola y bloquea la confirmación si un movimiento seleccionado sigue sin sincronizar. La RPC `close_cash_closing` valida los IDs, recalcula los totales en PostgreSQL y crea `cash_closing_expense_items`, `cash_closing_transfer_items` y `cash_closing_payment_items` con snapshots. Las restricciones `UNIQUE(expense_id)`, `UNIQUE(transfer_id)` y `UNIQUE(payment_id)` impiden reutilización incluso entre clientes concurrentes. La elegibilidad de un pago se determina exclusivamente por `source_store_id + payment.business_date`.
 
 Puede haber varios cortes cerrados para la misma tienda y fecha. Bajo un bloqueo transaccional por ese par, PostgreSQL asigna `closing_number = max + 1`; la unicidad real es `store_id + business_date + closing_number`. Cerrar un corte inmoviliza únicamente sus movimientos asociados y no impide registrar otros o crear un nuevo corte el mismo día.
 

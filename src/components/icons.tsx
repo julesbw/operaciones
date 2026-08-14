@@ -76,6 +76,15 @@ export function CashIcon(props: IconProps) {
   )
 }
 
+export function WalletIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 6.5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a3 3 0 0 1-3-3v-11a3 3 0 0 1 3-3h11v4" />
+      <path d="M15 11h7v5h-7a2.5 2.5 0 0 1 0-5Z" />
+    </IconBase>
+  )
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <IconBase {...props}>

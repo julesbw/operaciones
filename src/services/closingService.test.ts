@@ -3,6 +3,7 @@ import type {
   CashClosingDraft,
   Expense,
   MerchandiseTransfer,
+  Payment,
 } from '../domain/models'
 import {
   calculateClosingSummary,
@@ -54,8 +55,10 @@ const draft: CashClosingDraft = {
   cashOutflowsTotal: 0,
   selectedExpenseIds: [],
   selectedTransferIds: [],
+  selectedPaymentIds: [],
   knownExpenseIds: [],
   knownTransferIds: [],
+  knownPaymentIds: [],
   movementSelectionInitialized: false,
   countedCash: 0,
   cashToWithdraw: 0,
@@ -101,6 +104,24 @@ function expense(
     updatedAt: draft.updatedAt,
     version: 1,
     syncStatus: 'synced',
+  }
+}
+
+function payment(id: string, amount: number): Payment {
+  return {
+    id,
+    collaboratorId: 'collaborator-id',
+    collaboratorNameSnapshot: 'Trabajador',
+    collaboratorStoreIdSnapshot: draft.storeId,
+    payCycleEndWeekdaySnapshot: 6,
+    businessDate: draft.businessDate,
+    paidAt: draft.createdAt,
+    paidBy: 'admin-id',
+    suggestedAmount: amount,
+    paidAmount: amount,
+    fundingSource: 'store_cash',
+    sourceStoreId: draft.storeId,
+    createdAt: draft.createdAt,
   }
 }
 
@@ -153,6 +174,23 @@ describe('calculateClosingSummary', () => {
       difference: -100,
     })
   })
+
+  it('includes store cash payments in operational and physical cash outflows', () => {
+    const operational = calculateOperationalTotals(
+      [expense('cash', 900, 'efectivo')],
+      [transfer('transfer', 2_350)],
+      [payment('payment', 2_000)],
+    )
+
+    expect(operational).toEqual({
+      expensesTotal: 900,
+      cashExpensesTotal: 900,
+      outgoingTransfersTotal: 2_350,
+      storeCashPaymentsTotal: 2_000,
+      operationalOutflowsTotal: 5_250,
+      cashOutflowsTotal: 2_900,
+    })
+  })
 })
 
 describe('selectClosingMovements', () => {
@@ -165,20 +203,27 @@ describe('selectClosingMovements', () => {
       transfer('included-transfer', 2_350),
       transfer('excluded-transfer', 900),
     ]
+    const payments = [
+      payment('included-payment', 2_000),
+      payment('excluded-payment', 500),
+    ]
 
     expect(
       selectClosingMovements(
-        { expenses, outgoingTransfers: transfers },
+        { expenses, outgoingTransfers: transfers, storeCashPayments: payments },
         ['included-expense'],
         ['included-transfer'],
+        ['included-payment'],
       ),
     ).toMatchObject({
       expenses: [{ id: 'included-expense' }],
       outgoingTransfers: [{ id: 'included-transfer' }],
+      storeCashPayments: [{ id: 'included-payment' }],
       expensesTotal: 800,
       outgoingTransfersTotal: 2_350,
-      operationalOutflowsTotal: 3_150,
-      cashOutflowsTotal: 800,
+      storeCashPaymentsTotal: 2_000,
+      operationalOutflowsTotal: 5_150,
+      cashOutflowsTotal: 2_800,
     })
   })
 })

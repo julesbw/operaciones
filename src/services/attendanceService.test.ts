@@ -68,4 +68,31 @@ describe('AttendanceService multi-store saves', () => {
       await database.delete()
     }
   })
+
+  it('rejects future attendance before writing to Dexie', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const service = new AttendanceService(repository)
+
+    try {
+      await expect(
+        service.save(
+          [
+            {
+              collaboratorId: 'collaborator-id',
+              storeId: 'store-id',
+              attendanceDate: '2026-08-14',
+              status: 'present',
+            },
+          ],
+          'admin-id',
+          '2026-08-13',
+        ),
+      ).rejects.toThrow('FUTURE_ATTENDANCE_NOT_ALLOWED')
+      await expect(database.attendanceRecords.count()).resolves.toBe(0)
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
 })

@@ -3,9 +3,12 @@ import type {
   AttendanceRecord,
   CashClosingDraft,
   Collaborator,
+  CollaboratorCompensationHistory,
   Expense,
   LocalAppContext,
   MerchandiseTransfer,
+  Payment,
+  PaymentAttendanceItem,
   Store,
   SyncEntity,
   SyncQueueItem,
@@ -46,6 +49,9 @@ export class OperationsRepository {
         this.database.syncQueue,
         this.database.closingDrafts,
         this.database.appContexts,
+        this.database.payments,
+        this.database.paymentAttendanceItems,
+        this.database.compensationHistory,
       ],
       async () => {
         await Promise.all([
@@ -57,6 +63,9 @@ export class OperationsRepository {
           this.database.syncQueue.clear(),
           this.database.closingDrafts.clear(),
           this.database.appContexts.clear(),
+          this.database.payments.clear(),
+          this.database.paymentAttendanceItems.clear(),
+          this.database.compensationHistory.clear(),
         ])
       },
     )
@@ -123,10 +132,34 @@ export class OperationsRepository {
       .sortBy('name')
   }
 
+  getCollaborator(id: string): Promise<Collaborator | undefined> {
+    return this.database.collaborators.get(id)
+  }
+
   saveCollaborators(collaborators: Collaborator[]): Promise<void> {
     return this.database.collaborators
       .bulkPut(collaborators)
       .then(() => undefined)
+  }
+
+  saveCompensationHistory(
+    history: CollaboratorCompensationHistory[],
+  ): Promise<void> {
+    return this.database.compensationHistory
+      .bulkPut(history)
+      .then(() => undefined)
+  }
+
+  listCompensationHistory(
+    collaboratorId?: string,
+  ): Promise<CollaboratorCompensationHistory[]> {
+    if (collaboratorId) {
+      return this.database.compensationHistory
+        .where('collaboratorId')
+        .equals(collaboratorId)
+        .sortBy('effectiveFrom')
+    }
+    return this.database.compensationHistory.orderBy('effectiveFrom').toArray()
   }
 
   async replaceReferenceData(
@@ -299,6 +332,124 @@ export class OperationsRepository {
 
   getAttendance(id: string): Promise<AttendanceRecord | undefined> {
     return this.database.attendanceRecords.get(id)
+  }
+
+  async listAttendanceForPayments(
+    collaboratorId?: string,
+  ): Promise<AttendanceRecord[]> {
+    const records = collaboratorId
+      ? await this.database.attendanceRecords
+          .where('collaboratorId')
+          .equals(collaboratorId)
+          .toArray()
+      : await this.database.attendanceRecords.toArray()
+
+    return records
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort((left, right) =>
+        right.attendanceDate.localeCompare(left.attendanceDate),
+      )
+  }
+
+  savePayments(payments: Payment[]): Promise<void> {
+    return this.database.payments.bulkPut(payments).then(() => undefined)
+  }
+
+  savePaymentAttendanceItems(items: PaymentAttendanceItem[]): Promise<void> {
+    return this.database.paymentAttendanceItems
+      .bulkPut(items)
+      .then(() => undefined)
+  }
+
+  async saveConfirmedPayment(
+    payment: Payment,
+    items: PaymentAttendanceItem[],
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.payments,
+      this.database.paymentAttendanceItems,
+      async () => {
+        await this.database.payments.put(payment)
+        await this.database.paymentAttendanceItems.bulkPut(items)
+      },
+    )
+  }
+
+  async listPayments(): Promise<Payment[]> {
+    // Dexie Collection#reverse changes index traversal, not an Array instance.
+    // oxlint-disable-next-line unicorn/no-array-reverse
+    return this.database.payments.orderBy('paidAt').reverse().toArray()
+  }
+
+  async listStoreCashPayments(
+    sourceStoreId: string,
+    businessDate: string,
+  ): Promise<Payment[]> {
+    const payments = await this.database.payments
+      .where('[sourceStoreId+businessDate]')
+      .equals([sourceStoreId, businessDate])
+      .toArray()
+    return payments.filter(
+      (payment) => payment.fundingSource === 'store_cash',
+    )
+  }
+
+  getPayment(id: string): Promise<Payment | undefined> {
+    return this.database.payments.get(id)
+  }
+
+  listPaymentAttendanceItems(
+    paymentId?: string,
+  ): Promise<PaymentAttendanceItem[]> {
+    if (paymentId) {
+      return this.database.paymentAttendanceItems
+        .where('paymentId')
+        .equals(paymentId)
+        .sortBy('workDateSnapshot')
+    }
+    return this.database.paymentAttendanceItems.toArray()
+  }
+
+  async replaceRemotePaymentData(
+    payments: Payment[],
+    items: PaymentAttendanceItem[],
+    history: CollaboratorCompensationHistory[],
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.payments,
+      this.database.paymentAttendanceItems,
+      this.database.compensationHistory,
+      async () => {
+        await Promise.all([
+          this.database.payments.clear(),
+          this.database.paymentAttendanceItems.clear(),
+          this.database.compensationHistory.clear(),
+        ])
+        await Promise.all([
+          this.database.payments.bulkPut(payments),
+          this.database.paymentAttendanceItems.bulkPut(items),
+          this.database.compensationHistory.bulkPut(history),
+        ])
+      },
+    )
+  }
+
+  async clearAdministrativePaymentData(): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.payments,
+      this.database.paymentAttendanceItems,
+      this.database.compensationHistory,
+      async () => {
+        await Promise.all([
+          this.database.payments.clear(),
+          this.database.paymentAttendanceItems.clear(),
+          this.database.compensationHistory.clear(),
+        ])
+      },
+    )
   }
 
   async saveRemoteAttendance(records: AttendanceRecord[]): Promise<void> {

@@ -10,6 +10,7 @@ import type { Collaborator, Store, UserProfile } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { collaboratorService } from '../services/collaboratorService'
 import { connectivityService } from '../services/connectivityService'
+import { paymentService } from '../services/paymentService'
 import { referenceDataService } from '../services/referenceDataService'
 import { storeService } from '../services/storeService'
 import { WEEKDAYS } from '../domain/constants'
@@ -50,8 +51,10 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [collaboratorSearch, setCollaboratorSearch] = useState('')
   const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator>()
+  const [editingCollaborator, setEditingCollaborator] = useState<Collaborator>()
   const [newCollaboratorName, setNewCollaboratorName] = useState('')
   const [restDay, setRestDay] = useState(0)
+  const [payCycleEndWeekday, setPayCycleEndWeekday] = useState(6)
   const [weeklyPay, setWeeklyPay] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
@@ -184,28 +187,48 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     }
   }
 
-  async function createCollaborator(event: FormEvent<HTMLFormElement>) {
+  async function saveCollaborator(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSaving(true)
     setCreationError(undefined)
     setMessage(undefined)
     try {
-      const collaborator = await collaboratorService.create({
+      const input = {
         name: newCollaboratorName,
         storeId: newCollaboratorStoreId,
         restDay,
+        payCycleEndWeekday,
         weeklyPay: weeklyPay.trim() ? Number(weeklyPay) : Number.NaN,
-      })
+      }
+      const collaborator = editingCollaborator
+        ? await collaboratorService.update(editingCollaborator.id, input)
+        : await collaboratorService.create(input)
+      await paymentService.refreshRemote()
       if (
         teamStoreFilter === ALL_STORES ||
         teamStoreFilter === collaborator.storeId
       ) {
-        setCollaborators((current) => [...current, collaborator])
+        setCollaborators((current) =>
+          current.some((item) => item.id === collaborator.id)
+            ? current.map((item) =>
+                item.id === collaborator.id ? collaborator : item,
+              )
+            : [...current, collaborator],
+        )
+      } else if (editingCollaborator) {
+        setCollaborators((current) =>
+          current.filter((item) => item.id !== collaborator.id),
+        )
       }
       setNewCollaboratorName('')
       setWeeklyPay('')
       setCollaboratorModalOpen(false)
-      setMessage(`${collaborator.name} se añadió al equipo.`)
+      setEditingCollaborator(undefined)
+      setMessage(
+        editingCollaborator
+          ? `${collaborator.name} se actualizó correctamente.`
+          : `${collaborator.name} se añadió al equipo.`,
+      )
     } catch (cause: unknown) {
       console.error('No fue posible crear el colaborador', cause)
       setCreationError(
@@ -234,10 +257,41 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     setNewCollaboratorStoreId(selectedStoreId)
     setInitialCollaboratorStoreId(selectedStoreId)
     setRestDay(0)
+    setPayCycleEndWeekday(6)
     setWeeklyPay('')
+    setEditingCollaborator(undefined)
     setCreationError(undefined)
     setCollaboratorModalOpen(true)
   }
+
+  function editCollaborator(collaborator: Collaborator) {
+    setSelectedCollaborator(undefined)
+    setEditingCollaborator(collaborator)
+    setNewCollaboratorName(collaborator.name)
+    setNewCollaboratorStoreId(collaborator.storeId)
+    setInitialCollaboratorStoreId(collaborator.storeId)
+    setRestDay(collaborator.restDay)
+    setPayCycleEndWeekday(collaborator.payCycleEndWeekday ?? 6)
+    setWeeklyPay(
+      collaborator.weeklyPay === undefined
+        ? ''
+        : String(collaborator.weeklyPay),
+    )
+    setCreationError(undefined)
+    setCollaboratorModalOpen(true)
+  }
+
+  const collaboratorHasUnsavedChanges = editingCollaborator
+    ? newCollaboratorName.trim() !== editingCollaborator.name ||
+      newCollaboratorStoreId !== editingCollaborator.storeId ||
+      restDay !== editingCollaborator.restDay ||
+      payCycleEndWeekday !== editingCollaborator.payCycleEndWeekday ||
+      Number(weeklyPay) !== editingCollaborator.weeklyPay
+    : newCollaboratorName.trim().length > 0 ||
+      weeklyPay.trim().length > 0 ||
+      restDay !== 0 ||
+      payCycleEndWeekday !== 6 ||
+      newCollaboratorStoreId !== initialCollaboratorStoreId
 
   return (
     <section className="mx-auto max-w-5xl">
@@ -405,6 +459,11 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                           </p>
                         )}
                         <p className="mt-1 text-xs text-slate-500">Descanso: {WEEKDAYS[collaborator.restDay]}</p>
+                        <p className={`mt-1 text-xs font-semibold ${collaborator.payCycleEndWeekday === undefined ? 'text-amber-700' : 'text-slate-500'}`}>
+                          Día de raya: {collaborator.payCycleEndWeekday === undefined
+                            ? 'Sin configurar'
+                            : WEEKDAYS[collaborator.payCycleEndWeekday]}
+                        </p>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">Activo</span>
                     </div>
@@ -541,19 +600,17 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         closeDisabled={saving}
         closeLabel="Cerrar formulario de colaborador"
         eyebrow="Administración"
-        hasUnsavedChanges={
-          newCollaboratorName.trim().length > 0 ||
-          weeklyPay.trim().length > 0 ||
-          restDay !== 0 ||
-          newCollaboratorStoreId !== initialCollaboratorStoreId
-        }
+        hasUnsavedChanges={collaboratorHasUnsavedChanges}
         initialFocusRef={collaboratorNameInputRef}
         open={collaboratorModalOpen}
         returnFocusRef={collaboratorFabRef}
-        title="Nuevo colaborador"
-        onClose={() => setCollaboratorModalOpen(false)}
+        title={editingCollaborator ? 'Editar colaborador' : 'Nuevo colaborador'}
+        onClose={() => {
+          setCollaboratorModalOpen(false)
+          setEditingCollaborator(undefined)
+        }}
       >
-        <form onSubmit={createCollaborator}>
+        <form onSubmit={saveCollaborator}>
           {creationError && (
             <div className="alert-error mt-5" role="alert">{creationError}</div>
           )}
@@ -598,6 +655,23 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
               </select>
             </label>
             <label className="field-label">
+              Día de raya
+              <select
+                className="field"
+                value={payCycleEndWeekday}
+                onChange={(event) =>
+                  setPayCycleEndWeekday(Number(event.target.value))
+                }
+              >
+                {WEEKDAYS.map((weekday, index) => (
+                  <option key={weekday} value={index}>{weekday}</option>
+                ))}
+              </select>
+              <span className="text-xs font-normal leading-5 text-slate-500">
+                Define el final del ciclo; el pago puede realizarse cualquier día.
+              </span>
+            </label>
+            <label className="field-label">
               Pago semanal
               <div className="money-field">
                 <span>$</span>
@@ -619,7 +693,10 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
               className="button-secondary w-full"
               disabled={saving}
               type="button"
-              onClick={() => setCollaboratorModalOpen(false)}
+              onClick={() => {
+                setCollaboratorModalOpen(false)
+                setEditingCollaborator(undefined)
+              }}
             >
               Cancelar
             </button>
@@ -657,6 +734,14 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                 </dd>
               </div>
               <div className="flex items-center justify-between gap-4 py-3.5">
+                <dt className="text-sm font-semibold text-slate-500">Día de raya</dt>
+                <dd className={`min-w-0 text-right text-sm font-bold ${selectedCollaborator.payCycleEndWeekday === undefined ? 'text-amber-700' : 'text-slate-900'}`}>
+                  {selectedCollaborator.payCycleEndWeekday === undefined
+                    ? 'Sin configurar'
+                    : WEEKDAYS[selectedCollaborator.payCycleEndWeekday]}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-3.5">
                 <dt className="text-sm font-semibold text-slate-500">Pago semanal</dt>
                 <dd className="min-w-0 text-right text-sm font-bold text-slate-900">
                   {selectedCollaborator.weeklyPay === undefined
@@ -669,13 +754,23 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                 <dd className="text-sm font-bold text-emerald-700">Activo</dd>
               </div>
             </dl>
-            <button
-              className="button-secondary mt-6 w-full"
-              type="button"
-              onClick={() => setSelectedCollaborator(undefined)}
-            >
-              Cerrar
-            </button>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                className="button-secondary w-full"
+                type="button"
+                onClick={() => setSelectedCollaborator(undefined)}
+              >
+                Cerrar
+              </button>
+              <button
+                className="button-primary w-full"
+                disabled={!canMutate}
+                type="button"
+                onClick={() => editCollaborator(selectedCollaborator)}
+              >
+                Editar
+              </button>
+            </div>
           </>
         )}
       </AppModal>

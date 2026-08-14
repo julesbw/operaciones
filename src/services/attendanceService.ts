@@ -4,6 +4,7 @@ import type {
   SyncQueueItem,
 } from '../domain/models'
 import { operationsRepository } from '../repositories/operationsRepository'
+import { getOperationalDate } from '../utils/date'
 
 export class AttendanceService {
   constructor(private readonly repository = operationsRepository) {}
@@ -15,11 +16,15 @@ export class AttendanceService {
   async save(
     inputs: AttendanceInput[],
     userId: string,
+    today = getOperationalDate(),
   ): Promise<AttendanceRecord[]> {
     if (inputs.length === 0) return []
 
     const now = new Date().toISOString()
     const attendanceDate = inputs[0]!.attendanceDate
+    if (attendanceDate > today) {
+      throw new Error('FUTURE_ATTENDANCE_NOT_ALLOWED')
+    }
     if (inputs.some((input) => input.attendanceDate !== attendanceDate)) {
       throw new Error('Todas las asistencias deben corresponder a la misma fecha')
     }

@@ -15,6 +15,13 @@ export const PAYMENT_METHODS = [
 ] as const
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
 
+export const PAYMENT_FUNDING_SOURCES = [
+  'store_cash',
+  'central_cash',
+] as const
+export type PaymentFundingSource =
+  (typeof PAYMENT_FUNDING_SOURCES)[number]
+
 export const SYNC_STATUSES = ['pending', 'syncing', 'synced', 'error'] as const
 export type SyncStatus = (typeof SYNC_STATUSES)[number]
 
@@ -97,10 +104,20 @@ export type Collaborator = {
   name: string
   storeId: string
   restDay: number
+  payCycleEndWeekday?: number
   status: EntityStatus
   weeklyPay?: number
   createdAt: string
   updatedAt: string
+}
+
+export type CollaboratorCompensationHistory = {
+  id: string
+  collaboratorId: string
+  weeklyPay: number
+  effectiveFrom: string
+  recordedAt: string
+  recordedBy: string
 }
 
 export type AttendanceRecord = {
@@ -114,6 +131,35 @@ export type AttendanceRecord = {
   updatedAt: string
   version: number
   syncStatus: SyncStatus
+}
+
+export type Payment = {
+  id: string
+  collaboratorId: string
+  collaboratorNameSnapshot: string
+  collaboratorStoreIdSnapshot: string
+  payCycleEndWeekdaySnapshot: number
+  businessDate: string
+  paidAt: string
+  paidBy: string
+  suggestedAmount: number
+  paidAmount: number
+  fundingSource: PaymentFundingSource
+  sourceStoreId?: string
+  notes?: string
+  createdAt: string
+}
+
+export type PaymentAttendanceItem = {
+  paymentId: string
+  attendanceId: string
+  workDateSnapshot: string
+  periodStart: string
+  periodEnd: string
+  weeklyPaySnapshot: number
+  dailyPaySnapshot: number
+  suggestedAllocation: number
+  createdAt: string
 }
 
 export type Bills = {
@@ -145,8 +191,10 @@ export type CashClosingDraft = {
   cashOutflowsTotal: number
   selectedExpenseIds: string[]
   selectedTransferIds: string[]
+  selectedPaymentIds: string[]
   knownExpenseIds: string[]
   knownTransferIds: string[]
+  knownPaymentIds: string[]
   movementSelectionInitialized: boolean
   countedCash: number
   cashToWithdraw: number

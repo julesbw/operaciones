@@ -3,6 +3,7 @@ import type {
   Bills,
   EntityStatus,
   PaymentMethod,
+  PaymentFundingSource,
   StoreStatus,
 } from '../domain/models'
 
@@ -35,9 +36,19 @@ export type CollaboratorRow = {
   name: string
   store_id: string
   rest_day: number
+  pay_cycle_end_weekday: number | null
   status: EntityStatus
   created_at: string
   updated_at: string
+}
+
+export type CollaboratorCompensationHistoryRow = {
+  id: string
+  collaborator_id: string
+  weekly_pay: number
+  effective_from: string
+  recorded_at: string
+  recorded_by: string
 }
 
 export type CollaboratorCompensationRow = {
@@ -58,6 +69,35 @@ export type AttendanceRow = {
   created_at: string
   updated_at: string
   version: number
+}
+
+export type PaymentRow = {
+  id: string
+  collaborator_id: string
+  collaborator_name_snapshot: string
+  collaborator_store_id_snapshot: string
+  pay_cycle_end_weekday_snapshot: number
+  business_date: string
+  paid_at: string
+  paid_by: string
+  suggested_amount: number
+  paid_amount: number
+  funding_source: PaymentFundingSource
+  source_store_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+export type PaymentAttendanceItemRow = {
+  payment_id: string
+  attendance_id: string
+  work_date_snapshot: string
+  period_start: string
+  period_end: string
+  weekly_pay_snapshot: number
+  daily_pay_snapshot: number
+  suggested_allocation: number
+  created_at: string
 }
 
 export type ExpenseRow = {
@@ -139,6 +179,14 @@ export type CashClosingTransferItemRow = {
   created_at: string
 }
 
+export type CashClosingPaymentItemRow = {
+  cash_closing_id: string
+  payment_id: string
+  amount_snapshot: number
+  collaborator_name_snapshot: string
+  created_at: string
+}
+
 export type CashClosingCandidatesResult = {
   expenses: Array<
     Pick<
@@ -157,6 +205,7 @@ export type CashClosingCandidatesResult = {
     >
   >
   transfers: MerchandiseTransferRow[]
+  payments: PaymentRow[]
 }
 
 export type Database = {
@@ -179,6 +228,11 @@ export type Database = {
         never,
         never
       >
+      collaborator_compensation_history: TableDefinition<
+        CollaboratorCompensationHistoryRow,
+        never,
+        never
+      >
       attendance_records: TableDefinition<
         AttendanceRow,
         Pick<
@@ -194,6 +248,12 @@ export type Database = {
           | 'version'
         >,
         Partial<Pick<AttendanceRow, 'status' | 'recorded_by' | 'updated_at'>>
+      >
+      collaborator_payments: TableDefinition<PaymentRow, never, never>
+      payment_attendance_items: TableDefinition<
+        PaymentAttendanceItemRow,
+        never,
+        never
       >
       expenses: TableDefinition<
         ExpenseRow,
@@ -330,6 +390,17 @@ export type Database = {
         >,
         never
       >
+      cash_closing_payment_items: TableDefinition<
+        CashClosingPaymentItemRow,
+        Pick<
+          CashClosingPaymentItemRow,
+          | 'cash_closing_id'
+          | 'payment_id'
+          | 'amount_snapshot'
+          | 'collaborator_name_snapshot'
+        >,
+        never
+      >
     }
     Views: Record<string, never>
     Functions: {
@@ -390,6 +461,7 @@ export type Database = {
           p_notes: string | null
           p_expense_ids: string[]
           p_transfer_ids: string[]
+          p_payment_ids: string[]
         }
         Returns: CashClosingRow
       }
@@ -407,8 +479,44 @@ export type Database = {
           p_store_id: string
           p_rest_day: number
           p_weekly_pay: number
+          p_pay_cycle_end_weekday: number
         }
         Returns: CollaboratorRow
+      }
+      update_collaborator: {
+        Args: {
+          p_id: string
+          p_name: string
+          p_store_id: string
+          p_rest_day: number
+          p_weekly_pay: number
+          p_pay_cycle_end_weekday: number
+        }
+        Returns: CollaboratorRow
+      }
+      confirm_collaborator_payment: {
+        Args: {
+          p_payment_id: string
+          p_collaborator_id: string
+          p_attendance_ids: string[]
+          p_paid_amount: number
+          p_funding_source: PaymentFundingSource
+          p_source_store_id: string | null
+          p_notes: string | null
+        }
+        Returns: {
+          payment: PaymentRow
+          items: PaymentAttendanceItemRow[]
+        }
+      }
+      get_payment_module_data: {
+        Args: Record<never, never>
+        Returns: {
+          payments: PaymentRow[]
+          items: PaymentAttendanceItemRow[]
+          compensation_history: CollaboratorCompensationHistoryRow[]
+          attendance: AttendanceRow[]
+        }
       }
     }
     Enums: Record<string, never>

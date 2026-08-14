@@ -3,6 +3,8 @@ import { authService } from './authService'
 import { bootstrapService } from './bootstrapService'
 import { localContextService } from './localContextService'
 import { offlineShellService } from './offlineShellService'
+import { paymentService } from './paymentService'
+import { operationsRepository } from '../repositories/operationsRepository'
 import { referenceDataService } from './referenceDataService'
 import { syncService, type SyncResult } from './syncService'
 
@@ -101,6 +103,13 @@ export class RemoteBootstrapService {
     }
     const sync = await syncService.process()
     ensureActive()
+    if (profile.role === 'admin' && !profile.demo) {
+      await paymentService.refreshRemote()
+      ensureActive()
+    } else if (profile.role !== 'admin') {
+      await operationsRepository.clearAdministrativePaymentData()
+      ensureActive()
+    }
     if (sync.failed === 0) {
       await localContextService.recordSuccessfulSync(profile.id)
     }

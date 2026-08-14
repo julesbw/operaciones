@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   refreshReferenceData: vi.fn(),
   ensureOfflineShell: vi.fn(),
   sync: vi.fn(),
+  refreshPayments: vi.fn(),
+  clearAdministrativePaymentData: vi.fn(),
 }))
 
 vi.mock('./authService', () => ({
@@ -48,6 +50,16 @@ vi.mock('./syncService', () => ({
   syncService: { process: mocks.sync },
 }))
 
+vi.mock('./paymentService', () => ({
+  paymentService: { refreshRemote: mocks.refreshPayments },
+}))
+
+vi.mock('../repositories/operationsRepository', () => ({
+  operationsRepository: {
+    clearAdministrativePaymentData: mocks.clearAdministrativePaymentData,
+  },
+}))
+
 import {
   RemoteBootstrapCancelledError,
   RemoteBootstrapService,
@@ -81,6 +93,8 @@ describe('RemoteBootstrapService', () => {
     mocks.saveAuthenticatedProfile.mockResolvedValue(context)
     mocks.sync.mockResolvedValue({ synced: 1, failed: 0, pending: 0 })
     mocks.recordSuccessfulSync.mockResolvedValue(undefined)
+    mocks.refreshPayments.mockResolvedValue(undefined)
+    mocks.clearAdministrativePaymentData.mockResolvedValue(undefined)
   })
 
   it('persists context only after profile, references and app shell succeed', async () => {
@@ -96,6 +110,7 @@ describe('RemoteBootstrapService', () => {
     expect(mocks.ensureOfflineShell).toHaveBeenCalledOnce()
     expect(mocks.saveAuthenticatedProfile).toHaveBeenCalledWith(profile)
     expect(mocks.sync).toHaveBeenCalledOnce()
+    expect(mocks.refreshPayments).toHaveBeenCalledOnce()
   })
 
   it('does not persist an authenticated context after sign-out cancellation', async () => {

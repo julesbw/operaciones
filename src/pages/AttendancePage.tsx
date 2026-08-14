@@ -20,7 +20,7 @@ import type {
 import { attendanceService } from '../services/attendanceService'
 import { referenceDataService } from '../services/referenceDataService'
 import { syncService } from '../services/syncService'
-import { getLocalDate, getWeekday } from '../utils/date'
+import { getOperationalDate, getWeekday } from '../utils/date'
 
 type AttendancePageProps = {
   stores: Store[]
@@ -55,7 +55,8 @@ export function AttendancePage({
   onDataChanged,
   onStoreFilterChange,
 }: AttendancePageProps) {
-  const [date, setDate] = useState(getLocalDate())
+  const operationalDate = getOperationalDate()
+  const [date, setDate] = useState(operationalDate)
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
   const [loading, setLoading] = useState(true)
@@ -191,7 +192,12 @@ export function AttendancePage({
         })
     } catch (cause: unknown) {
       console.error('No fue posible guardar la asistencia', cause)
-      setError('No fue posible guardar la asistencia en este dispositivo.')
+      setError(
+        cause instanceof Error &&
+          cause.message.includes('FUTURE_ATTENDANCE_NOT_ALLOWED')
+          ? 'No se pueden registrar asistencias futuras.'
+          : 'No fue posible guardar la asistencia en este dispositivo.',
+      )
     } finally {
       setSaving(false)
     }
@@ -212,6 +218,7 @@ export function AttendancePage({
         <input
           aria-label="Fecha"
           className="compact-field"
+          max={operationalDate}
           type="date"
           value={date}
           onChange={(event) => setDate(event.target.value)}

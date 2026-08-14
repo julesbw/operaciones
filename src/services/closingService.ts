@@ -4,12 +4,14 @@ import type {
   CashClosingDraft,
   Expense,
   MerchandiseTransfer,
+  Payment,
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import type {
   CashClosingExpenseItemRow,
   CashClosingRow,
+  CashClosingPaymentItemRow,
   CashClosingTransferItemRow,
 } from '../types/database'
 import { calculateBillsTotal } from '../utils/money'
@@ -33,12 +35,14 @@ export type ClosingOperationalTotals = {
 export type ClosingOperationalSummary = ClosingOperationalTotals & {
   expenses: Expense[]
   outgoingTransfers: MerchandiseTransfer[]
+  storeCashPayments: Payment[]
 }
 
 export type CashClosingDetail = {
   closing: CashClosingRow
   expenses: CashClosingExpenseItemRow[]
   transfers: CashClosingTransferItemRow[]
+  payments: CashClosingPaymentItemRow[]
 }
 
 export type ClosingDomainErrorCode =
@@ -136,12 +140,18 @@ export function calculateExpenseTotals(
 export function calculateOperationalTotals(
   expenses: Expense[],
   outgoingTransfers: MerchandiseTransfer[],
+  storeCashPayments: Payment[] = [],
 ): ClosingOperationalTotals {
   const expenseTotals = calculateExpenseTotals(expenses)
   const outgoingTransfersTotal = roundMoney(
     outgoingTransfers.reduce((total, transfer) => total + transfer.amount, 0),
   )
-  const storeCashPaymentsTotal = 0
+  const storeCashPaymentsTotal = roundMoney(
+    storeCashPayments.reduce(
+      (total, payment) => total + payment.paidAmount,
+      0,
+    ),
+  )
 
   return {
     expensesTotal: expenseTotals.total,
@@ -158,23 +168,36 @@ export function calculateOperationalTotals(
 }
 
 export function selectClosingMovements(
-  candidates: Pick<ClosingOperationalSummary, 'expenses' | 'outgoingTransfers'>,
+  candidates: Pick<
+    ClosingOperationalSummary,
+    'expenses' | 'outgoingTransfers' | 'storeCashPayments'
+  >,
   expenseIds: readonly string[],
   transferIds: readonly string[],
+  paymentIds: readonly string[] = [],
 ): ClosingOperationalSummary {
   const expenseIdSet = new Set(expenseIds)
   const transferIdSet = new Set(transferIds)
+  const paymentIdSet = new Set(paymentIds)
   const expenses = candidates.expenses.filter((expense) =>
     expenseIdSet.has(expense.id),
   )
   const outgoingTransfers = candidates.outgoingTransfers.filter((transfer) =>
     transferIdSet.has(transfer.id),
   )
+  const storeCashPayments = candidates.storeCashPayments.filter((payment) =>
+    paymentIdSet.has(payment.id),
+  )
 
   return {
     expenses,
     outgoingTransfers,
-    ...calculateOperationalTotals(expenses, outgoingTransfers),
+    storeCashPayments,
+    ...calculateOperationalTotals(
+      expenses,
+      outgoingTransfers,
+      storeCashPayments,
+    ),
   }
 }
 
@@ -278,11 +301,36 @@ class ClosingService {
           version: transfer.version,
           syncStatus: 'synced',
         }))
+        const storeCashPayments: Payment[] = (data?.payments ?? []).map(
+          (payment) => ({
+            id: payment.id,
+            collaboratorId: payment.collaborator_id,
+            collaboratorNameSnapshot: payment.collaborator_name_snapshot,
+            collaboratorStoreIdSnapshot:
+              payment.collaborator_store_id_snapshot,
+            payCycleEndWeekdaySnapshot:
+              payment.pay_cycle_end_weekday_snapshot,
+            businessDate: payment.business_date,
+            paidAt: payment.paid_at,
+            paidBy: payment.paid_by,
+            suggestedAmount: Number(payment.suggested_amount),
+            paidAmount: Number(payment.paid_amount),
+            fundingSource: payment.funding_source,
+            sourceStoreId: payment.source_store_id ?? undefined,
+            notes: payment.notes ?? undefined,
+            createdAt: payment.created_at,
+          }),
+        )
 
         return {
           expenses,
           outgoingTransfers,
-          ...calculateOperationalTotals(expenses, outgoingTransfers),
+          storeCashPayments,
+          ...calculateOperationalTotals(
+            expenses,
+            outgoingTransfers,
+            storeCashPayments,
+          ),
         }
       } catch (cause: unknown) {
         console.error(
@@ -292,26 +340,42 @@ class ClosingService {
       }
     }
 
-    const [localExpenses, localTransfers] = await Promise.all([
+    const [localExpenses, localTransfers, localPayments] = await Promise.all([
       operationsRepository.listExpenses(storeId, businessDate),
       operationsRepository.listMerchandiseTransfers(storeId, businessDate),
+      operationsRepository.listStoreCashPayments(storeId, businessDate),
     ])
     const expenses = localExpenses
     const outgoingTransfers = localTransfers
+    const storeCashPayments = localPayments
 
     return {
       expenses,
       outgoingTransfers,
-      ...calculateOperationalTotals(expenses, outgoingTransfers),
+      storeCashPayments,
+      ...calculateOperationalTotals(
+        expenses,
+        outgoingTransfers,
+        storeCashPayments,
+      ),
     }
   }
 
   getOperationalSummary(
-    candidates: Pick<ClosingOperationalSummary, 'expenses' | 'outgoingTransfers'>,
+    candidates: Pick<
+      ClosingOperationalSummary,
+      'expenses' | 'outgoingTransfers' | 'storeCashPayments'
+    >,
     expenseIds: readonly string[],
     transferIds: readonly string[],
+    paymentIds: readonly string[],
   ): ClosingOperationalSummary {
-    return selectClosingMovements(candidates, expenseIds, transferIds)
+    return selectClosingMovements(
+      candidates,
+      expenseIds,
+      transferIds,
+      paymentIds,
+    )
   }
 
   listDrafts(
@@ -355,7 +419,7 @@ class ClosingService {
       'Se necesita conexión para consultar un corte cerrado.',
     )
 
-    const [closingResult, expensesResult, transfersResult] = await Promise.all([
+    const [closingResult, expensesResult, transfersResult, paymentsResult] = await Promise.all([
       supabase.from('cash_closings').select('*').eq('id', id).single(),
       supabase
         .from('cash_closing_expense_items')
@@ -367,15 +431,22 @@ class ClosingService {
         .select('*')
         .eq('cash_closing_id', id)
         .order('created_at'),
+      supabase
+        .from('cash_closing_payment_items')
+        .select('*')
+        .eq('cash_closing_id', id)
+        .order('created_at'),
     ])
     if (closingResult.error) throw closingResult.error
     if (expensesResult.error) throw expensesResult.error
     if (transfersResult.error) throw transfersResult.error
+    if (paymentsResult.error) throw paymentsResult.error
 
     return {
       closing: closingResult.data,
       expenses: expensesResult.data,
       transfers: transfersResult.data,
+      payments: paymentsResult.data,
     }
   }
 
@@ -419,8 +490,10 @@ class ClosingService {
       cashOutflowsTotal: 0,
       selectedExpenseIds: [],
       selectedTransferIds: [],
+      selectedPaymentIds: [],
       knownExpenseIds: [],
       knownTransferIds: [],
+      knownPaymentIds: [],
       movementSelectionInitialized: false,
       countedCash: 0,
       cashToWithdraw: 0,
@@ -490,9 +563,13 @@ class ClosingService {
     const latestTransferIds = new Set(
       latestCandidates.outgoingTransfers.map((transfer) => transfer.id),
     )
+    const latestPaymentIds = new Set(
+      latestCandidates.storeCashPayments.map((payment) => payment.id),
+    )
     if (
       draft.selectedExpenseIds.some((id) => !latestExpenseIds.has(id)) ||
-      draft.selectedTransferIds.some((id) => !latestTransferIds.has(id))
+      draft.selectedTransferIds.some((id) => !latestTransferIds.has(id)) ||
+      draft.selectedPaymentIds.some((id) => !latestPaymentIds.has(id))
     ) {
       throw new ClosingDomainError(
         'MOVEMENT_ALREADY_ASSIGNED',
@@ -504,6 +581,7 @@ class ClosingService {
       latestCandidates,
       draft.selectedExpenseIds,
       draft.selectedTransferIds,
+      draft.selectedPaymentIds,
     )
     const closedDraft = applyClosingSummary(draft, operational)
     const billErrors = validateClosingBillCounts(closedDraft)
@@ -532,6 +610,7 @@ class ClosingService {
       p_notes: closedDraft.notes ?? null,
       p_expense_ids: closedDraft.selectedExpenseIds,
       p_transfer_ids: closedDraft.selectedTransferIds,
+      p_payment_ids: closedDraft.selectedPaymentIds,
     })
     if (error) {
       const domainCode = [

@@ -1,6 +1,6 @@
 # La Piedad Operaciones
 
-PWA local-first para gastos, transferencias de mercancía, asistencias y cortes de caja de las tiendas.
+PWA local-first para gastos, transferencias de mercancía, asistencias, pagos a colaboradores y cortes de caja de las tiendas.
 
 ## Desarrollo
 
@@ -33,9 +33,10 @@ VITE_SUPABASE_PUBLISHABLE_KEY=TU_LLAVE_PUBLISHABLE
 4. Revisa antes de aplicar [`supabase/migrations/202608120001_merchandise_transfers.sql`](supabase/migrations/202608120001_merchandise_transfers.sql). Crea las transferencias, su RPC idempotente y RLS; además permite a las cajeras leer los nombres de todas las tiendas activas para elegir un destino, sin ampliar su acceso a movimientos.
 5. Aplica [`supabase/migrations/202608130001_cash_closing_operational_outflows.sql`](supabase/migrations/202608130001_cash_closing_operational_outflows.sql). Agrega snapshots de salidas, la relación histórica con transferencias y la RPC autoritativa de cierre; desde esta migración los cierres ya no se escriben directamente desde el cliente.
 6. Aplica [`supabase/migrations/202608130002_cash_closing_selection_history.sql`](supabase/migrations/202608130002_cash_closing_selection_history.sql). Sustituye el cierre automático por selección explícita, permite varios cortes diarios con consecutivo por tienda/fecha y garantiza que cada gasto o transferencia sólo pertenezca a un corte.
-7. Adapta y ejecuta [`supabase/setup-operations.example.sql`](supabase/setup-operations.example.sql) para crear tiendas y asignar cada cajera.
-8. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en `.env.local`.
-9. Verifica que cada perfil `cashier` tenga `store_id`; una cajera sin tienda no tendrá acceso a datos operativos por RLS.
+7. Revisa antes de aplicar [`supabase/migrations/202608130003_payments_module.sql`](supabase/migrations/202608130003_payments_module.sql). Es una migración aditiva: conserva `weekly_payments`, revoca su RPC de creación, incorpora historial salarial efectivo, pagos por asistencia, protecciones de concurrencia y la selección de pagos `store_cash` dentro de Cortes. No genera gastos duplicados. Esta migración se entrega pendiente de aplicación remota.
+8. Adapta y ejecuta [`supabase/setup-operations.example.sql`](supabase/setup-operations.example.sql) para crear tiendas y asignar cada cajera.
+9. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en `.env.local`.
+10. Verifica que cada perfil `cashier` tenga `store_id`; una cajera sin tienda no tendrá acceso a datos operativos por RLS.
 
 Las migraciones no reemplazan el trigger de usuarios, no cambian roles y no modifican las tablas financieras de Arrendamientos.
 

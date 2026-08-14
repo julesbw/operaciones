@@ -1,4 +1,9 @@
-import type { Collaborator, Store, UserProfile } from '../domain/models'
+import type {
+  Collaborator,
+  CollaboratorCompensationHistory,
+  Store,
+  UserProfile,
+} from '../domain/models'
 
 const DEMO_CREATED_AT = '2026-08-01T12:00:00.000Z'
 
@@ -25,6 +30,7 @@ export const DEMO_COLLABORATORS: Collaborator[] = [
     name: 'Ana López',
     storeId: DEMO_STORES[0]!.id,
     restDay: 2,
+    payCycleEndWeekday: 6,
     status: 'active',
     weeklyPay: 2_000,
     createdAt: DEMO_CREATED_AT,
@@ -35,6 +41,7 @@ export const DEMO_COLLABORATORS: Collaborator[] = [
     name: 'Carlos Pérez',
     storeId: DEMO_STORES[0]!.id,
     restDay: 1,
+    payCycleEndWeekday: 5,
     status: 'active',
     weeklyPay: 1_800,
     createdAt: DEMO_CREATED_AT,
@@ -45,6 +52,7 @@ export const DEMO_COLLABORATORS: Collaborator[] = [
     name: 'Juan García',
     storeId: DEMO_STORES[0]!.id,
     restDay: 0,
+    payCycleEndWeekday: 6,
     status: 'active',
     weeklyPay: 1_800,
     createdAt: DEMO_CREATED_AT,
@@ -55,6 +63,7 @@ export const DEMO_COLLABORATORS: Collaborator[] = [
     name: 'María Torres',
     storeId: DEMO_STORES[0]!.id,
     restDay: 3,
+    payCycleEndWeekday: 5,
     status: 'active',
     weeklyPay: 2_200,
     createdAt: DEMO_CREATED_AT,
@@ -65,12 +74,23 @@ export const DEMO_COLLABORATORS: Collaborator[] = [
     name: 'Sofía Ramírez',
     storeId: DEMO_STORES[1]!.id,
     restDay: 4,
+    payCycleEndWeekday: 6,
     status: 'active',
     weeklyPay: 1_900,
     createdAt: DEMO_CREATED_AT,
     updatedAt: DEMO_CREATED_AT,
   },
 ]
+
+export const DEMO_COMPENSATION_HISTORY: CollaboratorCompensationHistory[] =
+  DEMO_COLLABORATORS.map((collaborator, index) => ({
+    id: `40000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+    collaboratorId: collaborator.id,
+    weeklyPay: collaborator.weeklyPay ?? 0,
+    effectiveFrom: DEMO_CREATED_AT.slice(0, 10),
+    recordedAt: DEMO_CREATED_AT,
+    recordedBy: '30000000-0000-4000-8000-000000000002',
+  }))
 
 export const DEMO_CASHIER: UserProfile = {
   id: '30000000-0000-4000-8000-000000000001',

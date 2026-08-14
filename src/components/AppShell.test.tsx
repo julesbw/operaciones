@@ -58,3 +58,26 @@ describe('AppShell sync indicator', () => {
     expect(markup).toContain('title="Supabase no respondió"')
   })
 })
+
+describe('AppShell payments navigation', () => {
+  it('shows payments only to administrators', () => {
+    const cashierMarkup = renderStatus()
+    const adminMarkup = renderToStaticMarkup(
+      <AppShell
+        currentPage="home"
+        networkAvailable
+        pendingCount={0}
+        syncing={false}
+        user={{ ...user, role: 'admin' }}
+        onNavigate={vi.fn()}
+        onSignOut={vi.fn()}
+        onSync={vi.fn()}
+      >
+        Contenido
+      </AppShell>,
+    )
+
+    expect(cashierMarkup).not.toContain('Pagos')
+    expect(adminMarkup).toContain('Pagos')
+  })
+})

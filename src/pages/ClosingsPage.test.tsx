@@ -4,6 +4,7 @@ import type {
   CashClosingDraft,
   Expense,
   MerchandiseTransfer,
+  Payment,
   Store,
   UserProfile,
 } from '../domain/models'
@@ -45,8 +46,10 @@ const draft: CashClosingDraft = {
   cashOutflowsTotal: 0,
   selectedExpenseIds: [],
   selectedTransferIds: [],
+  selectedPaymentIds: [],
   knownExpenseIds: [],
   knownTransferIds: [],
+  knownPaymentIds: [],
   movementSelectionInitialized: false,
   countedCash: 0,
   cashToWithdraw: 0,
@@ -91,19 +94,40 @@ function transfer(id: string): MerchandiseTransfer {
   }
 }
 
+function payment(id: string): Payment {
+  return {
+    id,
+    collaboratorId: 'collaborator-id',
+    collaboratorNameSnapshot: 'Trabajador',
+    collaboratorStoreIdSnapshot: draft.storeId,
+    payCycleEndWeekdaySnapshot: 6,
+    businessDate: draft.businessDate,
+    paidAt: timestamp,
+    paidBy: user.id,
+    suggestedAmount: 300,
+    paidAmount: 300,
+    fundingSource: 'store_cash',
+    sourceStoreId: draft.storeId,
+    createdAt: timestamp,
+  }
+}
+
 function candidates(
   expenses: Expense[],
   transfers: MerchandiseTransfer[],
+  payments: Payment[] = [],
 ): ClosingOperationalSummary {
   return {
     expenses,
     outgoingTransfers: transfers,
+    storeCashPayments: payments,
     expensesTotal: expenses.length * 100,
     cashExpensesTotal: expenses.length * 100,
     outgoingTransfersTotal: transfers.length * 200,
-    storeCashPaymentsTotal: 0,
-    operationalOutflowsTotal: expenses.length * 100 + transfers.length * 200,
-    cashOutflowsTotal: expenses.length * 100,
+    storeCashPaymentsTotal: payments.length * 300,
+    operationalOutflowsTotal:
+      expenses.length * 100 + transfers.length * 200 + payments.length * 300,
+    cashOutflowsTotal: expenses.length * 100 + payments.length * 300,
   }
 }
 
@@ -125,11 +149,16 @@ describe('reconcileDraftSelection', () => {
     expect(
       reconcileDraftSelection(
         draft,
-        candidates([expense('expense-1')], [transfer('transfer-1')]),
+        candidates(
+          [expense('expense-1')],
+          [transfer('transfer-1')],
+          [payment('payment-1')],
+        ),
       ),
     ).toMatchObject({
       selectedExpenseIds: ['expense-1'],
       selectedTransferIds: ['transfer-1'],
+      selectedPaymentIds: ['payment-1'],
       movementSelectionInitialized: true,
     })
   })
@@ -139,8 +168,10 @@ describe('reconcileDraftSelection', () => {
       ...draft,
       selectedExpenseIds: [],
       selectedTransferIds: ['transfer-consumed'],
+      selectedPaymentIds: ['payment-consumed'],
       knownExpenseIds: ['expense-excluded'],
       knownTransferIds: ['transfer-consumed'],
+      knownPaymentIds: ['payment-consumed'],
       movementSelectionInitialized: true,
     }
 
@@ -150,13 +181,16 @@ describe('reconcileDraftSelection', () => {
         candidates(
           [expense('expense-excluded'), expense('expense-new')],
           [transfer('transfer-new')],
+          [payment('payment-new')],
         ),
       ),
     ).toMatchObject({
       selectedExpenseIds: ['expense-new'],
       selectedTransferIds: ['transfer-new'],
+      selectedPaymentIds: ['payment-new'],
       knownExpenseIds: ['expense-excluded', 'expense-new'],
       knownTransferIds: ['transfer-new'],
+      knownPaymentIds: ['payment-new'],
     })
   })
 })
