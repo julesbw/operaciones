@@ -111,27 +111,43 @@ function auditDate(value: string): string {
 function BillsBreakdown({
   bills,
   coinsAmount,
+  compactDesktop = false,
 }: {
   bills: CentralCashBills
   coinsAmount: number
+  compactDesktop?: boolean
 }) {
   const total = calculateCentralCashPhysicalTotal(bills, coinsAmount)
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200">
-      <div className="grid grid-cols-[minmax(5rem,1fr)_minmax(4rem,0.7fr)_minmax(5.5rem,auto)] gap-2 bg-slate-50 px-3 py-3 text-center text-[10px] font-extrabold uppercase tracking-wider text-slate-400 sm:grid-cols-[minmax(6rem,1fr)_6rem_minmax(7rem,auto)] sm:px-4">
+    <div
+      className={`overflow-hidden rounded-2xl border border-slate-200 ${
+        compactDesktop ? 'lg:rounded-xl' : ''
+      }`}
+    >
+      <div
+        className={`grid grid-cols-[minmax(5rem,1fr)_minmax(4rem,0.7fr)_minmax(5.5rem,auto)] gap-2 bg-slate-50 px-3 py-3 text-center text-[10px] font-extrabold uppercase tracking-wider text-slate-400 sm:grid-cols-[minmax(6rem,1fr)_6rem_minmax(7rem,auto)] sm:px-4 ${
+          compactDesktop ? 'lg:px-3 lg:py-1.5' : ''
+        }`}
+      >
         <span className="text-left">Denominación</span>
         <span>Conteo</span>
         <span className="text-right">Subtotal</span>
       </div>
-      <dl className="divide-y divide-slate-100 px-3 sm:px-4">
+      <dl
+        className={`divide-y divide-slate-100 px-3 sm:px-4 ${
+          compactDesktop ? 'lg:px-3' : ''
+        }`}
+      >
         {BILL_DENOMINATIONS.map((denomination) => {
           const isCoins = denomination.key === 'monedas'
           const count = isCoins ? coinsAmount : bills[denomination.key]
           const subtotal = isCoins ? coinsAmount : count * denomination.value
           return (
             <div
-              className="grid min-h-14 grid-cols-[minmax(5rem,1fr)_minmax(4rem,0.7fr)_minmax(5.5rem,auto)] items-center gap-2 text-sm sm:grid-cols-[minmax(6rem,1fr)_6rem_minmax(7rem,auto)]"
+              className={`grid min-h-14 grid-cols-[minmax(5rem,1fr)_minmax(4rem,0.7fr)_minmax(5.5rem,auto)] items-center gap-2 text-sm sm:grid-cols-[minmax(6rem,1fr)_6rem_minmax(7rem,auto)] ${
+                compactDesktop ? 'lg:min-h-7 lg:text-xs' : ''
+              }`}
               key={denomination.key}
             >
               <dt className="font-bold text-slate-700">
@@ -147,9 +163,17 @@ function BillsBreakdown({
           )
         })}
       </dl>
-      <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-4 py-4">
+      <div
+        className={`flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-4 py-4 ${
+          compactDesktop ? 'lg:px-3 lg:py-2' : ''
+        }`}
+      >
         <span className="text-sm font-bold text-slate-700">Efectivo total</span>
-        <strong className="text-xl font-black tabular-nums text-slate-950">
+        <strong
+          className={`text-xl font-black tabular-nums text-slate-950 ${
+            compactDesktop ? 'lg:text-base' : ''
+          }`}
+        >
           {currencyFormatter.format(total)}
         </strong>
       </div>
@@ -169,10 +193,10 @@ function DateFilters({
   onDateToChange: (value: string) => void
 }) {
   return (
-    <div className="panel grid grid-cols-2 gap-x-2 gap-y-3 p-3 sm:gap-4 sm:p-5">
-      <label className="field-label min-w-0">
+    <div className="panel grid grid-cols-2 gap-x-2 gap-y-3 p-3 sm:gap-4 sm:p-5 lg:w-auto lg:grid-cols-[auto_auto] lg:gap-3 lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+      <label className="field-label min-w-0 lg:flex lg:items-center lg:gap-2">
         Desde
-        <span className="expense-date-control">
+        <span className="expense-date-control lg:mt-0 lg:min-h-10 lg:w-28">
           <span aria-hidden="true">{compactDate(dateFrom)}</span>
           <input
             aria-label="Fecha inicial de Caja Central"
@@ -183,9 +207,9 @@ function DateFilters({
           />
         </span>
       </label>
-      <label className="field-label min-w-0">
+      <label className="field-label min-w-0 lg:flex lg:items-center lg:gap-2">
         Hasta
-        <span className="expense-date-control">
+        <span className="expense-date-control lg:mt-0 lg:min-h-10 lg:w-28">
           <span aria-hidden="true">{compactDate(dateTo)}</span>
           <input
             aria-label="Fecha final de Caja Central"
@@ -391,14 +415,14 @@ export function CentralCashPage({
         <h1 className="page-title">Caja Central</h1>
       </div>
 
-      <div className="mt-5 grid gap-4 sm:mt-7 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)] lg:grid-rows-[auto_1fr]">
-        <article className="hero-card min-h-0 lg:col-start-1 lg:row-start-1">
-          <div className="relative z-[1]">
+      <div className="mt-5 grid gap-4 sm:mt-7 lg:mt-5 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)] lg:items-stretch">
+        <article className="hero-card min-h-0 lg:h-full lg:p-5">
+          <div className="relative z-[1] lg:flex lg:h-full lg:flex-col">
             <p className="eyebrow-light">Saldo actual</p>
-            <p className="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl">
+            <p className="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl lg:mt-2 lg:text-4xl">
               {currencyFormatter.format(summary.balance)}
             </p>
-            <dl className="mt-7 grid gap-4 text-sm text-white sm:grid-cols-3">
+            <dl className="mt-7 grid gap-4 text-sm text-white sm:grid-cols-3 lg:mt-auto lg:pt-4">
               <div>
                 <dt className="text-teal-100/80">Entradas hoy</dt>
                 <dd className="mt-1 text-lg font-black">
@@ -444,37 +468,40 @@ export function CentralCashPage({
           )}
         </div>
 
-        <button
-          className="panel flex h-full w-full items-center gap-4 text-left transition hover:border-teal-200 hover:bg-teal-50/30 lg:col-start-1 lg:row-start-2"
-          type="button"
-          onClick={() => setTab('pending')}
-        >
-          <span className="stat-icon bg-amber-50 text-amber-700">
-            <CashIcon className="size-5" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="stat-label block">Por recibir</span>
-            <span className="stat-value block">
-              {summary.pendingClosingsCount}{' '}
-              {summary.pendingClosingsCount === 1 ? 'Corte' : 'Cortes'}
-            </span>
-            <span className="mt-1 block text-sm font-bold text-amber-800">
-              {currencyFormatter.format(summary.pendingClosingsAmount)}
-            </span>
-          </span>
-          <ArrowIcon className="size-5 text-slate-400" />
-        </button>
-
-        <article className="panel hidden h-full lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:block">
-          <p className="stat-label mb-3">Efectivo físico central</p>
+        <article className="panel hidden h-full lg:block lg:p-3">
+          <p className="stat-label mb-1.5">Efectivo físico central</p>
           <BillsBreakdown
             bills={summary.bills}
+            compactDesktop
             coinsAmount={summary.coinsAmount}
           />
         </article>
       </div>
 
-      <div className="mt-6 space-y-5">
+      <button
+        className="panel mt-3 flex w-full items-center gap-3 px-4 py-3 text-left transition hover:border-teal-200 hover:bg-teal-50/30 sm:px-5 sm:py-3"
+        type="button"
+        onClick={() => setTab('pending')}
+      >
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-slate-600">
+          <strong className="text-slate-950">Por recibir</strong>
+          <span aria-hidden="true">·</span>
+          <span className="font-bold">
+            {summary.pendingClosingsCount}{' '}
+            {summary.pendingClosingsCount === 1 ? 'corte' : 'cortes'}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span className="font-black text-amber-800">
+            {currencyFormatter.format(summary.pendingClosingsAmount)}
+          </span>
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-extrabold text-teal-700">
+          Ver
+          <ArrowIcon className="size-4" />
+        </span>
+      </button>
+
+      <div className="mt-4 space-y-4 lg:space-y-3">
         <FilterChipGroup
           ariaLabel="Sección de Caja Central"
           options={TAB_OPTIONS}
@@ -482,26 +509,28 @@ export function CentralCashPage({
           onChange={setTab}
         />
 
-        <div>
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">
-            Tienda
-          </p>
-          <StoreScopeSelector
-            ariaLabel="Filtrar Caja Central por tienda"
-            includeInactive
-            role={user.role}
-            stores={stores}
-            value={storeFilter}
-            onChange={setStoreFilter}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-5">
+          <div>
+            <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500 lg:sr-only">
+              Tienda
+            </p>
+            <StoreScopeSelector
+              ariaLabel="Filtrar Caja Central por tienda"
+              includeInactive
+              role={user.role}
+              stores={stores}
+              value={storeFilter}
+              onChange={setStoreFilter}
+            />
+          </div>
+
+          <DateFilters
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={changeDateFrom}
+            onDateToChange={changeDateTo}
           />
         </div>
-
-        <DateFilters
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onDateFromChange={changeDateFrom}
-          onDateToChange={changeDateTo}
-        />
 
         {fromCache && (
           <p className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
@@ -514,28 +543,28 @@ export function CentralCashPage({
         {loading && <p className="empty-state">Consultando Caja Central…</p>}
 
         {!loading && tab === 'movements' && movements.length === 0 && (
-          <div className="panel empty-state">
+          <div className="panel empty-state lg:py-8">
             No hay movimientos en este periodo.
           </div>
         )}
 
         {!loading && tab === 'movements' && movements.length > 0 && (
-          <div className="space-y-6">
+          <div className="space-y-6 lg:space-y-4">
             {movementsByDate.map(([date, entries]) => (
               <section key={date}>
-                <h2 className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                <h2 className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500 lg:mb-2">
                   {formatLongDate(date)}
                 </h2>
-                <div className="space-y-3">
+                <div className="space-y-3 lg:divide-y lg:divide-slate-100 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:shadow-[0_8px_30px_rgba(46,34,31,0.04)] lg:space-y-0">
                   {entries.map((movement) => (
                     <button
-                      className="panel flex w-full items-center gap-4 text-left transition hover:border-teal-200 hover:bg-teal-50/30"
+                      className="panel flex w-full items-center gap-4 text-left transition hover:border-teal-200 hover:bg-teal-50/30 lg:rounded-none lg:border-0 lg:px-4 lg:py-3 lg:shadow-none"
                       key={movement.id}
                       type="button"
                       onClick={() => setSelectedMovement(movement)}
                     >
                       <span
-                        className={`flex size-10 shrink-0 items-center justify-center rounded-full text-xl font-black ${
+                        className={`flex size-10 shrink-0 items-center justify-center rounded-full text-xl font-black lg:size-8 lg:text-lg ${
                           movement.movementType === 'inflow'
                             ? 'bg-emerald-50 text-emerald-700'
                             : 'bg-red-50 text-red-700'
@@ -547,7 +576,7 @@ export function CentralCashPage({
                         <span className="block font-black text-slate-950">
                           {movementTitle(movement)}
                         </span>
-                        <span className="mt-1 block text-xs text-slate-500">
+                        <span className="mt-1 block text-xs text-slate-500 lg:mt-0.5">
                           {movement.sourceType === 'manual_adjustment'
                             ? 'Ajuste administrativo'
                             : movement.concept}
@@ -572,38 +601,38 @@ export function CentralCashPage({
         )}
 
         {!loading && tab === 'pending' && pendingClosings.length === 0 && (
-          <div className="panel empty-state">
+          <div className="panel empty-state lg:py-8">
             <CheckIcon className="mx-auto mb-3 size-8 text-teal-700" />
             <p>No hay Cortes por recibir en este periodo.</p>
           </div>
         )}
 
         {!loading && tab === 'pending' && pendingClosings.length > 0 && (
-          <div className="space-y-6">
+          <div className="space-y-6 lg:space-y-4">
             {pendingByDate.map(([date, entries]) => (
               <section key={date}>
-                <h2 className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                <h2 className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500 lg:mb-2">
                   {formatLongDate(date)}
                 </h2>
-                <div className="space-y-3">
+                <div className="space-y-3 lg:divide-y lg:divide-slate-100 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:shadow-[0_8px_30px_rgba(46,34,31,0.04)] lg:space-y-0">
                   {entries.map((closing) => (
                     <article
-                      className="panel flex flex-col gap-4 sm:flex-row sm:items-center"
+                      className="panel flex flex-col gap-4 sm:flex-row sm:items-center lg:rounded-none lg:border-0 lg:px-4 lg:py-3 lg:shadow-none"
                       key={closing.id}
                     >
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-4">
                         <p className="font-black text-slate-950">
                           {closing.storeName} · Corte #{closing.sequenceNumber}
                         </p>
-                        <p className="mt-3 text-xs font-semibold text-slate-500">
+                        <p className="mt-3 text-xs font-semibold text-slate-500 lg:sr-only">
                           Efectivo a recibir
                         </p>
-                        <p className="mt-1 text-2xl font-black text-teal-800">
+                        <p className="mt-1 text-2xl font-black text-teal-800 lg:mt-0 lg:text-base">
                           {currencyFormatter.format(closing.cashToWithdraw)}
                         </p>
                       </div>
                       <button
-                        className="button-primary shrink-0"
+                        className="button-primary shrink-0 lg:min-h-9 lg:px-4 lg:py-1.5"
                         disabled={!networkAvailable}
                         type="button"
                         onClick={() => openReceipt(closing)}
