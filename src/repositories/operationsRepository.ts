@@ -3,6 +3,9 @@ import type { ExportBatch, ExportCandidate } from '../domain/exportContract'
 import type {
   AttendanceRecord,
   CashClosingDraft,
+  CentralCashMovement,
+  CentralCashPendingClosing,
+  CentralCashSummary,
   Collaborator,
   CollaboratorCompensationHistory,
   Expense,
@@ -55,6 +58,9 @@ export class OperationsRepository {
         this.database.compensationHistory,
         this.database.exportCandidates,
         this.database.exportBatches,
+        this.database.centralCashMovements,
+        this.database.centralCashPendingClosings,
+        this.database.centralCashSummary,
       ],
       async () => {
         await Promise.all([
@@ -71,6 +77,9 @@ export class OperationsRepository {
           this.database.compensationHistory.clear(),
           this.database.exportCandidates.clear(),
           this.database.exportBatches.clear(),
+          this.database.centralCashMovements.clear(),
+          this.database.centralCashPendingClosings.clear(),
+          this.database.centralCashSummary.clear(),
         ])
       },
     )
@@ -444,11 +453,16 @@ export class OperationsRepository {
   async clearAdministrativePaymentData(): Promise<void> {
     await this.database.transaction(
       'rw',
-      this.database.payments,
-      this.database.paymentAttendanceItems,
-      this.database.compensationHistory,
-      this.database.exportCandidates,
-      this.database.exportBatches,
+      [
+        this.database.payments,
+        this.database.paymentAttendanceItems,
+        this.database.compensationHistory,
+        this.database.exportCandidates,
+        this.database.exportBatches,
+        this.database.centralCashMovements,
+        this.database.centralCashPendingClosings,
+        this.database.centralCashSummary,
+      ],
       async () => {
         await Promise.all([
           this.database.payments.clear(),
@@ -456,6 +470,9 @@ export class OperationsRepository {
           this.database.compensationHistory.clear(),
           this.database.exportCandidates.clear(),
           this.database.exportBatches.clear(),
+          this.database.centralCashMovements.clear(),
+          this.database.centralCashPendingClosings.clear(),
+          this.database.centralCashSummary.clear(),
         ])
       },
     )
@@ -637,6 +654,126 @@ export class OperationsRepository {
 
   deleteClosingDraft(id: string): Promise<void> {
     return this.database.closingDrafts.delete(id)
+  }
+
+  saveCentralCashSummary(summary: CentralCashSummary): Promise<string> {
+    return this.database.centralCashSummary.put(summary)
+  }
+
+  getCentralCashSummary(): Promise<CentralCashSummary | undefined> {
+    return this.database.centralCashSummary.get('current')
+  }
+
+  saveCentralCashMovement(movement: CentralCashMovement): Promise<string> {
+    return this.database.centralCashMovements.put(movement)
+  }
+
+  async replaceCentralCashMovementsForScope(
+    movements: CentralCashMovement[],
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.centralCashMovements,
+      async () => {
+        const existing = await this.database.centralCashMovements.toArray()
+        const replacedIds = existing
+          .filter((movement) => {
+            if (storeId && movement.storeIdSnapshot !== storeId) return false
+            if (dateFrom && movement.businessDate < dateFrom) return false
+            if (dateTo && movement.businessDate > dateTo) return false
+            return true
+          })
+          .map((movement) => movement.id)
+
+        await this.database.centralCashMovements.bulkDelete(replacedIds)
+        await this.database.centralCashMovements.bulkPut(movements)
+      },
+    )
+  }
+
+  async listCentralCashMovements(
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<CentralCashMovement[]> {
+    const movements = storeId
+      ? await this.database.centralCashMovements
+          .where('storeIdSnapshot')
+          .equals(storeId)
+          .toArray()
+      : await this.database.centralCashMovements.toArray()
+
+    return movements
+      .filter((movement) => {
+        if (dateFrom && movement.businessDate < dateFrom) return false
+        if (dateTo && movement.businessDate > dateTo) return false
+        return true
+      })
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.businessDate.localeCompare(left.businessDate) ||
+          right.createdAt.localeCompare(left.createdAt),
+      )
+  }
+
+  async replaceCentralCashPendingClosingsForScope(
+    closings: CentralCashPendingClosing[],
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.centralCashPendingClosings,
+      async () => {
+        const existing = await this.database.centralCashPendingClosings.toArray()
+        const replacedIds = existing
+          .filter((closing) => {
+            if (storeId && closing.storeId !== storeId) return false
+            if (dateFrom && closing.businessDate < dateFrom) return false
+            if (dateTo && closing.businessDate > dateTo) return false
+            return true
+          })
+          .map((closing) => closing.id)
+
+        await this.database.centralCashPendingClosings.bulkDelete(replacedIds)
+        await this.database.centralCashPendingClosings.bulkPut(closings)
+      },
+    )
+  }
+
+  async listCentralCashPendingClosings(
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<CentralCashPendingClosing[]> {
+    const closings = storeId
+      ? await this.database.centralCashPendingClosings
+          .where('storeId')
+          .equals(storeId)
+          .toArray()
+      : await this.database.centralCashPendingClosings.toArray()
+
+    return closings
+      .filter((closing) => {
+        if (dateFrom && closing.businessDate < dateFrom) return false
+        if (dateTo && closing.businessDate > dateTo) return false
+        return true
+      })
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.businessDate.localeCompare(left.businessDate) ||
+          right.sequenceNumber - left.sequenceNumber,
+      )
+  }
+
+  deleteCentralCashPendingClosing(id: string): Promise<void> {
+    return this.database.centralCashPendingClosings.delete(id)
   }
 
   async replaceExportCandidatesForScope(

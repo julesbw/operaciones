@@ -172,6 +172,80 @@ export type Bills = {
   monedas: number
 }
 
+export type CentralCashBills = Omit<Bills, 'monedas'>
+
+export const CENTRAL_CASH_MOVEMENT_TYPES = ['inflow', 'outflow'] as const
+export type CentralCashMovementType =
+  (typeof CENTRAL_CASH_MOVEMENT_TYPES)[number]
+
+export const CENTRAL_CASH_SOURCE_TYPES = [
+  'cash_closing',
+  'manual_adjustment',
+  'purchase',
+  'expense',
+  'collaborator_payment',
+  'bank_deposit',
+  'other',
+] as const
+export type CentralCashSourceType =
+  (typeof CENTRAL_CASH_SOURCE_TYPES)[number]
+
+export type CentralCashMovement = {
+  id: string
+  movementType: CentralCashMovementType
+  sourceType: CentralCashSourceType
+  sourceId: string
+  amount: number
+  businessDate: string
+  concept: string
+  notes?: string
+  bills: CentralCashBills
+  coinsAmount: number
+  storeIdSnapshot?: string
+  storeNameSnapshot?: string
+  sequenceNumberSnapshot?: number
+  createdBy: string
+  createdByNameSnapshot: string
+  createdAt: string
+  cachedAt: string
+}
+
+export type CentralCashPendingClosing = {
+  id: string
+  storeId: string
+  storeName: string
+  businessDate: string
+  sequenceNumber: number
+  cashToWithdraw: number
+  withdrawBills: Bills
+  closedAt: string
+  cachedAt: string
+}
+
+export type CentralCashSummary = {
+  id: 'current'
+  balance: number
+  todayInflows: number
+  todayOutflows: number
+  todayNet: number
+  bills: CentralCashBills
+  coinsAmount: number
+  pendingClosingsCount: number
+  pendingClosingsAmount: number
+  cachedAt: string
+}
+
+export type CentralCashAdjustmentInput = {
+  id: string
+  movementType: CentralCashMovementType
+  amount: number
+  businessDate: string
+  concept: string
+  notes?: string
+  bills: CentralCashBills
+  coinsAmount: number
+}
+
 export type CashClosingStep = 1 | 2 | 3 | 4
 
 export type CashClosingDraft = {

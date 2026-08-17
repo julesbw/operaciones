@@ -1,4 +1,4 @@
-import type { Bills } from './models'
+import type { Bills, CentralCashBills } from './models'
 
 export const EMPTY_BILLS: Bills = {
   b1000: 0,
@@ -8,6 +8,15 @@ export const EMPTY_BILLS: Bills = {
   b50: 0,
   b20: 0,
   monedas: 0,
+}
+
+export const EMPTY_CENTRAL_CASH_BILLS: CentralCashBills = {
+  b1000: 0,
+  b500: 0,
+  b200: 0,
+  b100: 0,
+  b50: 0,
+  b20: 0,
 }
 
 export const BILL_DENOMINATIONS = [

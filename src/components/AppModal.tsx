@@ -34,7 +34,7 @@ export function AppModal({
 }: AppModalProps) {
   const titleId = useId()
   const wasOpenRef = useRef(false)
-  const cardRef = useRef<HTMLElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const closeDisabledRef = useRef(closeDisabled)
   const dirtyRef = useRef(hasUnsavedChanges)
@@ -126,7 +126,7 @@ export function AppModal({
       role="presentation"
       onClick={() => requestClose()}
     >
-      <section
+      <div
         aria-labelledby={titleId}
         aria-modal="true"
         className="app-modal-card max-h-[calc(100dvh-2rem)] w-full max-w-[440px] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
@@ -156,7 +156,7 @@ export function AppModal({
           </button>
         </div>
         {children}
-      </section>
+      </div>
     </div>
   )
 }

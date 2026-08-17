@@ -5,13 +5,13 @@ import {
   type StoreScopeValue,
 } from './components/filters/StoreScopeSelector'
 import type { LocalAppContext, Store, UserProfile } from './domain/models'
-import { AttendancePage } from './pages/AttendancePage'
+import { CentralCashPage } from './pages/CentralCashPage'
 import { ClosingsPage } from './pages/ClosingsPage'
+import { CollaboratorsPage } from './pages/CollaboratorsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { ExportsPage } from './pages/ExportsPage'
 import { LoginPage } from './pages/LoginPage'
-import { PaymentsPage } from './pages/PaymentsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TransfersPage } from './pages/TransfersPage'
 import { authService } from './services/authService'
@@ -302,7 +302,7 @@ function App() {
   function navigate(nextPage: PageId) {
     if (
       (nextPage === 'closings' ||
-        nextPage === 'payments' ||
+        nextPage === 'central-cash' ||
         nextPage === 'exports') &&
       user?.role !== 'admin'
     ) {
@@ -410,19 +410,23 @@ function App() {
       {page === 'transfers' && (
         <TransfersPage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />
       )}
-      {page === 'attendance' && (
-        <AttendancePage
+      {page === 'collaborators' && (
+        <CollaboratorsPage
+          attendanceStoreFilter={attendanceStoreFilter}
           stores={stores}
-          storeFilter={attendanceStoreFilter}
           user={user}
           onDataChanged={() => void refreshLocalState()}
-          onStoreFilterChange={setAttendanceStoreFilter}
+          onAttendanceStoreFilterChange={setAttendanceStoreFilter}
         />
       )}
-      {page === 'payments' && user.role === 'admin' && (
-        <PaymentsPage stores={stores} user={user} />
-      )}
       {page === 'closings' && user.role === 'admin' && <ClosingsPage stores={stores} user={user} />}
+      {page === 'central-cash' && user.role === 'admin' && (
+        <CentralCashPage
+          networkAvailable={networkAvailable}
+          stores={stores}
+          user={user}
+        />
+      )}
       {page === 'exports' && user.role === 'admin' && (
         <ExportsPage
           networkAvailable={networkAvailable}

@@ -23,6 +23,7 @@ import { syncService } from '../services/syncService'
 import { getOperationalDate, getWeekday } from '../utils/date'
 
 type AttendancePageProps = {
+  embedded?: boolean
   stores: Store[]
   storeFilter: StoreScopeValue
   user: UserProfile
@@ -49,6 +50,7 @@ function initials(name: string): string {
 }
 
 export function AttendancePage({
+  embedded = false,
   stores,
   storeFilter,
   user,
@@ -207,7 +209,7 @@ export function AttendancePage({
     <section className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
-          <h1 className="page-title">Asistencias</h1>
+          {!embedded && <h1 className="page-title">Asistencias</h1>}
           {user.role === 'cashier' && (
             <p className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
               <StoreIcon className="size-4 shrink-0" />

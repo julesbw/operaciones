@@ -46,7 +46,7 @@ describe('OperationsDatabase closing draft migration', () => {
       await upgradedDatabase.open()
       const migrated = await upgradedDatabase.closingDrafts.get('legacy-closing')
 
-      expect(upgradedDatabase.verno).toBe(11)
+      expect(upgradedDatabase.verno).toBe(12)
       expect(
         upgradedDatabase.tables.some(
           (table) => table.name === 'merchandiseTransfers',
@@ -69,6 +69,21 @@ describe('OperationsDatabase closing draft migration', () => {
       ).toBe(true)
       expect(
         upgradedDatabase.tables.some((table) => table.name === 'exportBatches'),
+      ).toBe(true)
+      expect(
+        upgradedDatabase.tables.some(
+          (table) => table.name === 'centralCashMovements',
+        ),
+      ).toBe(true)
+      expect(
+        upgradedDatabase.tables.some(
+          (table) => table.name === 'centralCashPendingClosings',
+        ),
+      ).toBe(true)
+      expect(
+        upgradedDatabase.tables.some(
+          (table) => table.name === 'centralCashSummary',
+        ),
       ).toBe(true)
       expect(migrated).toMatchObject({
         cashBalance: 2_000,

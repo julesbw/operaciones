@@ -35,7 +35,7 @@ UI operativa inmediata                  perfil + referencias
 
 `loading-local` sólo cubre la apertura de Dexie y la lectura del contexto. Si existe un contexto con acceso offline habilitado, React muestra inmediatamente los datos locales; la restauración de Auth, las referencias y la sincronización continúan en segundo plano. Si el dispositivo nunca fue inicializado, el primer uso sin red muestra una pantalla explícita en lugar de esperar Supabase.
 
-Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos. Dexie v10 agrega `payments`, `paymentAttendanceItems` y `compensationHistory`, además de la selección de pagos en los borradores de Corte. Dexie v11 agrega `exportCandidates` y `exportBatches` para consulta cacheada. Estas tablas administrativas se limpian si el perfil autenticado deja de ser administrador.
+Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos. Dexie v10 agrega `payments`, `paymentAttendanceItems` y `compensationHistory`, además de la selección de pagos en los borradores de Corte. Dexie v11 agrega `exportCandidates` y `exportBatches` para consulta cacheada. Dexie v12 agrega `centralCashSummary`, `centralCashMovements` y `centralCashPendingClosings`. Estas tablas administrativas se limpian si el perfil autenticado deja de ser administrador.
 
 Una inicialización se considera completa después de obtener el perfil y las referencias autorizadas, verificar el app shell en producción y guardar `LocalAppContext`. El service worker precachea el HTML y descubre los bundles JS/CSS con hash generados por Vite; las respuestas de Supabase no forman parte de esa caché.
 
@@ -130,3 +130,17 @@ una entrada por el efectivo bruto reconstruido y salidas individuales sólo para
 gastos en efectivo y pagos `store_cash`. La rama física contiene una única
 composición por Corte: total de billetes, conteos y monto de monedas. Consulta
 [`EXPORTS_V2.md`](EXPORTS_V2.md) para el contrato completo.
+
+## Caja Central
+
+Cerrar un Corte y recibir su efectivo son eventos distintos. Un Corte cerrado se
+mantiene pendiente hasta que una RPC administrativa online crea, de forma
+atómica, `central_cash_receipts` y una entrada en `central_cash_movements`. La
+restricción única por Corte y el UUID de solicitud protegen concurrencia y
+reintentos.
+
+El saldo, los conteos de billetes y el monto de monedas se derivan del ledger;
+ninguno se edita directamente. Las tablas son inmutables y sólo legibles por
+admin mediante RLS. Dexie conserva snapshots para consulta offline, pero las
+recepciones y ajustes no entran en `syncQueue`. Consulta
+[`CENTRAL_CASH.md`](CENTRAL_CASH.md) para el modelo y las futuras integraciones.

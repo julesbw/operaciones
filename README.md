@@ -35,9 +35,10 @@ VITE_SUPABASE_PUBLISHABLE_KEY=TU_LLAVE_PUBLISHABLE
 6. Aplica [`supabase/migrations/202608130002_cash_closing_selection_history.sql`](supabase/migrations/202608130002_cash_closing_selection_history.sql). Sustituye el cierre automático por selección explícita, permite varios cortes diarios con consecutivo por tienda/fecha y garantiza que cada gasto o transferencia sólo pertenezca a un corte.
 7. Revisa antes de aplicar [`supabase/migrations/202608130003_payments_module.sql`](supabase/migrations/202608130003_payments_module.sql). Es una migración aditiva: conserva `weekly_payments`, revoca su RPC de creación, incorpora historial salarial efectivo, pagos por asistencia, protecciones de concurrencia y la selección de pagos `store_cash` dentro de Cortes. No genera gastos duplicados. Esta migración se entrega pendiente de aplicación remota.
 8. Revisa antes de aplicar [`supabase/migrations/202608140001_operations_export_batches.sql`](supabase/migrations/202608140001_operations_export_batches.sql). Añade el contrato `2.0`, snapshots de lotes, reservas de Cortes y RPC administrativas idempotentes. La migración se entrega sin aplicar a ninguna base remota.
-9. Adapta y ejecuta [`supabase/setup-operations.example.sql`](supabase/setup-operations.example.sql) para crear tiendas y asignar cada cajera.
-10. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en `.env.local`.
-11. Verifica que cada perfil `cashier` tenga `store_id`; una cajera sin tienda no tendrá acceso a datos operativos por RLS.
+9. Revisa antes de aplicar [`supabase/migrations/202608160001_central_cash.sql`](supabase/migrations/202608160001_central_cash.sql). Crea el ledger y las recepciones inmutables de Caja Central, más RPCs administrativas atómicas e idempotentes. La migración se entrega sin aplicar a ninguna base remota.
+10. Adapta y ejecuta [`supabase/setup-operations.example.sql`](supabase/setup-operations.example.sql) para crear tiendas y asignar cada cajera.
+11. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en `.env.local`.
+12. Verifica que cada perfil `cashier` tenga `store_id`; una cajera sin tienda no tendrá acceso a datos operativos por RLS.
 
 Las migraciones no reemplazan el trigger de usuarios, no cambian roles y no modifican las tablas financieras de Arrendamientos.
 
@@ -49,4 +50,4 @@ npm run lint
 npm run build
 ```
 
-La explicación de capas, sincronización y decisiones de seguridad está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). El contrato y flujo de lotes se documentan en [`docs/EXPORTS_V2.md`](docs/EXPORTS_V2.md). La paleta, tipografía y reglas de marca están en [`docs/VISUAL_IDENTITY.md`](docs/VISUAL_IDENTITY.md).
+La explicación de capas, sincronización y decisiones de seguridad está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Caja Central se documenta en [`docs/CENTRAL_CASH.md`](docs/CENTRAL_CASH.md). El contrato y flujo de lotes se documentan en [`docs/EXPORTS_V2.md`](docs/EXPORTS_V2.md). La paleta, tipografía y reglas de marca están en [`docs/VISUAL_IDENTITY.md`](docs/VISUAL_IDENTITY.md).

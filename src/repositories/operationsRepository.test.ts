@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { OperationsDatabase } from '../db/database'
 import type {
   AttendanceRecord,
+  CentralCashMovement,
+  CentralCashPendingClosing,
+  CentralCashSummary,
   Expense,
   MerchandiseTransfer,
   SyncQueueItem,
@@ -442,6 +445,122 @@ describe('OperationsRepository collaborator filters', () => {
         { id: 'center-ana' },
         { id: 'north-carlos' },
       ])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})
+
+describe('OperationsRepository central cash cache', () => {
+  it('replaces a filtered pending scope without deleting another store', async () => {
+    const database = new OperationsDatabase(
+      `operations-test-${crypto.randomUUID()}`,
+    )
+    const repository = new OperationsRepository(database)
+    const cachedAt = '2026-08-16T12:00:00.000Z'
+    const pending = (
+      id: string,
+      storeId: string,
+      businessDate: string,
+    ): CentralCashPendingClosing => ({
+      id,
+      storeId,
+      storeName: `Tienda ${storeId}`,
+      businessDate,
+      sequenceNumber: 1,
+      cashToWithdraw: 8_000,
+      withdrawBills: {
+        b1000: 8,
+        b500: 0,
+        b200: 0,
+        b100: 0,
+        b50: 0,
+        b20: 0,
+        monedas: 0,
+      },
+      closedAt: cachedAt,
+      cachedAt,
+    })
+
+    try {
+      await repository.replaceCentralCashPendingClosingsForScope([
+        pending('north-old', 'north', '2026-08-15'),
+        pending('center', 'center', '2026-08-15'),
+      ])
+      await repository.replaceCentralCashPendingClosingsForScope(
+        [pending('north-new', 'north', '2026-08-15')],
+        'north',
+        '2026-08-01',
+        '2026-08-31',
+      )
+
+      const result = await repository.listCentralCashPendingClosings()
+      expect(result).toHaveLength(2)
+      expect(result).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'north-new' }),
+          expect.objectContaining({ id: 'center' }),
+        ]),
+      )
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
+  it('stores the derived summary and immutable movement snapshots locally', async () => {
+    const database = new OperationsDatabase(
+      `operations-test-${crypto.randomUUID()}`,
+    )
+    const repository = new OperationsRepository(database)
+    const cachedAt = '2026-08-16T12:00:00.000Z'
+    const summary: CentralCashSummary = {
+      id: 'current',
+      balance: 8_000,
+      todayInflows: 8_000,
+      todayOutflows: 0,
+      todayNet: 8_000,
+      bills: {
+        b1000: 8,
+        b500: 0,
+        b200: 0,
+        b100: 0,
+        b50: 0,
+        b20: 0,
+      },
+      coinsAmount: 0,
+      pendingClosingsCount: 0,
+      pendingClosingsAmount: 0,
+      cachedAt,
+    }
+    const movement: CentralCashMovement = {
+      id: 'movement-id',
+      movementType: 'inflow',
+      sourceType: 'cash_closing',
+      sourceId: 'closing-id',
+      amount: 8_000,
+      businessDate: '2026-08-14',
+      concept: 'Corte #2 · Tienda Centro',
+      bills: summary.bills,
+      coinsAmount: 0,
+      storeIdSnapshot: 'center',
+      storeNameSnapshot: 'Tienda Centro',
+      sequenceNumberSnapshot: 2,
+      createdBy: 'admin-id',
+      createdByNameSnapshot: 'Administración',
+      createdAt: cachedAt,
+      cachedAt,
+    }
+
+    try {
+      await repository.saveCentralCashSummary(summary)
+      await repository.saveCentralCashMovement(movement)
+
+      await expect(repository.getCentralCashSummary()).resolves.toEqual(summary)
+      await expect(
+        repository.listCentralCashMovements('center'),
+      ).resolves.toEqual([movement])
     } finally {
       database.close()
       await database.delete()

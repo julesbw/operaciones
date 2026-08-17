@@ -45,6 +45,7 @@ import { currencyFormatter } from '../utils/money'
 type PaymentsTab = 'pending' | 'history'
 
 type PaymentsPageProps = {
+  embedded?: boolean
   stores: Store[]
   user: UserProfile
 }
@@ -71,7 +72,11 @@ function countPaymentPeriods(items: PaymentAttendanceItem[]): number {
   return new Set(items.map((item) => `${item.periodStart}:${item.periodEnd}`)).size
 }
 
-export function PaymentsPage({ stores, user }: PaymentsPageProps) {
+export function PaymentsPage({
+  embedded = false,
+  stores,
+  user,
+}: PaymentsPageProps) {
   const [tab, setTab] = useState<PaymentsTab>('pending')
   const [storeFilter, setStoreFilter] =
     useState<StoreScopeValue>(ALL_STORES)
@@ -194,7 +199,7 @@ export function PaymentsPage({ stores, user }: PaymentsPageProps) {
 
   return (
     <section className="mx-auto max-w-5xl">
-      <h1 className="page-title">Pagos</h1>
+      {!embedded && <h1 className="page-title">Pagos</h1>}
 
       {!networkAvailable && (
         <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">

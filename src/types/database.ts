@@ -1,6 +1,9 @@
 import type {
   AttendanceStatus,
   Bills,
+  CentralCashBills,
+  CentralCashMovementType,
+  CentralCashSourceType,
   EntityStatus,
   PaymentMethod,
   PaymentFundingSource,
@@ -211,6 +214,64 @@ export type CashClosingCandidatesResult = {
   >
   transfers: MerchandiseTransferRow[]
   payments: PaymentRow[]
+}
+
+export type CentralCashMovementRow = {
+  id: string
+  movement_type: CentralCashMovementType
+  source_type: CentralCashSourceType
+  source_id: string
+  amount: number
+  business_date: string
+  concept: string
+  notes: string | null
+  bills_snapshot: CentralCashBills
+  coins_amount: number
+  store_id_snapshot: string | null
+  store_name_snapshot: string | null
+  sequence_number_snapshot: number | null
+  created_by: string
+  created_by_name_snapshot: string
+  created_at: string
+}
+
+export type CentralCashReceiptRow = {
+  id: string
+  cash_closing_id: string
+  movement_id: string
+  amount_snapshot: number
+  bills_snapshot: CentralCashBills
+  coins_amount_snapshot: number
+  store_id_snapshot: string
+  store_name_snapshot: string
+  sequence_number_snapshot: number
+  business_date: string
+  notes: string | null
+  received_by: string
+  received_by_name_snapshot: string
+  received_at: string
+}
+
+export type CentralCashPendingClosingRow = {
+  id: string
+  store_id: string
+  store_name: string
+  business_date: string
+  sequence_number: number
+  cash_to_withdraw: number
+  withdraw_bills: Bills
+  closed_at: string
+}
+
+export type CentralCashSummaryResult = {
+  balance: number
+  today_inflows: number
+  today_outflows: number
+  today_net: number
+  bills: CentralCashBills
+  coins_amount: number
+  pending_closings_count: number
+  pending_closings_amount: number
 }
 
 export type ExportCandidateRow = {
@@ -446,6 +507,16 @@ export type Database = {
         >,
         never
       >
+      central_cash_movements: TableDefinition<
+        CentralCashMovementRow,
+        never,
+        never
+      >
+      central_cash_receipts: TableDefinition<
+        CentralCashReceiptRow,
+        never,
+        never
+      >
       export_batches: TableDefinition<ExportBatchRow, never, never>
       export_batch_items: TableDefinition<ExportBatchItemRow, never, never>
     }
@@ -518,6 +589,42 @@ export type Database = {
           p_business_date: string
         }
         Returns: CashClosingCandidatesResult
+      }
+      get_central_cash_summary: {
+        Args: Record<never, never>
+        Returns: CentralCashSummaryResult
+      }
+      list_pending_central_cash_closings: {
+        Args: {
+          p_store_id: string | null
+          p_date_from: string | null
+          p_date_to: string | null
+        }
+        Returns: CentralCashPendingClosingRow[]
+      }
+      receive_cash_closing_into_central_cash: {
+        Args: {
+          p_receipt_id: string
+          p_cash_closing_id: string
+          p_notes: string | null
+        }
+        Returns: {
+          receipt: CentralCashReceiptRow
+          movement: CentralCashMovementRow
+        }
+      }
+      create_central_cash_adjustment: {
+        Args: {
+          p_movement_id: string
+          p_movement_type: CentralCashMovementType
+          p_amount: number
+          p_business_date: string
+          p_concept: string
+          p_notes: string | null
+          p_bills: CentralCashBills
+          p_coins_amount: number
+        }
+        Returns: CentralCashMovementRow
       }
       get_export_candidates: {
         Args: {

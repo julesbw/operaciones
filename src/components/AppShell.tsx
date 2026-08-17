@@ -30,9 +30,9 @@ export type PageId =
   | 'home'
   | 'expenses'
   | 'transfers'
-  | 'attendance'
-  | 'payments'
+  | 'collaborators'
   | 'closings'
+  | 'central-cash'
   | 'exports'
   | 'settings'
 
@@ -61,22 +61,22 @@ const NAVIGATION: NavigationItem[] = [
     mobilePlacement: 'primary',
   },
   {
-    id: 'attendance',
-    label: 'Asistencias',
+    id: 'collaborators',
+    label: 'Colaboradores',
     icon: UsersIcon,
-    mobilePlacement: 'more',
-  },
-  {
-    id: 'payments',
-    label: 'Pagos',
-    icon: WalletIcon,
-    adminOnly: true,
     mobilePlacement: 'more',
   },
   {
     id: 'closings',
     label: 'Cortes',
     icon: CashIcon,
+    adminOnly: true,
+    mobilePlacement: 'more',
+  },
+  {
+    id: 'central-cash',
+    label: 'Caja Central',
+    icon: WalletIcon,
     adminOnly: true,
     mobilePlacement: 'more',
   },

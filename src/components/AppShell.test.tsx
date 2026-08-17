@@ -60,8 +60,8 @@ describe('AppShell sync indicator', () => {
   })
 })
 
-describe('AppShell payments navigation', () => {
-  it('shows payments only to administrators', () => {
+describe('AppShell administrative navigation', () => {
+  it('shows Caja Central only to administrators', () => {
     const cashierMarkup = renderStatus()
     const adminMarkup = renderToStaticMarkup(
       <AppShell
@@ -78,8 +78,9 @@ describe('AppShell payments navigation', () => {
       </AppShell>,
     )
 
-    expect(cashierMarkup).not.toContain('Pagos')
-    expect(adminMarkup).toContain('Pagos')
+    expect(cashierMarkup).not.toContain('Caja Central')
+    expect(adminMarkup).toContain('Caja Central')
+    expect(cashierMarkup).toContain('Colaboradores')
   })
 })
 
@@ -96,19 +97,19 @@ describe('AppShell mobile navigation', () => {
       items
         .filter((item) => item.mobilePlacement === 'more')
         .map((item) => item.label),
-    ).toEqual(['Asistencias', 'Pagos', 'Cortes', 'Exportación'])
+    ).toEqual(['Colaboradores', 'Cortes', 'Caja Central', 'Exportación'])
   })
 
-  it('limits the cashier Más menu to attendance', () => {
+  it('limits the cashier Más menu to collaborators', () => {
     expect(
       navigationItemsForRole('cashier')
         .filter((item) => item.mobilePlacement === 'more')
         .map((item) => item.label),
-    ).toEqual(['Asistencias'])
+    ).toEqual(['Colaboradores'])
   })
 
   it('renders four mobile controls and exposes the Más menu state', () => {
-    const markup = renderStatus({ currentPage: 'payments' })
+    const markup = renderStatus({ currentPage: 'collaborators' })
     const mobileNav = markup.match(
       /<nav class="mobile-nav lg:hidden"[^>]*>([\s\S]*?)<\/nav>/,
     )?.[1]
@@ -125,7 +126,7 @@ describe('AppShell mobile navigation', () => {
   it('marks Más as current on a secondary module', () => {
     const markup = renderToStaticMarkup(
       <AppShell
-        currentPage="payments"
+        currentPage="central-cash"
         networkAvailable
         pendingCount={0}
         syncing={false}

@@ -139,7 +139,7 @@ export function DashboardPage({
           <button
             className="text-action mt-6"
             type="button"
-            onClick={() => onNavigate('attendance')}
+            onClick={() => onNavigate('collaborators')}
           >
             {attendanceCount > 0 ? 'Revisar registro' : 'Tomar asistencia'}
             <ArrowIcon className="size-4" />

@@ -4,6 +4,9 @@ import type { ExportBatch, ExportCandidate } from '../domain/exportContract'
 import type {
   AttendanceRecord,
   CashClosingDraft,
+  CentralCashMovement,
+  CentralCashPendingClosing,
+  CentralCashSummary,
   Collaborator,
   CollaboratorCompensationHistory,
   Expense,
@@ -49,6 +52,9 @@ export class OperationsDatabase extends Dexie {
   compensationHistory!: Table<CollaboratorCompensationHistory, string>
   exportCandidates!: Table<ExportCandidate, string>
   exportBatches!: Table<ExportBatch, string>
+  centralCashMovements!: Table<CentralCashMovement, string>
+  centralCashPendingClosings!: Table<CentralCashPendingClosing, string>
+  centralCashSummary!: Table<CentralCashSummary, string>
 
   constructor(databaseName = OPERATIONS_DATABASE_NAME) {
     super(databaseName)
@@ -91,6 +97,14 @@ export class OperationsDatabase extends Dexie {
       exportCandidates:
         '&id, storeId, businessDate, [storeId+businessDate], closedAt, cachedAt',
       exportBatches: '&id, status, createdAt',
+    }
+    const schemaV12 = {
+      ...schemaV11,
+      centralCashMovements:
+        '&id, movementType, sourceType, sourceId, businessDate, storeIdSnapshot, [storeIdSnapshot+businessDate], createdAt',
+      centralCashPendingClosings:
+        '&id, storeId, businessDate, [storeId+businessDate], closedAt, cachedAt',
+      centralCashSummary: '&id, cachedAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -191,6 +205,7 @@ export class OperationsDatabase extends Dexie {
           })
       })
     this.version(11).stores(schemaV11)
+    this.version(12).stores(schemaV12)
   }
 }
 
