@@ -4,6 +4,7 @@ import type {
   CashClosingDraft,
   Expense,
   MerchandiseTransfer,
+  PaidPurchase,
   Payment,
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
@@ -12,6 +13,7 @@ import type {
   CashClosingExpenseItemRow,
   CashClosingRow,
   CashClosingPaymentItemRow,
+  CashClosingPurchaseItemRow,
   CashClosingTransferItemRow,
 } from '../types/database'
 import { calculateBillsTotal } from '../utils/money'
@@ -28,6 +30,8 @@ export type ClosingOperationalTotals = {
   cashExpensesTotal: number
   outgoingTransfersTotal: number
   storeCashPaymentsTotal: number
+  purchasesTotal: number
+  cashPurchasesTotal: number
   operationalOutflowsTotal: number
   cashOutflowsTotal: number
 }
@@ -36,6 +40,7 @@ export type ClosingOperationalSummary = ClosingOperationalTotals & {
   expenses: Expense[]
   outgoingTransfers: MerchandiseTransfer[]
   storeCashPayments: Payment[]
+  storeCashPurchases: PaidPurchase[]
 }
 
 export type CashClosingDetail = {
@@ -43,6 +48,7 @@ export type CashClosingDetail = {
   expenses: CashClosingExpenseItemRow[]
   transfers: CashClosingTransferItemRow[]
   payments: CashClosingPaymentItemRow[]
+  purchases: CashClosingPurchaseItemRow[]
 }
 
 export type ClosingDomainErrorCode =
@@ -50,6 +56,7 @@ export type ClosingDomainErrorCode =
   | 'MOVEMENT_ALREADY_ASSIGNED'
   | 'SELECTED_MOVEMENT_NOT_FOUND'
   | 'SELECTED_MOVEMENT_PENDING_SYNC'
+  | 'PURCHASE_ALREADY_IN_CLOSING'
 
 export class ClosingDomainError extends Error {
   constructor(readonly code: ClosingDomainErrorCode, message: string) {
@@ -141,6 +148,7 @@ export function calculateOperationalTotals(
   expenses: Expense[],
   outgoingTransfers: MerchandiseTransfer[],
   storeCashPayments: Payment[] = [],
+  storeCashPurchases: PaidPurchase[] = [],
 ): ClosingOperationalTotals {
   const expenseTotals = calculateExpenseTotals(expenses)
   const outgoingTransfersTotal = roundMoney(
@@ -152,17 +160,38 @@ export function calculateOperationalTotals(
       0,
     ),
   )
+  const purchasesTotal = roundMoney(
+    storeCashPurchases.reduce(
+      (total, item) => total + item.payment.amount,
+      0,
+    ),
+  )
+  const cashPurchasesTotal = roundMoney(
+    storeCashPurchases.reduce(
+      (total, item) =>
+        total +
+        (item.payment.paymentMethod === 'efectivo'
+          ? item.payment.amount
+          : 0),
+      0,
+    ),
+  )
 
   return {
     expensesTotal: expenseTotals.total,
     cashExpensesTotal: expenseTotals.cash,
     outgoingTransfersTotal,
     storeCashPaymentsTotal,
+    purchasesTotal,
+    cashPurchasesTotal,
     operationalOutflowsTotal: roundMoney(
-      expenseTotals.total + outgoingTransfersTotal + storeCashPaymentsTotal,
+      expenseTotals.total +
+        outgoingTransfersTotal +
+        storeCashPaymentsTotal +
+        purchasesTotal,
     ),
     cashOutflowsTotal: roundMoney(
-      expenseTotals.cash + storeCashPaymentsTotal,
+      expenseTotals.cash + storeCashPaymentsTotal + cashPurchasesTotal,
     ),
   }
 }
@@ -170,15 +199,20 @@ export function calculateOperationalTotals(
 export function selectClosingMovements(
   candidates: Pick<
     ClosingOperationalSummary,
-    'expenses' | 'outgoingTransfers' | 'storeCashPayments'
+    | 'expenses'
+    | 'outgoingTransfers'
+    | 'storeCashPayments'
+    | 'storeCashPurchases'
   >,
   expenseIds: readonly string[],
   transferIds: readonly string[],
   paymentIds: readonly string[] = [],
+  purchasePaymentIds: readonly string[] = [],
 ): ClosingOperationalSummary {
   const expenseIdSet = new Set(expenseIds)
   const transferIdSet = new Set(transferIds)
   const paymentIdSet = new Set(paymentIds)
+  const purchasePaymentIdSet = new Set(purchasePaymentIds)
   const expenses = candidates.expenses.filter((expense) =>
     expenseIdSet.has(expense.id),
   )
@@ -188,17 +222,39 @@ export function selectClosingMovements(
   const storeCashPayments = candidates.storeCashPayments.filter((payment) =>
     paymentIdSet.has(payment.id),
   )
+  const storeCashPurchases = candidates.storeCashPurchases.filter(({ payment }) =>
+    purchasePaymentIdSet.has(payment.id),
+  )
 
   return {
     expenses,
     outgoingTransfers,
     storeCashPayments,
+    storeCashPurchases,
     ...calculateOperationalTotals(
       expenses,
       outgoingTransfers,
       storeCashPayments,
+      storeCashPurchases,
     ),
   }
+}
+
+export function mergePendingStoreCashPurchases(
+  remotePurchases: PaidPurchase[],
+  localPurchases: PaidPurchase[],
+): PaidPurchase[] {
+  const remotePurchaseIds = new Set(
+    remotePurchases.map(({ purchase }) => purchase.id),
+  )
+  return [
+    ...remotePurchases,
+    ...localPurchases.filter(
+      ({ purchase }) =>
+        purchase.syncStatus !== 'synced' &&
+        !remotePurchaseIds.has(purchase.id),
+    ),
+  ]
 }
 
 export function calculateClosingSummary(
@@ -246,6 +302,8 @@ export function applyClosingSummary(
     cashExpensesTotal: summary.cashExpensesTotal,
     outgoingTransfersTotal: summary.outgoingTransfersTotal,
     storeCashPaymentsTotal: summary.storeCashPaymentsTotal,
+    purchasesTotal: summary.purchasesTotal,
+    cashPurchasesTotal: summary.cashPurchasesTotal,
     operationalOutflowsTotal: summary.operationalOutflowsTotal,
     cashOutflowsTotal: summary.cashOutflowsTotal,
     countedCash: summary.countedCash,
@@ -321,15 +379,54 @@ class ClosingService {
             createdAt: payment.created_at,
           }),
         )
+        const remoteStoreCashPurchases: PaidPurchase[] = (
+          data?.purchases ?? []
+        ).map((item) => ({
+          purchase: {
+            id: item.purchase.id,
+            supplierId: item.purchase.supplier_id,
+            supplierNameSnapshot: item.purchase.supplier_name_snapshot,
+            businessDate: item.purchase.business_date,
+            folio: item.purchase.folio ?? undefined,
+            amount: Number(item.purchase.amount),
+            notes: item.purchase.notes ?? undefined,
+            createdBy: item.purchase.created_by,
+            createdAt: item.purchase.created_at,
+            updatedAt: item.purchase.updated_at,
+            syncStatus: 'synced',
+          },
+          payment: {
+            id: item.payment.id,
+            purchaseId: item.payment.purchase_id,
+            amount: Number(item.payment.amount),
+            fundingSource: item.payment.funding_source,
+            sourceStoreId: item.payment.source_store_id ?? undefined,
+            paymentMethod: item.payment.payment_method,
+            bills: item.payment.bills ?? undefined,
+            coinsAmount: Number(item.payment.coins_amount),
+            paidAt: item.payment.paid_at,
+            createdBy: item.payment.created_by,
+            createdAt: item.payment.created_at,
+          },
+        }))
+        const storeCashPurchases = mergePendingStoreCashPurchases(
+          remoteStoreCashPurchases,
+          await operationsRepository.listStoreCashPurchases(
+            storeId,
+            businessDate,
+          ),
+        )
 
         return {
           expenses,
           outgoingTransfers,
           storeCashPayments,
+          storeCashPurchases,
           ...calculateOperationalTotals(
             expenses,
             outgoingTransfers,
             storeCashPayments,
+            storeCashPurchases,
           ),
         }
       } catch (cause: unknown) {
@@ -340,23 +437,27 @@ class ClosingService {
       }
     }
 
-    const [localExpenses, localTransfers, localPayments] = await Promise.all([
+    const [localExpenses, localTransfers, localPayments, localPurchases] = await Promise.all([
       operationsRepository.listExpenses(storeId, businessDate),
       operationsRepository.listMerchandiseTransfers(storeId, businessDate),
       operationsRepository.listStoreCashPayments(storeId, businessDate),
+      operationsRepository.listStoreCashPurchases(storeId, businessDate),
     ])
     const expenses = localExpenses
     const outgoingTransfers = localTransfers
     const storeCashPayments = localPayments
+    const storeCashPurchases = localPurchases
 
     return {
       expenses,
       outgoingTransfers,
       storeCashPayments,
+      storeCashPurchases,
       ...calculateOperationalTotals(
         expenses,
         outgoingTransfers,
         storeCashPayments,
+        storeCashPurchases,
       ),
     }
   }
@@ -364,17 +465,22 @@ class ClosingService {
   getOperationalSummary(
     candidates: Pick<
       ClosingOperationalSummary,
-      'expenses' | 'outgoingTransfers' | 'storeCashPayments'
+      | 'expenses'
+      | 'outgoingTransfers'
+      | 'storeCashPayments'
+      | 'storeCashPurchases'
     >,
     expenseIds: readonly string[],
     transferIds: readonly string[],
     paymentIds: readonly string[],
+    purchasePaymentIds: readonly string[],
   ): ClosingOperationalSummary {
     return selectClosingMovements(
       candidates,
       expenseIds,
       transferIds,
       paymentIds,
+      purchasePaymentIds,
     )
   }
 
@@ -419,7 +525,7 @@ class ClosingService {
       'Se necesita conexión para consultar un corte cerrado.',
     )
 
-    const [closingResult, expensesResult, transfersResult, paymentsResult] = await Promise.all([
+    const [closingResult, expensesResult, transfersResult, paymentsResult, purchasesResult] = await Promise.all([
       supabase.from('cash_closings').select('*').eq('id', id).single(),
       supabase
         .from('cash_closing_expense_items')
@@ -436,17 +542,24 @@ class ClosingService {
         .select('*')
         .eq('cash_closing_id', id)
         .order('created_at'),
+      supabase
+        .from('cash_closing_purchase_items')
+        .select('*')
+        .eq('cash_closing_id', id)
+        .order('created_at'),
     ])
     if (closingResult.error) throw closingResult.error
     if (expensesResult.error) throw expensesResult.error
     if (transfersResult.error) throw transfersResult.error
     if (paymentsResult.error) throw paymentsResult.error
+    if (purchasesResult.error) throw purchasesResult.error
 
     return {
       closing: closingResult.data,
       expenses: expensesResult.data,
       transfers: transfersResult.data,
       payments: paymentsResult.data,
+      purchases: purchasesResult.data,
     }
   }
 
@@ -486,14 +599,18 @@ class ClosingService {
       cashExpensesTotal: 0,
       outgoingTransfersTotal: 0,
       storeCashPaymentsTotal: 0,
+      purchasesTotal: 0,
+      cashPurchasesTotal: 0,
       operationalOutflowsTotal: 0,
       cashOutflowsTotal: 0,
       selectedExpenseIds: [],
       selectedTransferIds: [],
       selectedPaymentIds: [],
+      selectedPurchasePaymentIds: [],
       knownExpenseIds: [],
       knownTransferIds: [],
       knownPaymentIds: [],
+      knownPurchasePaymentIds: [],
       movementSelectionInitialized: false,
       countedCash: 0,
       cashToWithdraw: 0,
@@ -545,8 +662,13 @@ class ClosingService {
       await operationsRepository.countPendingSelectedClosingMovements(
         draft.selectedExpenseIds,
         draft.selectedTransferIds,
+        draft.selectedPurchasePaymentIds,
       )
-    if (pending.expenses > 0 || pending.transfers > 0) {
+    if (
+      pending.expenses > 0 ||
+      pending.transfers > 0 ||
+      pending.purchases > 0
+    ) {
       throw new ClosingDomainError(
         'SELECTED_MOVEMENT_PENDING_SYNC',
         'Hay movimientos seleccionados pendientes de sincronizar. Sincronízalos antes de cerrar el corte.',
@@ -566,10 +688,16 @@ class ClosingService {
     const latestPaymentIds = new Set(
       latestCandidates.storeCashPayments.map((payment) => payment.id),
     )
+    const latestPurchasePaymentIds = new Set(
+      latestCandidates.storeCashPurchases.map(({ payment }) => payment.id),
+    )
     if (
       draft.selectedExpenseIds.some((id) => !latestExpenseIds.has(id)) ||
       draft.selectedTransferIds.some((id) => !latestTransferIds.has(id)) ||
-      draft.selectedPaymentIds.some((id) => !latestPaymentIds.has(id))
+      draft.selectedPaymentIds.some((id) => !latestPaymentIds.has(id)) ||
+      draft.selectedPurchasePaymentIds.some(
+        (id) => !latestPurchasePaymentIds.has(id),
+      )
     ) {
       throw new ClosingDomainError(
         'MOVEMENT_ALREADY_ASSIGNED',
@@ -582,6 +710,7 @@ class ClosingService {
       draft.selectedExpenseIds,
       draft.selectedTransferIds,
       draft.selectedPaymentIds,
+      draft.selectedPurchasePaymentIds,
     )
     const closedDraft = applyClosingSummary(draft, operational)
     const billErrors = validateClosingBillCounts(closedDraft)
@@ -611,12 +740,14 @@ class ClosingService {
       p_expense_ids: closedDraft.selectedExpenseIds,
       p_transfer_ids: closedDraft.selectedTransferIds,
       p_payment_ids: closedDraft.selectedPaymentIds,
+      p_purchase_payment_ids: closedDraft.selectedPurchasePaymentIds,
     })
     if (error) {
       const domainCode = [
         'CLOSING_ALREADY_EXISTS',
         'MOVEMENT_ALREADY_ASSIGNED',
         'SELECTED_MOVEMENT_NOT_FOUND',
+        'PURCHASE_ALREADY_IN_CLOSING',
       ].find((code) => error.message.includes(code)) as
         | ClosingDomainErrorCode
         | undefined
@@ -629,6 +760,8 @@ class ClosingService {
             'Uno o más movimientos seleccionados ya no están disponibles. Actualiza el resumen.',
           SELECTED_MOVEMENT_PENDING_SYNC:
             'Hay movimientos seleccionados pendientes de sincronizar.',
+          PURCHASE_ALREADY_IN_CLOSING:
+            'Una o más Compras ya fueron incluidas en otro Corte.',
         }
         throw new ClosingDomainError(domainCode, messages[domainCode])
       }

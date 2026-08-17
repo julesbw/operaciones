@@ -144,15 +144,20 @@ export function reconcileDraftSelection(
   const expenseIds = candidates.expenses.map((expense) => expense.id)
   const transferIds = candidates.outgoingTransfers.map((transfer) => transfer.id)
   const paymentIds = candidates.storeCashPayments.map((payment) => payment.id)
+  const purchasePaymentIds = candidates.storeCashPurchases.map(
+    ({ payment }) => payment.id,
+  )
   if (!draft.movementSelectionInitialized) {
     return {
       ...draft,
       selectedExpenseIds: expenseIds,
       selectedTransferIds: transferIds,
       selectedPaymentIds: paymentIds,
+      selectedPurchasePaymentIds: purchasePaymentIds,
       knownExpenseIds: expenseIds,
       knownTransferIds: transferIds,
       knownPaymentIds: paymentIds,
+      knownPurchasePaymentIds: purchasePaymentIds,
       movementSelectionInitialized: true,
     }
   }
@@ -160,9 +165,11 @@ export function reconcileDraftSelection(
   const eligibleExpenseIds = new Set(expenseIds)
   const eligibleTransferIds = new Set(transferIds)
   const eligiblePaymentIds = new Set(paymentIds)
+  const eligiblePurchasePaymentIds = new Set(purchasePaymentIds)
   const knownExpenseIds = new Set(draft.knownExpenseIds)
   const knownTransferIds = new Set(draft.knownTransferIds)
   const knownPaymentIds = new Set(draft.knownPaymentIds)
+  const knownPurchasePaymentIds = new Set(draft.knownPurchasePaymentIds)
   return {
     ...draft,
     selectedExpenseIds: [
@@ -177,9 +184,18 @@ export function reconcileDraftSelection(
       ...draft.selectedPaymentIds.filter((id) => eligiblePaymentIds.has(id)),
       ...paymentIds.filter((id) => !knownPaymentIds.has(id)),
     ],
+    selectedPurchasePaymentIds: [
+      ...draft.selectedPurchasePaymentIds.filter((id) =>
+        eligiblePurchasePaymentIds.has(id),
+      ),
+      ...purchasePaymentIds.filter(
+        (id) => !knownPurchasePaymentIds.has(id),
+      ),
+    ],
     knownExpenseIds: expenseIds,
     knownTransferIds: transferIds,
     knownPaymentIds: paymentIds,
+    knownPurchasePaymentIds: purchasePaymentIds,
   }
 }
 
@@ -197,6 +213,7 @@ function ClosingDetailView({
   const [showExpenseDetails, setShowExpenseDetails] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [showPaymentDetails, setShowPaymentDetails] = useState(false)
+  const [showPurchaseDetails, setShowPurchaseDetails] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -205,6 +222,7 @@ function ClosingDetailView({
     setShowExpenseDetails(false)
     setShowTransferDetails(false)
     setShowPaymentDetails(false)
+    setShowPurchaseDetails(false)
     void closingService
       .getClosedDetail(closingId)
       .then((result) => {
@@ -229,7 +247,7 @@ function ClosingDetailView({
   }
   if (!detail) return <p className="empty-state">Cargando corte…</p>
 
-  const { closing, expenses, transfers, payments } = detail
+  const { closing, expenses, transfers, payments, purchases } = detail
   const storeName = stores.find((store) => store.id === closing.store_id)?.name
   const grossCash =
     Number(closing.counted_cash) + Number(closing.cash_outflows_total_snapshot)
@@ -259,6 +277,7 @@ function ClosingDetailView({
             <div className="summary-row"><dt>Gastos</dt><dd>{currencyFormatter.format(Number(closing.expenses_total_snapshot))}</dd></div>
             <div className="summary-row"><dt>Transferencias</dt><dd>{currencyFormatter.format(Number(closing.outgoing_transfers_total_snapshot))}</dd></div>
             <div className="summary-row"><dt>Pagos desde caja</dt><dd>{currencyFormatter.format(Number(closing.store_cash_payments_total_snapshot))}</dd></div>
+            <div className="summary-row"><dt>Compras</dt><dd>{currencyFormatter.format(Number(closing.purchases_total_snapshot))}</dd></div>
             <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Total salidas</dt><dd>{currencyFormatter.format(Number(closing.operational_outflows_total_snapshot))}</dd></div>
           </dl>
 
@@ -304,6 +323,29 @@ function ClosingDetailView({
                     <div className="summary-row border-b border-slate-100 px-4 py-3 text-sm last:border-b-0" key={payment.payment_id}>
                       <span className="min-w-0 truncate font-semibold text-slate-700">{payment.collaborator_name_snapshot}</span>
                       <strong>{currencyFormatter.format(Number(payment.amount_snapshot))}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <button
+                aria-expanded={showPurchaseDetails}
+                className="text-action"
+                type="button"
+                onClick={() => setShowPurchaseDetails((visible) => !visible)}
+              >
+                <ReceiptIcon className="size-4" />
+                {showPurchaseDetails ? 'Ocultar Compras' : `Ver detalle de Compras · ${purchases.length}`}
+              </button>
+              {showPurchaseDetails && (
+                <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
+                  {purchases.length === 0 ? (
+                    <p className="p-4 text-sm text-slate-400">Sin Compras incluidas.</p>
+                  ) : purchases.map((purchase) => (
+                    <div className="summary-row border-b border-slate-100 px-4 py-3 text-sm last:border-b-0" key={purchase.purchase_payment_id}>
+                      <span className="min-w-0 truncate font-semibold text-slate-700">{purchase.supplier_name_snapshot}</span>
+                      <strong>{currencyFormatter.format(Number(purchase.amount_snapshot))}</strong>
                     </div>
                   ))}
                 </div>
@@ -646,10 +688,13 @@ function ClosingFlow({
     expenses: [],
     outgoingTransfers: [],
     storeCashPayments: [],
+    storeCashPurchases: [],
     expensesTotal: 0,
     cashExpensesTotal: 0,
     outgoingTransfersTotal: 0,
     storeCashPaymentsTotal: 0,
+    purchasesTotal: 0,
+    cashPurchasesTotal: 0,
     operationalOutflowsTotal: 0,
     cashOutflowsTotal: 0,
   })
@@ -661,6 +706,7 @@ function ClosingFlow({
   const [showExpenseDetails, setShowExpenseDetails] = useState(false)
   const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [showPaymentDetails, setShowPaymentDetails] = useState(false)
+  const [showPurchaseDetails, setShowPurchaseDetails] = useState(false)
   const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
   const [selectionConflict, setSelectionConflict] = useState(false)
@@ -672,11 +718,13 @@ function ClosingFlow({
         draft?.selectedExpenseIds ?? [],
         draft?.selectedTransferIds ?? [],
         draft?.selectedPaymentIds ?? [],
+        draft?.selectedPurchasePaymentIds ?? [],
       ),
     [
       candidates,
       draft?.selectedExpenseIds,
       draft?.selectedPaymentIds,
+      draft?.selectedPurchasePaymentIds,
       draft?.selectedTransferIds,
     ],
   )
@@ -723,6 +771,7 @@ function ClosingFlow({
           reconciled.selectedExpenseIds,
           reconciled.selectedTransferIds,
           reconciled.selectedPaymentIds,
+          reconciled.selectedPurchasePaymentIds,
         )
         const prepared = applyClosingSummary(reconciled, selected)
         setCurrentDraft(prepared)
@@ -777,6 +826,7 @@ function ClosingFlow({
       nextDraft.selectedExpenseIds,
       nextDraft.selectedTransferIds,
       nextDraft.selectedPaymentIds,
+      nextDraft.selectedPurchasePaymentIds,
     )
     persistDraft(nextDraft, nextOperational)
   }
@@ -801,6 +851,7 @@ function ClosingFlow({
           reconciled.selectedExpenseIds,
           reconciled.selectedTransferIds,
           reconciled.selectedPaymentIds,
+          reconciled.selectedPurchasePaymentIds,
         )
         setCandidates(latestCandidates)
         setSelectionConflict(false)
@@ -835,6 +886,7 @@ function ClosingFlow({
         reconciled.selectedExpenseIds,
         reconciled.selectedTransferIds,
         reconciled.selectedPaymentIds,
+        reconciled.selectedPurchasePaymentIds,
       )
       setCandidates(latestCandidates)
       setSelectionConflict(false)
@@ -866,7 +918,8 @@ function ClosingFlow({
       if (
         cause instanceof ClosingDomainError &&
         (cause.code === 'MOVEMENT_ALREADY_ASSIGNED' ||
-          cause.code === 'SELECTED_MOVEMENT_NOT_FOUND')
+          cause.code === 'SELECTED_MOVEMENT_NOT_FOUND' ||
+          cause.code === 'PURCHASE_ALREADY_IN_CLOSING')
       ) {
         setSelectionConflict(true)
       }
@@ -928,6 +981,17 @@ function ClosingFlow({
       selectedPaymentIds: draft.selectedPaymentIds.includes(id)
         ? draft.selectedPaymentIds.filter((selectedId) => selectedId !== id)
         : [...draft.selectedPaymentIds, id],
+    })
+  }
+
+  function togglePurchasePayment(id: string) {
+    if (!draft) return
+    updateDraft({
+      selectedPurchasePaymentIds: draft.selectedPurchasePaymentIds.includes(id)
+        ? draft.selectedPurchasePaymentIds.filter(
+            (selectedId) => selectedId !== id,
+          )
+        : [...draft.selectedPurchasePaymentIds, id],
     })
   }
 
@@ -1362,9 +1426,63 @@ function ClosingFlow({
                     </div>
                   )}
 
+                  {candidates.storeCashPurchases.length > 0 && (
+                    <div className="mt-7 border-t border-slate-200 pt-6">
+                      <div>
+                        <p className="eyebrow">Compras</p>
+                        <p className="mt-1 text-sm font-bold text-slate-700">
+                          {draft.selectedPurchasePaymentIds.length} de {candidates.storeCashPurchases.length} seleccionadas · {currencyFormatter.format(summary.purchasesTotal)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-400">
+                          Disponible: {currencyFormatter.format(candidates.purchasesTotal)}
+                        </p>
+                      </div>
+                      <button
+                        aria-expanded={showPurchaseDetails}
+                        className="text-action mt-4"
+                        type="button"
+                        onClick={() => setShowPurchaseDetails((visible) => !visible)}
+                      >
+                        <ReceiptIcon className="size-4" />
+                        {showPurchaseDetails ? 'Ocultar Compras' : 'Ver detalle de Compras'}
+                      </button>
+                      {showPurchaseDetails && (
+                        <div className="mt-3">
+                          <div className="mb-3 flex justify-end">
+                            <button
+                              className="small-button"
+                              type="button"
+                              onClick={() => updateDraft({
+                                selectedPurchasePaymentIds:
+                                  draft.selectedPurchasePaymentIds.length === candidates.storeCashPurchases.length
+                                    ? []
+                                    : candidates.storeCashPurchases.map(({ payment }) => payment.id),
+                              })}
+                            >
+                              {draft.selectedPurchasePaymentIds.length === candidates.storeCashPurchases.length ? 'Deseleccionar todas' : 'Seleccionar todas'}
+                            </button>
+                          </div>
+                          <div className="overflow-hidden rounded-xl border border-slate-200">
+                            {candidates.storeCashPurchases.map(({ purchase, payment }) => (
+                              <label className="flex cursor-pointer items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0" key={payment.id}>
+                                <input checked={draft.selectedPurchasePaymentIds.includes(payment.id)} className="size-5 accent-teal-700" type="checkbox" onChange={() => togglePurchasePayment(payment.id)} />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-semibold text-slate-700">{purchase.supplierNameSnapshot}</span>
+                                  <span className="mt-0.5 block text-xs capitalize text-slate-400">{payment.paymentMethod}</span>
+                                </span>
+                                <strong className="text-sm">{currencyFormatter.format(payment.amount)}</strong>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {(candidates.expenses.length > 0 ||
                     candidates.outgoingTransfers.length > 0 ||
-                    candidates.storeCashPayments.length > 0) && (
+                    candidates.storeCashPayments.length > 0 ||
+                    candidates.storeCashPurchases.length > 0) && (
                     <dl className="mt-7 space-y-4 border-t border-slate-200 pt-5 text-sm">
                       {candidates.expenses.length > 0 && (
                         <div className="summary-row"><dt>Gastos seleccionados</dt><dd>{currencyFormatter.format(summary.expensesTotal)}</dd></div>
@@ -1374,6 +1492,9 @@ function ClosingFlow({
                       )}
                       {candidates.storeCashPayments.length > 0 && (
                         <div className="summary-row"><dt>Pagos desde caja seleccionados</dt><dd>{currencyFormatter.format(summary.storeCashPaymentsTotal)}</dd></div>
+                      )}
+                      {candidates.storeCashPurchases.length > 0 && (
+                        <div className="summary-row"><dt>Compras seleccionadas</dt><dd>{currencyFormatter.format(summary.purchasesTotal)}</dd></div>
                       )}
                       <div className="summary-row border-t border-slate-200 pt-4 font-extrabold text-slate-950"><dt>Total salidas del corte</dt><dd>{currencyFormatter.format(summary.operationalOutflowsTotal)}</dd></div>
                     </dl>
@@ -1385,7 +1506,7 @@ function ClosingFlow({
                     <div>
                       <p className="eyebrow">Conciliación de efectivo</p>
                       <h3 className="mt-2 text-xl font-black text-slate-950">Caja física</h3>
-                      <p className="mt-1 text-xs text-slate-500">Las transferencias de mercancía no modifican este cálculo; los pagos desde caja sí.</p>
+                      <p className="mt-1 text-xs text-slate-500">Las transferencias de mercancía no modifican este cálculo; los pagos y Compras en efectivo sí.</p>
                     </div>
                     <button className="text-action text-xs" type="button" onClick={() => void goToStep(2)}>Editar</button>
                   </div>
@@ -1394,7 +1515,7 @@ function ClosingFlow({
                     <div className="summary-row text-slate-700">
                       <dt>
                         <span className="block">Salidas de efectivo</span>
-                        <span className="mt-0.5 block text-xs text-slate-400">Gastos y pagos desde caja</span>
+                        <span className="mt-0.5 block text-xs text-slate-400">Gastos, pagos y Compras en efectivo</span>
                       </dt>
                       <dd>+ {currencyFormatter.format(summary.cashOutflowsTotal)}</dd>
                     </div>

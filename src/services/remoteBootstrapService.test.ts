@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   ensureOfflineShell: vi.fn(),
   sync: vi.fn(),
   refreshPayments: vi.fn(),
+  refreshPurchases: vi.fn(),
   clearAdministrativePaymentData: vi.fn(),
 }))
 
@@ -52,6 +53,10 @@ vi.mock('./syncService', () => ({
 
 vi.mock('./paymentService', () => ({
   paymentService: { refreshRemote: mocks.refreshPayments },
+}))
+
+vi.mock('./purchaseService', () => ({
+  purchaseService: { refreshRemote: mocks.refreshPurchases },
 }))
 
 vi.mock('../repositories/operationsRepository', () => ({
@@ -94,6 +99,7 @@ describe('RemoteBootstrapService', () => {
     mocks.sync.mockResolvedValue({ synced: 1, failed: 0, pending: 0 })
     mocks.recordSuccessfulSync.mockResolvedValue(undefined)
     mocks.refreshPayments.mockResolvedValue(undefined)
+    mocks.refreshPurchases.mockResolvedValue(undefined)
     mocks.clearAdministrativePaymentData.mockResolvedValue(undefined)
   })
 
@@ -111,6 +117,7 @@ describe('RemoteBootstrapService', () => {
     expect(mocks.saveAuthenticatedProfile).toHaveBeenCalledWith(profile)
     expect(mocks.sync).toHaveBeenCalledOnce()
     expect(mocks.refreshPayments).toHaveBeenCalledOnce()
+    expect(mocks.refreshPurchases).toHaveBeenCalledOnce()
   })
 
   it('does not persist an authenticated context after sign-out cancellation', async () => {

@@ -14,7 +14,10 @@ import type {
   MerchandiseTransfer,
   Payment,
   PaymentAttendanceItem,
+  Purchase,
+  PurchasePayment,
   Store,
+  Supplier,
   SyncQueueItem,
 } from '../domain/models'
 
@@ -33,6 +36,10 @@ type LegacyClosingDraft = CashClosingDraft & {
   knownTransferIds?: string[]
   selectedPaymentIds?: string[]
   knownPaymentIds?: string[]
+  purchasesTotal?: number
+  cashPurchasesTotal?: number
+  selectedPurchasePaymentIds?: string[]
+  knownPurchasePaymentIds?: string[]
   movementSelectionInitialized?: boolean
 }
 
@@ -49,6 +56,9 @@ export class OperationsDatabase extends Dexie {
   appContexts!: Table<LocalAppContext, string>
   payments!: Table<Payment, string>
   paymentAttendanceItems!: Table<PaymentAttendanceItem, [string, string]>
+  suppliers!: Table<Supplier, string>
+  purchases!: Table<Purchase, string>
+  purchasePayments!: Table<PurchasePayment, string>
   compensationHistory!: Table<CollaboratorCompensationHistory, string>
   exportCandidates!: Table<ExportCandidate, string>
   exportBatches!: Table<ExportBatch, string>
@@ -105,6 +115,14 @@ export class OperationsDatabase extends Dexie {
       centralCashPendingClosings:
         '&id, storeId, businessDate, [storeId+businessDate], closedAt, cachedAt',
       centralCashSummary: '&id, cachedAt',
+    }
+    const schemaV13 = {
+      ...schemaV12,
+      suppliers: '&id, name, isActive, updatedAt',
+      purchases:
+        '&id, supplierId, businessDate, [supplierId+businessDate], syncStatus, createdAt',
+      purchasePayments:
+        '&id, purchaseId, fundingSource, sourceStoreId, paidAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -206,6 +224,19 @@ export class OperationsDatabase extends Dexie {
       })
     this.version(11).stores(schemaV11)
     this.version(12).stores(schemaV12)
+    this.version(13)
+      .stores(schemaV13)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<LegacyClosingDraft, string>('closingDrafts')
+          .toCollection()
+          .modify((draft) => {
+            draft.purchasesTotal ??= 0
+            draft.cashPurchasesTotal ??= 0
+            draft.selectedPurchasePaymentIds ??= []
+            draft.knownPurchasePaymentIds ??= []
+          })
+      })
   }
 }
 

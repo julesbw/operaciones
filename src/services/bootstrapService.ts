@@ -5,6 +5,7 @@ import { operationsRepository } from '../repositories/operationsRepository'
 import {
   DEMO_COLLABORATORS,
   DEMO_COMPENSATION_HISTORY,
+  DEMO_SUPPLIERS,
   DEMO_STORES,
 } from './demoData'
 
@@ -25,6 +26,7 @@ class BootstrapService {
       db.stores,
       db.collaborators,
       db.compensationHistory,
+      db.suppliers,
       async () => {
         if ((await db.stores.count()) === 0) {
           await db.stores.bulkAdd(DEMO_STORES)
@@ -36,6 +38,10 @@ class BootstrapService {
 
         if ((await db.compensationHistory.count()) === 0) {
           await db.compensationHistory.bulkAdd(DEMO_COMPENSATION_HISTORY)
+        }
+
+        if ((await db.suppliers.count()) === 0) {
+          await db.suppliers.bulkAdd(DEMO_SUPPLIERS)
         }
       },
     )

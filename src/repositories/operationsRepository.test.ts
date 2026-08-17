@@ -8,6 +8,7 @@ import type {
   CentralCashSummary,
   Expense,
   MerchandiseTransfer,
+  PaidPurchase,
   SyncQueueItem,
 } from '../domain/models'
 import { OperationsRepository } from './operationsRepository'
@@ -100,6 +101,47 @@ function transferQueueItem(entityId: string): SyncQueueItem {
     entityId,
     operation: 'insert',
     createdAt: '2026-08-12T12:00:00.000Z',
+    attempts: 0,
+  }
+}
+
+function paidPurchase(id: string, syncStatus: 'pending' | 'synced'): PaidPurchase {
+  const createdAt = '2026-08-17T12:00:00.000Z'
+  return {
+    purchase: {
+      id,
+      supplierId: 'supplier-id',
+      supplierNameSnapshot: 'Bimbo',
+      businessDate: '2026-08-17',
+      amount: 1_280,
+      createdBy: 'user-id',
+      createdAt,
+      updatedAt: createdAt,
+      syncStatus,
+    },
+    payment: {
+      id: `payment-${id}`,
+      purchaseId: id,
+      amount: 1_280,
+      fundingSource: 'store_cash',
+      sourceStoreId: 'store-id',
+      paymentMethod: 'efectivo',
+      bills: { b1000: 1, b500: 0, b200: 1, b100: 0, b50: 1, b20: 1 },
+      coinsAmount: 10,
+      paidAt: createdAt,
+      createdBy: 'user-id',
+      createdAt,
+    },
+  }
+}
+
+function purchaseQueueItem(entityId: string): SyncQueueItem {
+  return {
+    id: `purchase:${entityId}`,
+    entityType: 'purchase',
+    entityId,
+    operation: 'insert',
+    createdAt: '2026-08-17T12:00:00.000Z',
     attempts: 0,
   }
 }
@@ -393,10 +435,10 @@ describe('OperationsRepository merchandise transfer filters', () => {
           [pendingExpense.id],
           [pendingTransfer.id],
         ),
-      ).resolves.toEqual({ expenses: 1, transfers: 1 })
+      ).resolves.toEqual({ expenses: 1, transfers: 1, purchases: 0 })
       await expect(
         repository.countPendingSelectedClosingMovements([], []),
-      ).resolves.toEqual({ expenses: 0, transfers: 0 })
+      ).resolves.toEqual({ expenses: 0, transfers: 0, purchases: 0 })
     } finally {
       database.close()
       await database.delete()
@@ -561,6 +603,48 @@ describe('OperationsRepository central cash cache', () => {
       await expect(
         repository.listCentralCashMovements('center'),
       ).resolves.toEqual([movement])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})
+
+describe('OperationsRepository purchase cache protection', () => {
+  it('keeps queued store purchases when administrative cache is cleared', async () => {
+    const database = new OperationsDatabase(
+      `operations-test-${crypto.randomUUID()}`,
+    )
+    const repository = new OperationsRepository(database)
+    const pending = paidPurchase('purchase-pending', 'pending')
+    const synced = paidPurchase('purchase-synced', 'synced')
+
+    try {
+      await repository.saveSupplier({
+        id: 'supplier-id',
+        name: 'Bimbo',
+        isActive: true,
+        createdBy: 'user-id',
+        createdAt: '2026-08-17T12:00:00.000Z',
+        updatedAt: '2026-08-17T12:00:00.000Z',
+      })
+      await repository.savePaidPurchaseWithQueue(
+        pending.purchase,
+        pending.payment,
+        purchaseQueueItem(pending.purchase.id),
+      )
+      await repository.saveConfirmedPaidPurchase(
+        synced.purchase,
+        synced.payment,
+      )
+
+      await repository.clearAdministrativePaymentData()
+
+      await expect(repository.listPaidPurchases()).resolves.toMatchObject([
+        { purchase: { id: pending.purchase.id } },
+      ])
+      await expect(repository.listSuppliers()).resolves.toEqual([])
+      await expect(repository.countPendingQueue()).resolves.toBe(1)
     } finally {
       database.close()
       await database.delete()

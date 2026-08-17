@@ -1,22 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AppModal } from '../components/AppModal'
-import { CheckIcon, PlusIcon, SettingsIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
+import { CheckIcon, PlusIcon, ReceiptIcon, SettingsIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
 import {
   ALL_STORES,
   StoreFilter,
   type StoreFilterValue,
 } from '../components/StoreFilter'
-import type { Collaborator, Store, UserProfile } from '../domain/models'
+import type { Collaborator, Store, Supplier, UserProfile } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { collaboratorService } from '../services/collaboratorService'
 import { connectivityService } from '../services/connectivityService'
 import { paymentService } from '../services/paymentService'
 import { referenceDataService } from '../services/referenceDataService'
 import { storeService } from '../services/storeService'
+import { supplierService } from '../services/supplierService'
 import { WEEKDAYS } from '../domain/constants'
 import { currencyFormatter } from '../utils/money'
 
-type SettingsTab = 'stores' | 'team' | 'system'
+type SettingsTab = 'stores' | 'suppliers' | 'team' | 'system'
 
 type SettingsPageProps = {
   stores: Store[]
@@ -37,9 +38,14 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const [tab, setTab] = useState<SettingsTab>(isAdmin ? 'stores' : 'system')
   const [storeModalOpen, setStoreModalOpen] = useState(false)
   const [collaboratorModalOpen, setCollaboratorModalOpen] = useState(false)
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false)
   const [newStoreName, setNewStoreName] = useState('')
   const [editingId, setEditingId] = useState<string>()
   const [editingName, setEditingName] = useState('')
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [newSupplierName, setNewSupplierName] = useState('')
+  const [editingSupplierId, setEditingSupplierId] = useState<string>()
+  const [editingSupplierName, setEditingSupplierName] = useState('')
   const [teamStoreFilter, setTeamStoreFilter] =
     useState<StoreFilterValue>(ALL_STORES)
   const [newCollaboratorStoreId, setNewCollaboratorStoreId] = useState(
@@ -62,8 +68,10 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const [message, setMessage] = useState<string>()
   const storeFabRef = useRef<HTMLButtonElement>(null)
   const collaboratorFabRef = useRef<HTMLButtonElement>(null)
+  const supplierFabRef = useRef<HTMLButtonElement>(null)
   const storeNameInputRef = useRef<HTMLInputElement>(null)
   const collaboratorNameInputRef = useRef<HTMLInputElement>(null)
+  const supplierNameInputRef = useRef<HTMLInputElement>(null)
   const canMutate =
     isAdmin &&
     (user.demo ||
@@ -95,6 +103,20 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     const timeout = window.setTimeout(() => setMessage(undefined), 3200)
     return () => window.clearTimeout(timeout)
   }, [message])
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setSuppliers([])
+      return
+    }
+    void supplierService
+      .list()
+      .then(setSuppliers)
+      .catch((cause: unknown) => {
+        console.error('No fue posible cargar proveedores', cause)
+        setError('No fue posible cargar los proveedores.')
+      })
+  }, [isAdmin])
 
   useEffect(() => {
     if (!isAdmin) {
@@ -185,6 +207,76 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     } finally {
       setSaving(false)
     }
+  }
+
+  async function createSupplier(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSaving(true)
+    setCreationError(undefined)
+    try {
+      const supplier = await supplierService.create(newSupplierName, user.id)
+      setSuppliers((current) => [...current, supplier])
+      setNewSupplierName('')
+      setSupplierModalOpen(false)
+      setMessage(`${supplier.name} se creó correctamente.`)
+    } catch (cause: unknown) {
+      setCreationError(
+        cause instanceof Error
+          ? cause.message
+          : 'No fue posible crear el proveedor.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveSupplierName(supplier: Supplier) {
+    setSaving(true)
+    setError(undefined)
+    try {
+      const updated = await supplierService.update(supplier, {
+        name: editingSupplierName,
+      })
+      setSuppliers((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+      setEditingSupplierId(undefined)
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No fue posible renombrar el proveedor.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleSupplier(supplier: Supplier) {
+    setSaving(true)
+    setError(undefined)
+    try {
+      const updated = await supplierService.update(supplier, {
+        isActive: !supplier.isActive,
+      })
+      setSuppliers((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+    } catch (cause: unknown) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No fue posible cambiar el estado del proveedor.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function openSupplierModal() {
+    setNewSupplierName('')
+    setCreationError(undefined)
+    setSupplierModalOpen(true)
   }
 
   async function saveCollaborator(event: FormEvent<HTMLFormElement>) {
@@ -304,6 +396,9 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
           <>
             <button className={tab === 'stores' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('stores')}>
               <StoreIcon className="size-4" /> Tiendas
+            </button>
+            <button className={tab === 'suppliers' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('suppliers')}>
+              <ReceiptIcon className="size-4" /> Proveedores
             </button>
             <button className={tab === 'team' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('team')}>
               <UsersIcon className="size-4" /> Colaboradores
@@ -488,6 +583,75 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         </div>
       )}
 
+      {isAdmin && tab === 'suppliers' && (
+        <div className="mt-6">
+          <article className="panel p-0">
+            <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
+              <h2 className="font-extrabold text-slate-950">Proveedores</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Los nombres históricos permanecen congelados en cada Compra.
+              </p>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {suppliers.length === 0 ? (
+                <div className="empty-state">
+                  <ReceiptIcon className="mx-auto size-8 text-slate-300" />
+                  <p className="mt-3 font-bold text-slate-700">
+                    No hay proveedores registrados
+                  </p>
+                  <button
+                    className="button-secondary mt-5"
+                    disabled={!canMutate}
+                    type="button"
+                    onClick={openSupplierModal}
+                  >
+                    <PlusIcon className="size-4" /> Agregar proveedor
+                  </button>
+                </div>
+              ) : (
+                suppliers.map((supplier) => (
+                  <div className="flex flex-wrap items-center gap-3 px-5 py-4 sm:px-6" key={supplier.id}>
+                    <span className={`flex size-10 items-center justify-center rounded-xl ${supplier.isActive ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-400'}`}>
+                      <ReceiptIcon className="size-5" />
+                    </span>
+                    <div className="min-w-0 flex-1 basis-[180px]">
+                      {editingSupplierId === supplier.id ? (
+                        <input
+                          autoFocus
+                          className="field mt-0"
+                          value={editingSupplierName}
+                          onChange={(event) => setEditingSupplierName(event.target.value)}
+                        />
+                      ) : (
+                        <>
+                          <p className="font-bold text-slate-900">{supplier.name}</p>
+                          <p className={`mt-0.5 text-xs font-semibold ${supplier.isActive ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            {supplier.isActive ? 'Activo' : 'Inactivo'}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      {editingSupplierId === supplier.id ? (
+                        <>
+                          <button aria-label="Guardar nombre" className="icon-button text-teal-700" disabled={saving} type="button" onClick={() => void saveSupplierName(supplier)}><CheckIcon className="size-4" /></button>
+                          <button aria-label="Cancelar edición" className="icon-button" type="button" onClick={() => setEditingSupplierId(undefined)}><XIcon className="size-4" /></button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="small-button" disabled={!canMutate || saving} type="button" onClick={() => { setEditingSupplierId(supplier.id); setEditingSupplierName(supplier.name) }}>Editar</button>
+                          <button className="small-button" disabled={!canMutate || saving} type="button" onClick={() => void toggleSupplier(supplier)}>{supplier.isActive ? 'Desactivar' : 'Activar'}</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </article>
+        </div>
+      )}
+
       {tab === 'system' && (
         <article className="panel mt-6">
           <div className="flex items-center gap-3">
@@ -545,6 +709,56 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
           <PlusIcon className="size-7" />
         </button>
       )}
+
+      {isAdmin && tab === 'suppliers' && (
+        <button
+          aria-label="Crear un proveedor"
+          className="app-fab"
+          disabled={!canMutate || saving}
+          ref={supplierFabRef}
+          title="Nuevo proveedor"
+          type="button"
+          onClick={openSupplierModal}
+        >
+          <PlusIcon className="size-7" />
+        </button>
+      )}
+
+      <AppModal
+        closeDisabled={saving}
+        closeLabel="Cerrar formulario de proveedor"
+        eyebrow="Administración"
+        hasUnsavedChanges={newSupplierName.trim().length > 0}
+        initialFocusRef={supplierNameInputRef}
+        open={supplierModalOpen}
+        returnFocusRef={supplierFabRef}
+        title="Nuevo proveedor"
+        onClose={() => setSupplierModalOpen(false)}
+      >
+        <form onSubmit={createSupplier}>
+          {creationError && <p className="alert-error mt-5">{creationError}</p>}
+          <label className="field-label mt-6">
+            Nombre
+            <input
+              className="field"
+              maxLength={120}
+              placeholder="Ej. Bimbo"
+              ref={supplierNameInputRef}
+              required
+              value={newSupplierName}
+              onChange={(event) => setNewSupplierName(event.target.value)}
+            />
+          </label>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <button className="button-secondary" disabled={saving} type="button" onClick={() => setSupplierModalOpen(false)}>
+              Cancelar
+            </button>
+            <button className="button-primary" disabled={saving} type="submit">
+              {saving ? 'Guardando…' : 'Crear'}
+            </button>
+          </div>
+        </form>
+      </AppModal>
 
       <AppModal
         closeDisabled={saving}

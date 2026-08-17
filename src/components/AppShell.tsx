@@ -30,6 +30,7 @@ export type PageId =
   | 'home'
   | 'expenses'
   | 'transfers'
+  | 'purchases'
   | 'collaborators'
   | 'closings'
   | 'central-cash'
@@ -64,6 +65,13 @@ const NAVIGATION: NavigationItem[] = [
     id: 'collaborators',
     label: 'Colaboradores',
     icon: UsersIcon,
+    mobilePlacement: 'more',
+  },
+  {
+    id: 'purchases',
+    label: 'Compras',
+    icon: ReceiptIcon,
+    adminOnly: true,
     mobilePlacement: 'more',
   },
   {

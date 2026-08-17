@@ -3,6 +3,7 @@ import type {
   CashClosingDraft,
   Expense,
   MerchandiseTransfer,
+  PaidPurchase,
   Payment,
 } from '../domain/models'
 import {
@@ -10,6 +11,7 @@ import {
   calculateExpenseTotals,
   calculateOperationalTotals,
   calculateWithdrawBills,
+  mergePendingStoreCashPurchases,
   selectClosingMovements,
   validateClosingBillCounts,
 } from './closingService'
@@ -51,14 +53,18 @@ const draft: CashClosingDraft = {
   cashExpensesTotal: 0,
   outgoingTransfersTotal: 0,
   storeCashPaymentsTotal: 0,
+  purchasesTotal: 0,
+  cashPurchasesTotal: 0,
   operationalOutflowsTotal: 0,
   cashOutflowsTotal: 0,
   selectedExpenseIds: [],
   selectedTransferIds: [],
   selectedPaymentIds: [],
+  selectedPurchasePaymentIds: [],
   knownExpenseIds: [],
   knownTransferIds: [],
   knownPaymentIds: [],
+  knownPurchasePaymentIds: [],
   movementSelectionInitialized: false,
   countedCash: 0,
   cashToWithdraw: 0,
@@ -125,6 +131,38 @@ function payment(id: string, amount: number): Payment {
   }
 }
 
+function purchase(
+  id: string,
+  amount: number,
+  paymentMethod: PaidPurchase['payment']['paymentMethod'],
+): PaidPurchase {
+  return {
+    purchase: {
+      id: `purchase-${id}`,
+      supplierId: 'supplier-id',
+      supplierNameSnapshot: 'Bimbo',
+      businessDate: draft.businessDate,
+      amount,
+      createdBy: 'admin-id',
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+      syncStatus: 'synced',
+    },
+    payment: {
+      id,
+      purchaseId: `purchase-${id}`,
+      amount,
+      fundingSource: 'store_cash',
+      sourceStoreId: draft.storeId,
+      paymentMethod,
+      coinsAmount: 0,
+      paidAt: draft.createdAt,
+      createdBy: 'admin-id',
+      createdAt: draft.createdAt,
+    },
+  }
+}
+
 describe('calculateExpenseTotals', () => {
   it('separates all expenses from those paid in cash', () => {
     expect(
@@ -153,6 +191,8 @@ describe('calculateClosingSummary', () => {
       cashExpensesTotal: 900,
       outgoingTransfersTotal: 2_350,
       storeCashPaymentsTotal: 0,
+      purchasesTotal: 0,
+      cashPurchasesTotal: 0,
       operationalOutflowsTotal: 3_350,
       cashOutflowsTotal: 900,
       resultAfterExpenses: 15_000,
@@ -187,8 +227,33 @@ describe('calculateClosingSummary', () => {
       cashExpensesTotal: 900,
       outgoingTransfersTotal: 2_350,
       storeCashPaymentsTotal: 2_000,
+      purchasesTotal: 0,
+      cashPurchasesTotal: 0,
       operationalOutflowsTotal: 5_250,
       cashOutflowsTotal: 2_900,
+    })
+  })
+
+  it('separates all purchases from purchases that affect physical cash', () => {
+    const operational = calculateOperationalTotals(
+      [],
+      [],
+      [],
+      [
+        purchase('cash-purchase', 1_280, 'efectivo'),
+        purchase('card-purchase', 500, 'tarjeta'),
+      ],
+    )
+
+    expect(operational).toEqual({
+      expensesTotal: 0,
+      cashExpensesTotal: 0,
+      outgoingTransfersTotal: 0,
+      storeCashPaymentsTotal: 0,
+      purchasesTotal: 1_780,
+      cashPurchasesTotal: 1_280,
+      operationalOutflowsTotal: 1_780,
+      cashOutflowsTotal: 1_280,
     })
   })
 })
@@ -210,7 +275,12 @@ describe('selectClosingMovements', () => {
 
     expect(
       selectClosingMovements(
-        { expenses, outgoingTransfers: transfers, storeCashPayments: payments },
+        {
+          expenses,
+          outgoingTransfers: transfers,
+          storeCashPayments: payments,
+          storeCashPurchases: [],
+        },
         ['included-expense'],
         ['included-transfer'],
         ['included-payment'],
@@ -225,6 +295,22 @@ describe('selectClosingMovements', () => {
       operationalOutflowsTotal: 5_150,
       cashOutflowsTotal: 2_800,
     })
+  })
+})
+
+describe('mergePendingStoreCashPurchases', () => {
+  it('keeps pending local purchases visible beside remote candidates', () => {
+    const remote = purchase('remote', 1_000, 'efectivo')
+    const pending = purchase('pending', 1_280, 'efectivo')
+    pending.purchase.syncStatus = 'error'
+    const staleSynced = purchase('stale', 500, 'tarjeta')
+
+    expect(
+      mergePendingStoreCashPurchases(
+        [remote],
+        [remote, pending, staleSynced],
+      ).map(({ purchase: item }) => item.id),
+    ).toEqual([remote.purchase.id, pending.purchase.id])
   })
 })
 

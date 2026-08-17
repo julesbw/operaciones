@@ -40,6 +40,15 @@ export type Store = {
   updatedAt: string
 }
 
+export type Supplier = {
+  id: string
+  name: string
+  isActive: boolean
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type UserProfile = {
   id: string
   fullName: string
@@ -162,6 +171,39 @@ export type PaymentAttendanceItem = {
   createdAt: string
 }
 
+export type Purchase = {
+  id: string
+  supplierId: string
+  supplierNameSnapshot: string
+  businessDate: string
+  folio?: string
+  amount: number
+  notes?: string
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  syncStatus: SyncStatus
+}
+
+export type PurchasePayment = {
+  id: string
+  purchaseId: string
+  amount: number
+  fundingSource: PaymentFundingSource
+  sourceStoreId?: string
+  paymentMethod: PaymentMethod
+  bills?: CentralCashBills
+  coinsAmount: number
+  paidAt: string
+  createdBy: string
+  createdAt: string
+}
+
+export type PaidPurchase = {
+  purchase: Purchase
+  payment: PurchasePayment
+}
+
 export type Bills = {
   b1000: number
   b500: number
@@ -261,14 +303,18 @@ export type CashClosingDraft = {
   cashExpensesTotal: number
   outgoingTransfersTotal: number
   storeCashPaymentsTotal: number
+  purchasesTotal: number
+  cashPurchasesTotal: number
   operationalOutflowsTotal: number
   cashOutflowsTotal: number
   selectedExpenseIds: string[]
   selectedTransferIds: string[]
   selectedPaymentIds: string[]
+  selectedPurchasePaymentIds: string[]
   knownExpenseIds: string[]
   knownTransferIds: string[]
   knownPaymentIds: string[]
+  knownPurchasePaymentIds: string[]
   movementSelectionInitialized: boolean
   countedCash: number
   cashToWithdraw: number
@@ -282,7 +328,11 @@ export type CashClosingDraft = {
   updatedAt: string
 }
 
-export type SyncEntity = 'expense' | 'attendance' | 'merchandiseTransfer'
+export type SyncEntity =
+  | 'expense'
+  | 'attendance'
+  | 'merchandiseTransfer'
+  | 'purchase'
 export type SyncOperation = 'insert' | 'update' | 'delete'
 
 export type SyncQueueItem = {
@@ -315,3 +365,18 @@ export type AttendanceInput = Pick<
   AttendanceRecord,
   'collaboratorId' | 'storeId' | 'attendanceDate' | 'status'
 >
+
+export type CreatePurchaseInput = {
+  purchaseId: string
+  paymentId: string
+  supplierId: string
+  businessDate: string
+  folio?: string
+  amount: number
+  notes?: string
+  fundingSource: PaymentFundingSource
+  sourceStoreId?: string
+  paymentMethod: PaymentMethod
+  bills?: CentralCashBills
+  coinsAmount?: number
+}

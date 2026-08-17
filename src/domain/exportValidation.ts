@@ -42,6 +42,12 @@ function validateClosing(
   const closingMovements = closing.financial_movements.filter(
     (movement) => movement.source_type === 'cash_closing',
   )
+  const purchaseMovements = closing.financial_movements.filter(
+    (movement) => movement.source_type === 'purchase',
+  )
+  const purchasesTotal = closing.purchases_total ?? 0
+  const cashPurchasesTotal = closing.cash_purchases_total ?? 0
+  const purchaseItems = closing.purchase_items ?? []
 
   for (const movement of closing.financial_movements) {
     if (movementIds.has(movement.id)) {
@@ -66,6 +72,9 @@ function validateClosing(
   if (paymentMovements.some((movement) => movement.tipo !== 'salida')) {
     errors.push(`${prefix}los pagos deben ser salidas.`)
   }
+  if (purchaseMovements.some((movement) => movement.tipo !== 'salida')) {
+    errors.push(`${prefix}las compras deben ser salidas.`)
+  }
 
   const expenseMovementTotal = sum(
     expenseMovements.map((movement) => movement.monto),
@@ -73,15 +82,24 @@ function validateClosing(
   const paymentMovementTotal = sum(
     paymentMovements.map((movement) => movement.monto),
   )
+  const purchaseMovementTotal = sum(
+    purchaseMovements.map((movement) => movement.monto),
+  )
   if (!sameMoney(expenseMovementTotal, closing.cash_expenses_total)) {
     errors.push(`${prefix}las salidas de gastos no coinciden con cash_expenses_total.`)
   }
   if (!sameMoney(paymentMovementTotal, closing.store_cash_payments_total)) {
     errors.push(`${prefix}las salidas de pagos no coinciden con store_cash_payments_total.`)
   }
+  if (!sameMoney(purchaseMovementTotal, cashPurchasesTotal)) {
+    errors.push(`${prefix}las salidas de compras no coinciden con cash_purchases_total.`)
+  }
   if (
     !sameMoney(
-      closing.gross_cash - expenseMovementTotal - paymentMovementTotal,
+      closing.gross_cash -
+        expenseMovementTotal -
+        paymentMovementTotal -
+        purchaseMovementTotal,
       closing.net_cash,
     )
   ) {
@@ -142,6 +160,12 @@ function validateClosing(
   const transferItemsTotal = sum(
     closing.transfer_items.map((item) => item.amount),
   )
+  const purchaseItemsTotal = sum(purchaseItems.map((item) => item.amount))
+  const cashPurchaseItemsTotal = sum(
+    purchaseItems
+      .filter((item) => item.affects_cash)
+      .map((item) => item.amount),
+  )
   if (!sameMoney(expenseItemsTotal, closing.expenses_total)) {
     errors.push(`${prefix}los gastos históricos no coinciden con expenses_total.`)
   }
@@ -153,6 +177,12 @@ function validateClosing(
   }
   if (!sameMoney(transferItemsTotal, closing.transfers_total)) {
     errors.push(`${prefix}las transferencias históricas no coinciden.`)
+  }
+  if (!sameMoney(purchaseItemsTotal, purchasesTotal)) {
+    errors.push(`${prefix}las compras históricas no coinciden.`)
+  }
+  if (!sameMoney(cashPurchaseItemsTotal, cashPurchasesTotal)) {
+    errors.push(`${prefix}las compras en efectivo históricas no coinciden.`)
   }
 
   return errors

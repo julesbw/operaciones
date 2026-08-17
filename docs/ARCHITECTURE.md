@@ -35,7 +35,7 @@ UI operativa inmediata                  perfil + referencias
 
 `loading-local` sólo cubre la apertura de Dexie y la lectura del contexto. Si existe un contexto con acceso offline habilitado, React muestra inmediatamente los datos locales; la restauración de Auth, las referencias y la sincronización continúan en segundo plano. Si el dispositivo nunca fue inicializado, el primer uso sin red muestra una pantalla explícita en lugar de esperar Supabase.
 
-Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos. Dexie v10 agrega `payments`, `paymentAttendanceItems` y `compensationHistory`, además de la selección de pagos en los borradores de Corte. Dexie v11 agrega `exportCandidates` y `exportBatches` para consulta cacheada. Dexie v12 agrega `centralCashSummary`, `centralCashMovements` y `centralCashPendingClosings`. Estas tablas administrativas se limpian si el perfil autenticado deja de ser administrador.
+Dexie v9 agrega `appContexts`. El registro `current` conserva únicamente el perfil mínimo para configurar la experiencia local: identificador, nombre, rol, tienda y fechas de autenticación/sincronización. No contiene JWT, credenciales ni permisos remotos. Dexie v10 agrega `payments`, `paymentAttendanceItems` y `compensationHistory`, además de la selección de pagos en los borradores de Corte. Dexie v11 agrega `exportCandidates` y `exportBatches` para consulta cacheada. Dexie v12 agrega `centralCashSummary`, `centralCashMovements` y `centralCashPendingClosings`. Dexie v13 agrega `suppliers`, `purchases` y `purchasePayments`, además de la selección de Compras en los borradores de Corte. Estas tablas administrativas se limpian si el perfil autenticado deja de ser administrador.
 
 Una inicialización se considera completa después de obtener el perfil y las referencias autorizadas, verificar el app shell en producción y guardar `LocalAppContext`. El service worker precachea el HTML y descubre los bundles JS/CSS con hash generados por Vite; las respuestas de Supabase no forman parte de esa caché.
 
@@ -93,9 +93,9 @@ Para Cortes, una transferencia saliente se consulta por `origin_store_id + busin
 
 La sección abre en un historial que combina cortes cerrados de Supabase con borradores locales de Dexie. Crear es una acción explícita; sólo entonces se inicia el flujo de cuatro fases. Cada cambio se persiste en `closingDrafts` y existe como máximo un borrador local por tienda/fecha para evitar flujos accidentales duplicados.
 
-El Resumen consulta por RPC los gastos, transferencias salientes y pagos desde caja elegibles de la tienda/fecha. Los IDs seleccionados y conocidos viven en el borrador, pero no reservan movimientos. Todos se seleccionan inicialmente; una exclusión se conserva y los movimientos nuevos se seleccionan al refrescar. `operationalOutflowsTotal` incluye gastos, transferencias y pagos `store_cash`; `cashOutflowsTotal` incluye gastos pagados en efectivo y pagos `store_cash`. Los pagos `central_cash` nunca son candidatos.
+El Resumen consulta por RPC los gastos, transferencias salientes, pagos a colaboradores y Compras desde caja elegibles de la tienda/fecha. Los IDs seleccionados y conocidos viven en el borrador, pero no reservan movimientos. Todos se seleccionan inicialmente; una exclusión se conserva y los movimientos nuevos se seleccionan al refrescar. `operationalOutflowsTotal` incluye gastos, transferencias, pagos `store_cash` y todas las Compras `store_cash`; `cashOutflowsTotal` incluye gastos en efectivo, pagos `store_cash` y Compras pagadas en efectivo. Los pagos y Compras `central_cash` nunca son candidatos.
 
-Antes de cerrar, la PWA procesa la cola y bloquea la confirmación si un movimiento seleccionado sigue sin sincronizar. La RPC `close_cash_closing` valida los IDs, recalcula los totales en PostgreSQL y crea `cash_closing_expense_items`, `cash_closing_transfer_items` y `cash_closing_payment_items` con snapshots. Las restricciones `UNIQUE(expense_id)`, `UNIQUE(transfer_id)` y `UNIQUE(payment_id)` impiden reutilización incluso entre clientes concurrentes. La elegibilidad de un pago se determina exclusivamente por `source_store_id + payment.business_date`.
+Antes de cerrar, la PWA procesa la cola y bloquea la confirmación si un movimiento seleccionado sigue sin sincronizar. La RPC `close_cash_closing` valida los IDs, recalcula los totales en PostgreSQL y crea `cash_closing_expense_items`, `cash_closing_transfer_items`, `cash_closing_payment_items` y `cash_closing_purchase_items` con snapshots. Sus restricciones únicas impiden reutilización incluso entre clientes concurrentes. La elegibilidad de un Pago de Compra se determina por `source_store_id + purchase.business_date`.
 
 Puede haber varios cortes cerrados para la misma tienda y fecha. Bajo un bloqueo transaccional por ese par, PostgreSQL asigna `closing_number = max + 1`; la unicidad real es `store_id + business_date + closing_number`. Cerrar un corte inmoviliza únicamente sus movimientos asociados y no impide registrar otros o crear un nuevo corte el mismo día.
 
@@ -127,7 +127,7 @@ cancelar repetidamente es idempotente en su estado terminal válido.
 
 El efecto financiero y el físico están desacoplados. La rama financiera usa
 una entrada por el efectivo bruto reconstruido y salidas individuales sólo para
-gastos en efectivo y pagos `store_cash`. La rama física contiene una única
+gastos en efectivo, pagos `store_cash` y Compras en efectivo. La rama física contiene una única
 composición por Corte: total de billetes, conteos y monto de monedas. Consulta
 [`EXPORTS_V2.md`](EXPORTS_V2.md) para el contrato completo.
 
@@ -144,3 +144,11 @@ ninguno se edita directamente. Las tablas son inmutables y sólo legibles por
 admin mediante RLS. Dexie conserva snapshots para consulta offline, pero las
 recepciones y ajustes no entran en `syncQueue`. Consulta
 [`CENTRAL_CASH.md`](CENTRAL_CASH.md) para el modelo y las futuras integraciones.
+
+## Compras
+
+Compras conserva por separado el hecho comercial (`Purchase`) y su liquidación
+(`PurchasePayment`). La fuente `central_cash` genera una salida atómica en el
+ledger central y requiere conexión; `store_cash` sigue el flujo local-first y
+se consume exactamente una vez desde un Corte. Consulta
+[`PURCHASES.md`](PURCHASES.md) para las reglas completas.

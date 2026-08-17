@@ -11,7 +11,11 @@ export const EXPORT_BATCH_STATUSES = [
 
 export type ExportBatchStatus = (typeof EXPORT_BATCH_STATUSES)[number]
 export type ExportMovementType = 'entrada' | 'salida'
-export type ExportMovementSource = 'cash_closing' | 'expense' | 'payment'
+export type ExportMovementSource =
+  | 'cash_closing'
+  | 'expense'
+  | 'payment'
+  | 'purchase'
 
 export type ExportedMovement = {
   id: string
@@ -46,6 +50,17 @@ export type ExportedTransferItem = {
   ticket_number: string
 }
 
+export type ExportedPurchaseItem = {
+  id: string
+  payment_id: string
+  amount: number
+  supplier_id: string
+  supplier_name: string
+  folio: string | null
+  payment_method: string
+  affects_cash: boolean
+}
+
 export type ExportedPhysicalCash = {
   amount: number
   bills_total: number
@@ -63,6 +78,8 @@ export type ExportedClosing = {
   expenses_total: number
   cash_expenses_total: number
   store_cash_payments_total: number
+  purchases_total?: number
+  cash_purchases_total?: number
   net_cash: number
   cash_balance: number
   physical_cash_amount: number
@@ -70,6 +87,7 @@ export type ExportedClosing = {
   expense_items: ExportedExpenseItem[]
   payment_items: ExportedPaymentItem[]
   transfer_items: ExportedTransferItem[]
+  purchase_items?: ExportedPurchaseItem[]
   financial_movements: ExportedMovement[]
   physical_cash: ExportedPhysicalCash
   closed_at: string
@@ -96,6 +114,8 @@ export type ExportCandidate = {
   expensesTotal: number
   cashExpensesTotal: number
   storeCashPaymentsTotal: number
+  purchasesTotal: number
+  cashPurchasesTotal: number
   netCash: number
   cashBalance: number
   physicalCashAmount: number

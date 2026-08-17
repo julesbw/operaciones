@@ -34,8 +34,8 @@ snapshots suficientes para leer el historial aunque cambien nombres externos.
 Los movimientos confirmados no se actualizan ni eliminan; una corrección se
 registra con un ajuste compensatorio.
 
-`source_type` admite actualmente `cash_closing` y `manual_adjustment`. La misma
-estructura ya reserva `purchase`, `expense`, `collaborator_payment`,
+`source_type` admite actualmente `cash_closing`, `manual_adjustment` y
+`purchase`. La misma estructura reserva `expense`, `collaborator_payment`,
 `bank_deposit` y `other` para integraciones futuras sin rediseñar el ledger.
 
 ## Saldo y efectivo físico
@@ -64,6 +64,7 @@ Las RPC públicas son:
 - `list_pending_central_cash_closings(...)`
 - `receive_cash_closing_into_central_cash(...)`
 - `create_central_cash_adjustment(...)`
+- `create_paid_purchase(...)`
 
 Todas vuelven a validar `private.is_admin()`. Las tablas sólo conceden `SELECT` a
 usuarios autenticados y RLS limita incluso esa lectura a administración; no hay
@@ -91,10 +92,16 @@ La caché administrativa se elimina si la identidad autenticada deja de ser
 admin o cambia de usuario. La presentación offline no sustituye Auth, RLS ni las
 validaciones de PostgreSQL.
 
+## Compras
+
+Una Compra pagada con `funding_source = central_cash` crea su salida mediante
+`create_paid_purchase`. La RPC bloquea el ledger, comprueba saldo y, si el pago
+es en efectivo, valida además que existan las denominaciones físicas. Compra,
+Pago y movimiento se crean en una misma transacción idempotente. Consulta
+[`PURCHASES.md`](PURCHASES.md).
+
 ## Integraciones posteriores
 
-- Compras pagadas desde Caja Central producirán movimientos `outflow` con
-  `source_type = purchase`.
 - Gastos centrales usarán `source_type = expense`.
 - Pagos a colaboradores con `funding_source = central_cash` usarán
   `source_type = collaborator_payment`.

@@ -33,7 +33,9 @@ salidas de pagos store_cash      bills
                                   coins_amount
 ```
 
-`financial_movements` explica cómo se llega al efectivo neto. `physical_cash`
+`financial_movements` explica cómo se llega al efectivo neto. Las salidas
+pueden provenir de gastos, pagos `store_cash` o Compras en efectivo;
+`physical_cash`
 representa una sola incorporación física al control central. El consumidor no
 debe aplicar gastos o pagos nuevamente sobre las denominaciones.
 
@@ -45,10 +47,12 @@ El servidor calcula y valida con los snapshots del Corte:
 gross_cash = counted_cash
            + cash_expenses_total_snapshot
            + store_cash_payments_total_snapshot
+           + cash_purchases_total_snapshot
 
 gross_cash
 - SUM(movimientos de gastos en efectivo)
 - SUM(movimientos de pagos store_cash)
+- SUM(movimientos de Compras en efectivo)
 = net_cash
 
 net_cash - cash_balance = physical_cash.amount = cash_to_withdraw
@@ -71,16 +75,19 @@ una celda o columna donde aplicarlas.
   "store_name": "Tienda 1",
   "business_date": "2026-08-14",
   "sequence_number": 2,
-  "gross_cash": 11500,
+  "gross_cash": 12780,
   "expenses_total": 500,
   "cash_expenses_total": 500,
   "store_cash_payments_total": 1000,
+  "purchases_total": 1280,
+  "cash_purchases_total": 1280,
   "net_cash": 10000,
   "cash_balance": 2000,
   "physical_cash_amount": 8000,
   "transfers_total": 2500,
   "expense_items": [],
   "payment_items": [],
+  "purchase_items": [],
   "transfer_items": [],
   "financial_movements": [
     {
@@ -89,9 +96,20 @@ una celda o columna donde aplicarlas.
       "source_id": "uuid-del-corte",
       "tipo": "entrada",
       "fecha_movimiento": "2026-08-14",
-      "monto": 11500,
+      "monto": 12780,
       "concepto": "Efectivo del día - Tienda 1 - Corte #2",
       "categoria": "Corte de caja",
+      "store_id": "uuid"
+    },
+    {
+      "id": "uuid-del-pago-compra",
+      "source_type": "purchase",
+      "source_id": "uuid-del-pago-compra",
+      "tipo": "salida",
+      "fecha_movimiento": "2026-08-14",
+      "monto": 1280,
+      "concepto": "Compra Bimbo",
+      "categoria": "Compra",
       "store_id": "uuid"
     }
   ],
@@ -115,8 +133,14 @@ una celda o columna donde aplicarlas.
 `expense_items` conserva todos los gastos históricos del Corte. Sólo los que
 tienen `affects_cash = true` generan una salida financiera.
 `payment_items` usa exclusivamente el `amount_snapshot` capturado desde
-`paid_amount`. `transfer_items` es información operativa y nunca aparece como
-movimiento financiero.
+`paid_amount`. `purchase_items` conserva el proveedor, folio, forma de pago y
+monto congelados; sólo las Compras en efectivo generan una salida financiera.
+`transfer_items` es información operativa y nunca aparece como movimiento
+financiero.
+
+Los campos de Compras son una extensión aditiva. Un snapshot preparado antes de
+`202608170001_purchases.sql` puede no contenerlos; el validador los interpreta
+como totales cero y una lista vacía. Los lotes ya preparados nunca se reescriben.
 
 ## Ciclo de vida e idempotencia
 
@@ -155,6 +179,10 @@ La migración
 `supabase/migrations/202608140001_operations_export_batches.sql` debe revisarse
 y aplicarse manualmente después de `202608130003_payments_module.sql`. Añadirla
 al repositorio o generar un archivo JSON no aplica cambios a una base remota.
+
+La extensión de Compras vive en
+`supabase/migrations/202608170001_purchases.sql` y debe aplicarse después de
+`202608160001_central_cash.sql`. Mantiene legibles los snapshots 2.0 anteriores.
 
 Antes de habilitar el módulo en producción:
 

@@ -2,6 +2,7 @@ import type {
   Collaborator,
   CollaboratorCompensationHistory,
   Store,
+  Supplier,
   UserProfile,
 } from '../domain/models'
 
@@ -19,6 +20,25 @@ export const DEMO_STORES: Store[] = [
     id: '10000000-0000-4000-8000-000000000002',
     name: 'Tienda Norte',
     status: 'active',
+    createdAt: DEMO_CREATED_AT,
+    updatedAt: DEMO_CREATED_AT,
+  },
+]
+
+export const DEMO_SUPPLIERS: Supplier[] = [
+  {
+    id: '50000000-0000-4000-8000-000000000001',
+    name: 'Bimbo',
+    isActive: true,
+    createdBy: '30000000-0000-4000-8000-000000000002',
+    createdAt: DEMO_CREATED_AT,
+    updatedAt: DEMO_CREATED_AT,
+  },
+  {
+    id: '50000000-0000-4000-8000-000000000002',
+    name: 'Abarrotera La Piedad',
+    isActive: true,
+    createdBy: '30000000-0000-4000-8000-000000000002',
     createdAt: DEMO_CREATED_AT,
     updatedAt: DEMO_CREATED_AT,
   },

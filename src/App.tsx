@@ -12,6 +12,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { ExportsPage } from './pages/ExportsPage'
 import { LoginPage } from './pages/LoginPage'
+import { PurchasesPage } from './pages/PurchasesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TransfersPage } from './pages/TransfersPage'
 import { authService } from './services/authService'
@@ -303,6 +304,7 @@ function App() {
     if (
       (nextPage === 'closings' ||
         nextPage === 'central-cash' ||
+        nextPage === 'purchases' ||
         nextPage === 'exports') &&
       user?.role !== 'admin'
     ) {
@@ -417,6 +419,14 @@ function App() {
           user={user}
           onDataChanged={() => void refreshLocalState()}
           onAttendanceStoreFilterChange={setAttendanceStoreFilter}
+        />
+      )}
+      {page === 'purchases' && user.role === 'admin' && (
+        <PurchasesPage
+          networkAvailable={networkAvailable}
+          stores={stores}
+          user={user}
+          onDataChanged={() => void refreshLocalState()}
         />
       )}
       {page === 'closings' && user.role === 'admin' && <ClosingsPage stores={stores} user={user} />}

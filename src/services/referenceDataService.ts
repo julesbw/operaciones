@@ -3,6 +3,7 @@ import type {
   EntityStatus,
   Store,
   StoreStatus,
+  Supplier,
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
@@ -32,6 +33,15 @@ type CompensationRow = Pick<
   'collaborator_id' | 'weekly_pay'
 >
 
+type SupplierRow = {
+  id: string
+  name: string
+  is_active: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
 class ReferenceDataService {
   listStores(): Promise<Store[]> {
     return operationsRepository.listStores()
@@ -41,10 +51,14 @@ class ReferenceDataService {
     return operationsRepository.listCollaborators(storeId)
   }
 
+  listSuppliers(activeOnly = false): Promise<Supplier[]> {
+    return operationsRepository.listSuppliers(activeOnly)
+  }
+
   async refresh(): Promise<void> {
     if (!supabase) return
 
-    const [storesResult, collaboratorsResult, compensationResult] = await Promise.all([
+    const [storesResult, collaboratorsResult, compensationResult, suppliersResult] = await Promise.all([
       supabase
         .from('stores')
         .select('id, name, status, created_at, updated_at')
@@ -58,11 +72,16 @@ class ReferenceDataService {
         .from('collaborator_compensation')
         .select('collaborator_id, weekly_pay')
         .returns<CompensationRow[]>(),
+      supabase
+        .from('suppliers')
+        .select('id, name, is_active, created_by, created_at, updated_at')
+        .returns<SupplierRow[]>(),
     ])
 
     if (storesResult.error) throw storesResult.error
     if (collaboratorsResult.error) throw collaboratorsResult.error
     if (compensationResult.error) throw compensationResult.error
+    if (suppliersResult.error) throw suppliersResult.error
 
     const compensationByCollaborator = new Map(
       compensationResult.data.map((compensation) => [
@@ -71,15 +90,16 @@ class ReferenceDataService {
       ]),
     )
 
-    await operationsRepository.replaceReferenceData(
-      storesResult.data.map((store) => ({
+    await Promise.all([
+      operationsRepository.replaceReferenceData(
+        storesResult.data.map((store) => ({
         id: store.id,
         name: store.name,
         status: store.status,
         createdAt: store.created_at,
         updatedAt: store.updated_at,
       })),
-      collaboratorsResult.data.map((collaborator) => ({
+        collaboratorsResult.data.map((collaborator) => ({
         id: collaborator.id,
         name: collaborator.name,
         storeId: collaborator.store_id,
@@ -90,8 +110,19 @@ class ReferenceDataService {
         weeklyPay: compensationByCollaborator.get(collaborator.id),
         createdAt: collaborator.created_at,
         updatedAt: collaborator.updated_at,
-      })),
-    )
+        })),
+      ),
+      operationsRepository.replaceSuppliers(
+        suppliersResult.data.map((supplier) => ({
+          id: supplier.id,
+          name: supplier.name,
+          isActive: supplier.is_active,
+          createdBy: supplier.created_by,
+          createdAt: supplier.created_at,
+          updatedAt: supplier.updated_at,
+        })),
+      ),
+    ])
   }
 }
 

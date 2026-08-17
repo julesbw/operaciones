@@ -97,7 +97,7 @@ describe('AppShell mobile navigation', () => {
       items
         .filter((item) => item.mobilePlacement === 'more')
         .map((item) => item.label),
-    ).toEqual(['Colaboradores', 'Cortes', 'Caja Central', 'Exportación'])
+    ).toEqual(['Colaboradores', 'Compras', 'Cortes', 'Caja Central', 'Exportación'])
   })
 
   it('limits the cashier Más menu to collaborators', () => {

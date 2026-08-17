@@ -4,6 +4,7 @@ import { bootstrapService } from './bootstrapService'
 import { localContextService } from './localContextService'
 import { offlineShellService } from './offlineShellService'
 import { paymentService } from './paymentService'
+import { purchaseService } from './purchaseService'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { referenceDataService } from './referenceDataService'
 import { syncService, type SyncResult } from './syncService'
@@ -104,7 +105,10 @@ export class RemoteBootstrapService {
     const sync = await syncService.process()
     ensureActive()
     if (profile.role === 'admin' && !profile.demo) {
-      await paymentService.refreshRemote()
+      await Promise.all([
+        paymentService.refreshRemote(),
+        purchaseService.refreshRemote(),
+      ])
       ensureActive()
     } else if (profile.role !== 'admin') {
       await operationsRepository.clearAdministrativePaymentData()

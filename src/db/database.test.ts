@@ -46,7 +46,7 @@ describe('OperationsDatabase closing draft migration', () => {
       await upgradedDatabase.open()
       const migrated = await upgradedDatabase.closingDrafts.get('legacy-closing')
 
-      expect(upgradedDatabase.verno).toBe(12)
+      expect(upgradedDatabase.verno).toBe(13)
       expect(
         upgradedDatabase.tables.some(
           (table) => table.name === 'merchandiseTransfers',
@@ -85,6 +85,17 @@ describe('OperationsDatabase closing draft migration', () => {
           (table) => table.name === 'centralCashSummary',
         ),
       ).toBe(true)
+      expect(
+        upgradedDatabase.tables.some((table) => table.name === 'suppliers'),
+      ).toBe(true)
+      expect(
+        upgradedDatabase.tables.some((table) => table.name === 'purchases'),
+      ).toBe(true)
+      expect(
+        upgradedDatabase.tables.some(
+          (table) => table.name === 'purchasePayments',
+        ),
+      ).toBe(true)
       expect(migrated).toMatchObject({
         cashBalance: 2_000,
         balanceBills: {
@@ -95,6 +106,8 @@ describe('OperationsDatabase closing draft migration', () => {
         createdAt: '2026-08-10T12:00:00.000Z',
         outgoingTransfersTotal: 0,
         storeCashPaymentsTotal: 0,
+        purchasesTotal: 0,
+        cashPurchasesTotal: 0,
         operationalOutflowsTotal: 0,
         cashOutflowsTotal: 0,
         selectedExpenseIds: [],
@@ -103,6 +116,8 @@ describe('OperationsDatabase closing draft migration', () => {
         knownExpenseIds: [],
         knownTransferIds: [],
         knownPaymentIds: [],
+        selectedPurchasePaymentIds: [],
+        knownPurchasePaymentIds: [],
         movementSelectionInitialized: false,
       })
       expect(migrated).not.toHaveProperty('openingBalance')

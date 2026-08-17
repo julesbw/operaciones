@@ -38,6 +38,15 @@ export type StoreRow = {
   updated_at: string
 }
 
+export type SupplierRow = {
+  id: string
+  name: string
+  is_active: boolean
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
 export type CollaboratorRow = {
   id: string
   name: string
@@ -149,6 +158,8 @@ export type CashClosingRow = {
   cash_expenses_total_snapshot: number
   outgoing_transfers_total_snapshot: number
   store_cash_payments_total_snapshot: number
+  purchases_total_snapshot: number
+  cash_purchases_total_snapshot: number
   operational_outflows_total_snapshot: number
   cash_outflows_total_snapshot: number
   other_movements: number
@@ -195,6 +206,19 @@ export type CashClosingPaymentItemRow = {
   created_at: string
 }
 
+export type CashClosingPurchaseItemRow = {
+  cash_closing_id: string
+  purchase_id: string
+  purchase_payment_id: string
+  supplier_id: string
+  supplier_name_snapshot: string
+  folio_snapshot: string | null
+  amount_snapshot: number
+  payment_method_snapshot: PaymentMethod
+  business_date_snapshot: string
+  created_at: string
+}
+
 export type CashClosingCandidatesResult = {
   expenses: Array<
     Pick<
@@ -214,6 +238,10 @@ export type CashClosingCandidatesResult = {
   >
   transfers: MerchandiseTransferRow[]
   payments: PaymentRow[]
+  purchases: Array<{
+    purchase: PurchaseRow
+    payment: PurchasePaymentRow
+  }>
 }
 
 export type CentralCashMovementRow = {
@@ -232,6 +260,33 @@ export type CentralCashMovementRow = {
   sequence_number_snapshot: number | null
   created_by: string
   created_by_name_snapshot: string
+  created_at: string
+}
+
+export type PurchaseRow = {
+  id: string
+  supplier_id: string
+  supplier_name_snapshot: string
+  business_date: string
+  folio: string | null
+  amount: number
+  notes: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export type PurchasePaymentRow = {
+  id: string
+  purchase_id: string
+  amount: number
+  funding_source: PaymentFundingSource
+  source_store_id: string | null
+  payment_method: PaymentMethod
+  bills: CentralCashBills | null
+  coins_amount: number
+  paid_at: string
+  created_by: string
   created_at: string
 }
 
@@ -284,6 +339,8 @@ export type ExportCandidateRow = {
   expenses_total: number
   cash_expenses_total: number
   store_cash_payments_total: number
+  purchases_total: number
+  cash_purchases_total: number
   net_cash: number
   cash_balance: number
   physical_cash_amount: number
@@ -322,6 +379,11 @@ export type Database = {
         Pick<StoreRow, 'id' | 'name'> & Partial<Pick<StoreRow, 'status'>>,
         Partial<Pick<StoreRow, 'name' | 'status'>>
       >
+      suppliers: TableDefinition<
+        SupplierRow,
+        Pick<SupplierRow, 'id' | 'name'>,
+        Partial<Pick<SupplierRow, 'name' | 'is_active'>>
+      >
       collaborators: TableDefinition<
         CollaboratorRow,
         Pick<CollaboratorRow, 'id' | 'name' | 'store_id' | 'rest_day'> &
@@ -355,6 +417,8 @@ export type Database = {
         Partial<Pick<AttendanceRow, 'status' | 'recorded_by' | 'updated_at'>>
       >
       collaborator_payments: TableDefinition<PaymentRow, never, never>
+      purchases: TableDefinition<PurchaseRow, never, never>
+      purchase_payments: TableDefinition<PurchasePaymentRow, never, never>
       payment_attendance_items: TableDefinition<
         PaymentAttendanceItemRow,
         never,
@@ -443,6 +507,8 @@ export type Database = {
               | 'cash_expenses_total_snapshot'
               | 'outgoing_transfers_total_snapshot'
               | 'store_cash_payments_total_snapshot'
+              | 'purchases_total_snapshot'
+              | 'cash_purchases_total_snapshot'
               | 'operational_outflows_total_snapshot'
               | 'cash_outflows_total_snapshot'
               | 'store_name_snapshot'
@@ -509,6 +575,11 @@ export type Database = {
       >
       central_cash_movements: TableDefinition<
         CentralCashMovementRow,
+        never,
+        never
+      >
+      cash_closing_purchase_items: TableDefinition<
+        CashClosingPurchaseItemRow,
         never,
         never
       >
@@ -580,6 +651,7 @@ export type Database = {
           p_expense_ids: string[]
           p_transfer_ids: string[]
           p_payment_ids: string[]
+          p_purchase_payment_ids: string[]
         }
         Returns: CashClosingRow
       }
@@ -589,6 +661,28 @@ export type Database = {
           p_business_date: string
         }
         Returns: CashClosingCandidatesResult
+      }
+      create_paid_purchase: {
+        Args: {
+          p_purchase_id: string
+          p_payment_id: string
+          p_supplier_id: string
+          p_business_date: string
+          p_folio: string | null
+          p_amount: number
+          p_notes: string | null
+          p_funding_source: PaymentFundingSource
+          p_source_store_id: string | null
+          p_payment_method: PaymentMethod
+          p_bills: CentralCashBills | null
+          p_coins_amount: number
+          p_created_at: string
+        }
+        Returns: {
+          purchase: PurchaseRow
+          payment: PurchasePaymentRow
+          movement: CentralCashMovementRow | null
+        }
       }
       get_central_cash_summary: {
         Args: Record<never, never>

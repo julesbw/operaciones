@@ -73,6 +73,8 @@ function mapCandidate(row: ExportCandidateRow, cachedAt: string): ExportCandidat
     expensesTotal: Number(row.expenses_total),
     cashExpensesTotal: Number(row.cash_expenses_total),
     storeCashPaymentsTotal: Number(row.store_cash_payments_total),
+    purchasesTotal: Number(row.purchases_total ?? 0),
+    cashPurchasesTotal: Number(row.cash_purchases_total ?? 0),
     netCash: Number(row.net_cash),
     cashBalance: Number(row.cash_balance),
     physicalCashAmount: Number(row.physical_cash_amount),

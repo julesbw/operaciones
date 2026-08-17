@@ -11,9 +11,13 @@ import type {
   Expense,
   LocalAppContext,
   MerchandiseTransfer,
+  PaidPurchase,
   Payment,
   PaymentAttendanceItem,
+  Purchase,
+  PurchasePayment,
   Store,
+  Supplier,
   SyncEntity,
   SyncQueueItem,
   SyncStatus,
@@ -50,6 +54,9 @@ export class OperationsRepository {
         this.database.attendanceRecords,
         this.database.expenses,
         this.database.merchandiseTransfers,
+        this.database.suppliers,
+        this.database.purchases,
+        this.database.purchasePayments,
         this.database.syncQueue,
         this.database.closingDrafts,
         this.database.appContexts,
@@ -69,6 +76,9 @@ export class OperationsRepository {
           this.database.attendanceRecords.clear(),
           this.database.expenses.clear(),
           this.database.merchandiseTransfers.clear(),
+          this.database.suppliers.clear(),
+          this.database.purchases.clear(),
+          this.database.purchasePayments.clear(),
           this.database.syncQueue.clear(),
           this.database.closingDrafts.clear(),
           this.database.appContexts.clear(),
@@ -103,6 +113,9 @@ export class OperationsRepository {
           return (await this.database.attendanceRecords.get(item.entityId))
             ?.recordedBy
         }
+        if (item.entityType === 'purchase') {
+          return (await this.database.purchases.get(item.entityId))?.createdBy
+        }
         return (
           await this.database.merchandiseTransfers.get(item.entityId)
         )?.createdBy
@@ -131,6 +144,32 @@ export class OperationsRepository {
 
   saveStore(store: Store): Promise<string> {
     return this.database.stores.put(store)
+  }
+
+  async listSuppliers(activeOnly = false): Promise<Supplier[]> {
+    const suppliers = await this.database.suppliers.orderBy('name').toArray()
+    return activeOnly
+      ? suppliers.filter((supplier) => supplier.isActive)
+      : suppliers
+  }
+
+  getSupplier(id: string): Promise<Supplier | undefined> {
+    return this.database.suppliers.get(id)
+  }
+
+  saveSupplier(supplier: Supplier): Promise<string> {
+    return this.database.suppliers.put(supplier)
+  }
+
+  saveSuppliers(suppliers: Supplier[]): Promise<void> {
+    return this.database.suppliers.bulkPut(suppliers).then(() => undefined)
+  }
+
+  async replaceSuppliers(suppliers: Supplier[]): Promise<void> {
+    await this.database.transaction('rw', this.database.suppliers, async () => {
+      await this.database.suppliers.clear()
+      await this.database.suppliers.bulkPut(suppliers)
+    })
   }
 
   listCollaborators(storeId?: string): Promise<Collaborator[]> {
@@ -462,8 +501,31 @@ export class OperationsRepository {
         this.database.centralCashMovements,
         this.database.centralCashPendingClosings,
         this.database.centralCashSummary,
+        this.database.suppliers,
+        this.database.purchases,
+        this.database.purchasePayments,
+        this.database.syncQueue,
       ],
       async () => {
+        const queuedPurchases = await this.database.syncQueue
+          .where('entityType')
+          .equals('purchase')
+          .toArray()
+        const pendingPurchaseIds = new Set(
+          queuedPurchases.map((item) => item.entityId),
+        )
+        const removablePurchases = (
+          await this.database.purchases.toArray()
+        ).filter((purchase) => !pendingPurchaseIds.has(purchase.id))
+        const removablePurchaseIds = removablePurchases.map(
+          (purchase) => purchase.id,
+        )
+        const removablePurchaseIdSet = new Set(removablePurchaseIds)
+        const removablePaymentIds = (
+          await this.database.purchasePayments.toArray()
+        )
+          .filter((payment) => removablePurchaseIdSet.has(payment.purchaseId))
+          .map((payment) => payment.id)
         await Promise.all([
           this.database.payments.clear(),
           this.database.paymentAttendanceItems.clear(),
@@ -473,6 +535,9 @@ export class OperationsRepository {
           this.database.centralCashMovements.clear(),
           this.database.centralCashPendingClosings.clear(),
           this.database.centralCashSummary.clear(),
+          this.database.suppliers.clear(),
+          this.database.purchases.bulkDelete(removablePurchaseIds),
+          this.database.purchasePayments.bulkDelete(removablePaymentIds),
         ])
       },
     )
@@ -517,11 +582,18 @@ export class OperationsRepository {
   async countPendingSelectedClosingMovements(
     expenseIds: readonly string[],
     transferIds: readonly string[],
-  ): Promise<{ expenses: number; transfers: number }> {
-    const [expenses, transfers] = await Promise.all([
+    purchasePaymentIds: readonly string[] = [],
+  ): Promise<{ expenses: number; transfers: number; purchases: number }> {
+    const [expenses, transfers, purchasePayments] = await Promise.all([
       this.database.expenses.bulkGet([...expenseIds]),
       this.database.merchandiseTransfers.bulkGet([...transferIds]),
+      this.database.purchasePayments.bulkGet([...purchasePaymentIds]),
     ])
+    const purchases = await this.database.purchases.bulkGet(
+      purchasePayments
+        .filter((payment): payment is PurchasePayment => Boolean(payment))
+        .map((payment) => payment.purchaseId),
+    )
 
     return {
       expenses: expenses.filter(
@@ -529,6 +601,9 @@ export class OperationsRepository {
       ).length,
       transfers: transfers.filter(
         (transfer) => transfer && transfer.syncStatus !== 'synced',
+      ).length,
+      purchases: purchases.filter(
+        (purchase) => purchase && purchase.syncStatus !== 'synced',
       ).length,
     }
   }
@@ -549,11 +624,13 @@ export class OperationsRepository {
         syncStatus: status,
         ...(version === undefined ? {} : { version }),
       })
-    } else {
+    } else if (entityType === 'merchandiseTransfer') {
       await this.database.merchandiseTransfers.update(entityId, {
         syncStatus: status,
         ...(version === undefined ? {} : { version }),
       })
+    } else {
+      await this.database.purchases.update(entityId, { syncStatus: status })
     }
   }
 
@@ -566,6 +643,7 @@ export class OperationsRepository {
       this.database.expenses,
       this.database.attendanceRecords,
       this.database.merchandiseTransfers,
+      this.database.purchases,
       this.database.syncQueue,
       async () => {
         const current = await this.database.syncQueue.get(item.id)
@@ -587,6 +665,7 @@ export class OperationsRepository {
       this.database.expenses,
       this.database.attendanceRecords,
       this.database.merchandiseTransfers,
+      this.database.purchases,
       this.database.syncQueue,
       async () => {
         const current = await this.database.syncQueue.get(item.id)
@@ -690,6 +769,136 @@ export class OperationsRepository {
 
         await this.database.centralCashMovements.bulkDelete(replacedIds)
         await this.database.centralCashMovements.bulkPut(movements)
+      },
+    )
+  }
+
+  getPurchase(id: string): Promise<Purchase | undefined> {
+    return this.database.purchases.get(id)
+  }
+
+  getPurchasePaymentByPurchaseId(
+    purchaseId: string,
+  ): Promise<PurchasePayment | undefined> {
+    return this.database.purchasePayments
+      .where('purchaseId')
+      .equals(purchaseId)
+      .first()
+  }
+
+  async listPaidPurchases(options: {
+    supplierId?: string
+    fundingSource?: PurchasePayment['fundingSource']
+    storeId?: string
+    dateFrom?: string
+    dateTo?: string
+  } = {}): Promise<PaidPurchase[]> {
+    const purchases = await this.database.purchases.toArray()
+    const payments = await this.database.purchasePayments.toArray()
+    const paymentByPurchase = new Map(
+      payments.map((payment) => [payment.purchaseId, payment]),
+    )
+
+    return purchases
+      .flatMap((purchase) => {
+        const payment = paymentByPurchase.get(purchase.id)
+        return payment ? [{ purchase, payment }] : []
+      })
+      .filter(({ purchase, payment }) => {
+        if (options.supplierId && purchase.supplierId !== options.supplierId) {
+          return false
+        }
+        if (
+          options.fundingSource &&
+          payment.fundingSource !== options.fundingSource
+        ) {
+          return false
+        }
+        if (options.storeId && payment.sourceStoreId !== options.storeId) {
+          return false
+        }
+        if (options.dateFrom && purchase.businessDate < options.dateFrom) {
+          return false
+        }
+        if (options.dateTo && purchase.businessDate > options.dateTo) {
+          return false
+        }
+        return true
+      })
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.purchase.businessDate.localeCompare(
+            left.purchase.businessDate,
+          ) || right.purchase.createdAt.localeCompare(left.purchase.createdAt),
+      )
+  }
+
+  listStoreCashPurchases(
+    storeId: string,
+    businessDate: string,
+  ): Promise<PaidPurchase[]> {
+    return this.listPaidPurchases({
+      fundingSource: 'store_cash',
+      storeId,
+      dateFrom: businessDate,
+      dateTo: businessDate,
+    })
+  }
+
+  async savePaidPurchaseWithQueue(
+    purchase: Purchase,
+    payment: PurchasePayment,
+    queueItem: SyncQueueItem,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.purchases,
+      this.database.purchasePayments,
+      this.database.syncQueue,
+      async () => {
+        await this.database.purchases.put(purchase)
+        await this.database.purchasePayments.put(payment)
+        await this.database.syncQueue.put(queueItem)
+      },
+    )
+  }
+
+  async saveConfirmedPaidPurchase(
+    purchase: Purchase,
+    payment: PurchasePayment,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.purchases,
+      this.database.purchasePayments,
+      async () => {
+        await this.database.purchases.put(purchase)
+        await this.database.purchasePayments.put(payment)
+      },
+    )
+  }
+
+  async saveRemotePaidPurchases(items: PaidPurchase[]): Promise<void> {
+    const queued = await this.database.syncQueue
+      .where('entityType')
+      .equals('purchase')
+      .toArray()
+    const pendingIds = new Set(queued.map((item) => item.entityId))
+    const remote = items.filter(
+      ({ purchase }) => !pendingIds.has(purchase.id),
+    )
+    await this.database.transaction(
+      'rw',
+      this.database.purchases,
+      this.database.purchasePayments,
+      async () => {
+        await this.database.purchases.bulkPut(
+          remote.map(({ purchase }) => purchase),
+        )
+        await this.database.purchasePayments.bulkPut(
+          remote.map(({ payment }) => payment),
+        )
       },
     )
   }

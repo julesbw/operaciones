@@ -7,6 +7,7 @@ import type {
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { connectivityService } from './connectivityService'
+import { purchaseService } from './purchaseService'
 
 export type SyncResult = {
   synced: number
@@ -286,6 +287,11 @@ class SyncService {
       )
       if (error) throw error
       return data.version
+    }
+
+    if (item.entityType === 'purchase') {
+      await purchaseService.sync(item.entityId)
+      return 0
     }
 
     const transfer = await operationsRepository.getMerchandiseTransfer(
