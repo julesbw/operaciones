@@ -37,9 +37,10 @@ VITE_SUPABASE_PUBLISHABLE_KEY=TU_LLAVE_PUBLISHABLE
 8. Revisa antes de aplicar [`supabase/migrations/202608140001_operations_export_batches.sql`](supabase/migrations/202608140001_operations_export_batches.sql). Añade el contrato `2.0`, snapshots de lotes, reservas de Cortes y RPC administrativas idempotentes. La migración se entrega sin aplicar a ninguna base remota.
 9. Revisa antes de aplicar [`supabase/migrations/202608160001_central_cash.sql`](supabase/migrations/202608160001_central_cash.sql). Crea el ledger y las recepciones inmutables de Caja Central, más RPCs administrativas atómicas e idempotentes. La migración se entrega sin aplicar a ninguna base remota.
 10. Revisa antes de aplicar [`supabase/migrations/202608170001_purchases.sql`](supabase/migrations/202608170001_purchases.sql). Añade Proveedores, Compras/Pagos separados, su RPC idempotente, la salida atómica de Caja Central, la selección en Cortes y una extensión aditiva de Exportación 2.0. La migración se entrega sin aplicar a ninguna base remota.
-11. Adapta y ejecuta [`supabase/setup-operations.example.sql`](supabase/setup-operations.example.sql) para crear tiendas y asignar cada cajera.
-12. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en `.env.local`.
-13. Verifica que cada perfil `cashier` tenga `store_id`; una cajera sin tienda no tendrá acceso a datos operativos por RLS.
+11. Revisa antes de aplicar [`supabase/migrations/202608180003_purchase_coin_compensation.sql`](supabase/migrations/202608180003_purchase_coin_compensation.sql). Amplía `source_type` y hace que las Compras centrales en efectivo con monedas creen una compensación atómica e idempotente. La migración se entrega sin aplicar a ninguna base remota.
+12. Adapta y ejecuta [`supabase/setup-operations.example.sql`](supabase/setup-operations.example.sql) para crear tiendas y asignar cada cajera.
+13. Configura `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en `.env.local`.
+14. Verifica que cada perfil `cashier` tenga `store_id`; una cajera sin tienda no tendrá acceso a datos operativos por RLS.
 
 Las migraciones no reemplazan el trigger de usuarios, no cambian roles y no modifican las tablas financieras de Arrendamientos.
 

@@ -8,6 +8,13 @@ const migration = readFileSync(
   ),
   'utf8',
 )
+const coinCompensationMigration = readFileSync(
+  new URL(
+    '../../supabase/migrations/202608180003_purchase_coin_compensation.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
 
 describe('Purchases migration', () => {
   it('keeps purchases, payments and suppliers as distinct entities', () => {
@@ -24,6 +31,25 @@ describe('Purchases migration', () => {
     expect(migration).toContain('PURCHASE_REQUEST_ID_CONFLICT')
     expect(migration).toContain("hashtext('operations.central_cash_ledger')")
     expect(migration).toContain("'operations.purchase:' || p_purchase_id::text")
+  })
+
+  it('compensates central cash coins without relaxing bill validation', () => {
+    expect(coinCompensationMigration).toContain(
+      "'purchase_coin_compensation'",
+    )
+    expect(coinCompensationMigration).toContain(
+      "'inflow', 'purchase_coin_compensation'",
+    )
+    expect(coinCompensationMigration).toContain("'outflow', 'purchase'")
+    expect(coinCompensationMigration).toContain(
+      "v_available_bills->>'b1000')::integer < (p_bills->>'b1000')::integer",
+    )
+    expect(coinCompensationMigration).not.toContain(
+      'v_available_coins < v_coins',
+    )
+    expect(coinCompensationMigration).toContain(
+      "p_payment_method = 'efectivo' and v_coins > 0",
+    )
   })
 
   it('snapshots purchases once in closings and extends export 2.0', () => {

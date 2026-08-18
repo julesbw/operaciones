@@ -34,9 +34,10 @@ snapshots suficientes para leer el historial aunque cambien nombres externos.
 Los movimientos confirmados no se actualizan ni eliminan; una corrección se
 registra con un ajuste compensatorio.
 
-`source_type` admite actualmente `cash_closing`, `manual_adjustment` y
-`purchase`. La misma estructura reserva `expense`, `collaborator_payment`,
-`bank_deposit` y `other` para integraciones futuras sin rediseñar el ledger.
+`source_type` admite actualmente `cash_closing`, `manual_adjustment`, `purchase`
+y `purchase_coin_compensation`. La misma estructura reserva `expense`,
+`collaborator_payment`, `bank_deposit` y `other` para integraciones futuras sin
+rediseñar el ledger.
 
 ## Saldo y efectivo físico
 
@@ -96,9 +97,10 @@ validaciones de PostgreSQL.
 
 Una Compra pagada con `funding_source = central_cash` crea su salida mediante
 `create_paid_purchase`. La RPC bloquea el ledger, comprueba saldo y, si el pago
-es en efectivo, valida además que existan las denominaciones físicas. Compra,
-Pago y movimiento se crean en una misma transacción idempotente. Consulta
-[`PURCHASES.md`](PURCHASES.md).
+es en efectivo, valida además que existan las denominaciones de billetes. Las
+monedas se registran como una entrada `purchase_coin_compensation` y se
+cancelan con la salida completa de la Compra dentro de la misma transacción
+idempotente. Consulta [`PURCHASES.md`](PURCHASES.md).
 
 ## Integraciones posteriores
 

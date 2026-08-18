@@ -228,6 +228,9 @@ function movementTitle(movement: CentralCashMovement): string {
   if (movement.sourceType === 'cash_closing') {
     return `Corte · ${movement.storeNameSnapshot ?? 'Tienda'} · #${movement.sequenceNumberSnapshot ?? '—'}`
   }
+  if (movement.sourceType === 'purchase_coin_compensation') {
+    return 'Compensación de monedas · Compra'
+  }
   return movement.concept
 }
 

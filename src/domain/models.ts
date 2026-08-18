@@ -239,6 +239,7 @@ export const CENTRAL_CASH_SOURCE_TYPES = [
   'cash_closing',
   'manual_adjustment',
   'purchase',
+  'purchase_coin_compensation',
   'expense',
   'collaborator_payment',
   'bank_deposit',

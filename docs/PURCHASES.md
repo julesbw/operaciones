@@ -36,13 +36,17 @@ no altera el histórico.
 
 - `central_cash`: requiere conexión. `create_paid_purchase` valida saldo y, en
   la misma transacción, crea Compra, Pago y un `CentralCashMovement` de salida
-  con `source_type = purchase` y `source_id = purchase_payment.id`.
+  con `source_type = purchase` y `source_id = purchase_payment.id`. Si el pago
+  es en efectivo y contiene monedas, también crea una entrada de monedas con
+  `source_type = purchase_coin_compensation`, relacionada con el mismo Pago.
 - `store_cash`: requiere `source_store_id`, se guarda localmente con un UUID
   idempotente y se sincroniza después. No crea movimiento de Caja Central y
   queda disponible para el Corte de esa tienda y fecha.
 
 Para pagos `cash`, tanto centrales como de tienda, el total de billetes y
-monedas debe coincidir exactamente con el monto. Las formas `transfer`, `card`
+monedas debe coincidir exactamente con el monto. En Caja Central, las monedas
+se compensan dentro de la misma transacción y no requieren saldo previo; los
+billetes declarados sí deben existir físicamente. Las formas `transfer`, `card`
 y `other` no modifican el inventario físico, aunque una Compra central sí
 reduce el saldo financiero por el monto completo.
 

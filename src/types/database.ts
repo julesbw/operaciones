@@ -700,6 +700,7 @@ export type Database = {
           purchase: PurchaseRow
           payment: PurchasePaymentRow
           movement: CentralCashMovementRow | null
+          coin_compensation: CentralCashMovementRow | null
         }
       }
       get_central_cash_summary: {
