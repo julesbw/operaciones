@@ -94,7 +94,10 @@ export function PaymentsPage({
   )
 
   const loadLocal = useCallback(async () => {
-    const collaborators = await referenceDataService.listCollaborators()
+    const collaborators = await referenceDataService.listCollaborators(
+      undefined,
+      true,
+    )
     const [nextStates, nextHistory] = await Promise.all([
       paymentService.listCollaboratorStates(collaborators),
       paymentService.listHistory(),
@@ -158,7 +161,8 @@ export function PaymentsPage({
         (state) =>
           (storeFilter === ALL_STORES ||
             state.collaborator.storeId === storeFilter) &&
-          (state.pendingDays > 0 ||
+          state.pendingDays > 0 ||
+          (state.collaborator.status === 'active' &&
             state.collaborator.payCycleEndWeekday === undefined),
       ),
     [states, storeFilter],
@@ -275,6 +279,11 @@ export function PaymentsPage({
                           ? 'Sin configurar'
                           : WEEKDAYS[collaborator.payCycleEndWeekday!]}
                       </p>
+                      {collaborator.status !== 'active' && (
+                        <p className="mt-1 text-xs font-bold text-slate-400">
+                          Inactivo · sólo días pendientes
+                        </p>
+                      )}
                     </div>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600">
                       {stores.find((store) => store.id === collaborator.storeId)

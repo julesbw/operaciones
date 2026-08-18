@@ -234,4 +234,18 @@ describe('payment policy', () => {
     })
     expect(state.pendingDays).toBe(0)
   })
+
+  it('keeps previous payable attendance for an inactive collaborator', () => {
+    const state = buildCollaboratorPaymentState({
+      collaborator: { ...collaborator, status: 'inactive' },
+      attendance: [attendance('2026-08-12')],
+      paymentItems: [],
+      compensationHistory: history,
+      today: '2026-08-17',
+    })
+
+    expect(state.pendingDays).toBe(1)
+    expect(state.periods[0]?.attendance).toHaveLength(1)
+    expect(state.periods[0]?.missingAttendanceDates).toEqual([])
+  })
 })

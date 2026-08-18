@@ -47,8 +47,11 @@ class ReferenceDataService {
     return operationsRepository.listStores()
   }
 
-  listCollaborators(storeId?: string): Promise<Collaborator[]> {
-    return operationsRepository.listCollaborators(storeId)
+  listCollaborators(
+    storeId?: string,
+    includeInactive = false,
+  ): Promise<Collaborator[]> {
+    return operationsRepository.listCollaborators(storeId, includeInactive)
   }
 
   listSuppliers(activeOnly = false): Promise<Supplier[]> {
@@ -66,7 +69,6 @@ class ReferenceDataService {
       supabase
         .from('collaborators')
         .select('id, name, store_id, rest_day, pay_cycle_end_weekday, status, created_at, updated_at')
-        .eq('status', 'active')
         .returns<CollaboratorRow[]>(),
       supabase
         .from('collaborator_compensation')

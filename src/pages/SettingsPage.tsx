@@ -57,6 +57,8 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [collaboratorSearch, setCollaboratorSearch] = useState('')
   const [selectedCollaborator, setSelectedCollaborator] = useState<Collaborator>()
+  const [statusChangeCollaborator, setStatusChangeCollaborator] =
+    useState<Collaborator>()
   const [editingCollaborator, setEditingCollaborator] = useState<Collaborator>()
   const [newCollaboratorName, setNewCollaboratorName] = useState('')
   const [restDay, setRestDay] = useState(0)
@@ -126,7 +128,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     const requestedStoreId =
       teamStoreFilter === ALL_STORES ? undefined : teamStoreFilter
     void referenceDataService
-      .listCollaborators(requestedStoreId)
+      .listCollaborators(requestedStoreId, true)
       .then((people) => {
         const activeStoreIds = new Set(
           stores
@@ -333,6 +335,48 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     }
   }
 
+  async function changeCollaboratorStatus(collaborator: Collaborator) {
+    setSaving(true)
+    setError(undefined)
+    setMessage(undefined)
+    try {
+      const updated = await collaboratorService.setStatus(
+        collaborator.id,
+        collaborator.status === 'active' ? 'inactive' : 'active',
+      )
+      setCollaborators((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      )
+      setSelectedCollaborator((current) =>
+        current?.id === updated.id ? updated : current,
+      )
+      setStatusChangeCollaborator(undefined)
+      setMessage(
+        updated.status === 'active'
+          ? `${updated.name} se activó correctamente.`
+          : `${updated.name} se desactivó correctamente.`,
+      )
+    } catch (cause: unknown) {
+      console.error('No fue posible cambiar el estado del colaborador', cause)
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No fue posible cambiar el estado del colaborador.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function requestCollaboratorStatusChange(collaborator: Collaborator) {
+    if (collaborator.status === 'active') {
+      setSelectedCollaborator(undefined)
+      setStatusChangeCollaborator(collaborator)
+      return
+    }
+    void changeCollaboratorStatus(collaborator)
+  }
+
   function openStoreModal() {
     setNewStoreName('')
     setCreationError(undefined)
@@ -482,8 +526,8 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         <div className="mt-6">
           <div>
             <div>
-              <h2 className="text-xl font-extrabold text-slate-950">Equipo activo</h2>
-              <p className="mt-1 text-sm text-slate-500">Busca perfiles y cambia de tienda sin salir de esta vista.</p>
+              <h2 className="text-xl font-extrabold text-slate-950">Colaboradores</h2>
+              <p className="mt-1 text-sm text-slate-500">Los inactivos conservan su historial y sus pagos pendientes.</p>
             </div>
             <div className="mt-5 space-y-3">
               <input
@@ -543,7 +587,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                 {filteredCollaborators.map((collaborator) => (
                   <article className="panel" key={collaborator.id}>
                     <div className="flex items-start gap-3">
-                      <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-teal-50 text-sm font-black text-teal-700">
+                      <span className={`flex size-11 shrink-0 items-center justify-center rounded-full text-sm font-black ${collaborator.status === 'active' ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-400'}`}>
                         {collaborator.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}
                       </span>
                       <div className="min-w-0 flex-1">
@@ -560,7 +604,9 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                             : WEEKDAYS[collaborator.payCycleEndWeekday]}
                         </p>
                       </div>
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">Activo</span>
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${collaborator.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {collaborator.status === 'active' ? 'Activo' : 'Inactivo'}
+                      </span>
                     </div>
                     <div className="mt-5 rounded-xl bg-slate-50 p-3.5">
                       <p className="text-xs font-semibold text-slate-500">Pago semanal</p>
@@ -568,13 +614,23 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                         {collaborator.weeklyPay === undefined ? 'Protegido en Supabase' : currencyFormatter.format(collaborator.weeklyPay)}
                       </p>
                     </div>
-                    <button
-                      className="small-button mt-4 w-full"
-                      type="button"
-                      onClick={() => setSelectedCollaborator(collaborator)}
-                    >
-                      Ver perfil
-                    </button>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button
+                        className="small-button"
+                        type="button"
+                        onClick={() => setSelectedCollaborator(collaborator)}
+                      >
+                        Ver perfil
+                      </button>
+                      <button
+                        className="small-button"
+                        disabled={!canMutate || saving}
+                        type="button"
+                        onClick={() => requestCollaboratorStatusChange(collaborator)}
+                      >
+                        {collaborator.status === 'active' ? 'Desactivar' : 'Activar'}
+                      </button>
+                    </div>
                   </article>
                 ))}
               </div>
@@ -965,7 +1021,9 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
               </div>
               <div className="flex items-center justify-between gap-4 py-3.5">
                 <dt className="text-sm font-semibold text-slate-500">Estado</dt>
-                <dd className="text-sm font-bold text-emerald-700">Activo</dd>
+                <dd className={`text-sm font-bold ${selectedCollaborator.status === 'active' ? 'text-emerald-700' : 'text-slate-500'}`}>
+                  {selectedCollaborator.status === 'active' ? 'Activo' : 'Inactivo'}
+                </dd>
               </div>
             </dl>
             <div className="mt-6 grid grid-cols-2 gap-3">
@@ -983,6 +1041,50 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                 onClick={() => editCollaborator(selectedCollaborator)}
               >
                 Editar
+              </button>
+              <button
+                className="button-secondary col-span-2 w-full"
+                disabled={!canMutate || saving}
+                type="button"
+                onClick={() => requestCollaboratorStatusChange(selectedCollaborator)}
+              >
+                {selectedCollaborator.status === 'active' ? 'Desactivar' : 'Activar'}
+              </button>
+            </div>
+          </>
+        )}
+      </AppModal>
+
+      <AppModal
+        closeDisabled={saving}
+        closeLabel="Cerrar confirmación"
+        eyebrow="Administración"
+        open={Boolean(statusChangeCollaborator)}
+        title="Desactivar colaborador"
+        onClose={() => setStatusChangeCollaborator(undefined)}
+      >
+        {statusChangeCollaborator && (
+          <>
+            <p className="mt-5 text-sm leading-6 text-slate-600">
+              Ya no podrá registrar nuevas asistencias ni generar nuevos días por pagar.
+              Los días trabajados pendientes sí podrán liquidarse.
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                className="button-secondary"
+                disabled={saving}
+                type="button"
+                onClick={() => setStatusChangeCollaborator(undefined)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="button-primary"
+                disabled={!canMutate || saving}
+                type="button"
+                onClick={() => void changeCollaboratorStatus(statusChangeCollaborator)}
+              >
+                {saving ? 'Desactivando…' : 'Desactivar'}
               </button>
             </div>
           </>

@@ -494,6 +494,44 @@ describe('OperationsRepository collaborator filters', () => {
   })
 })
 
+describe('OperationsRepository collaborator queries', () => {
+  it('keeps inactive collaborators available only when requested', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const base = {
+      name: 'Colaborador',
+      storeId: 'store-id',
+      restDay: 0,
+      payCycleEndWeekday: 6,
+      weeklyPay: 1_000,
+      createdAt: '2026-08-01T12:00:00.000Z',
+      updatedAt: '2026-08-01T12:00:00.000Z',
+    }
+
+    try {
+      await repository.saveCollaborators([
+        { ...base, id: 'active-collaborator', status: 'active' },
+        { ...base, id: 'inactive-collaborator', status: 'inactive' },
+      ])
+
+      await expect(repository.listCollaborators()).resolves.toMatchObject([
+        { id: 'active-collaborator', status: 'active' },
+      ])
+      await expect(
+        repository.listCollaborators(undefined, true),
+      ).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'active-collaborator' }),
+          expect.objectContaining({ id: 'inactive-collaborator' }),
+        ]),
+      )
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})
+
 describe('OperationsRepository central cash cache', () => {
   it('replaces a filtered pending scope without deleting another store', async () => {
     const database = new OperationsDatabase(

@@ -252,7 +252,7 @@ class PaymentService {
     }
 
     const collaborator = (
-      await operationsRepository.listCollaborators()
+      await operationsRepository.listCollaborators(undefined, true)
     ).find((item) => item.id === input.collaboratorId)
     if (!collaborator) throw new PaymentDomainError('PAYMENT_CONFLICT')
     if (collaborator.payCycleEndWeekday === undefined) {

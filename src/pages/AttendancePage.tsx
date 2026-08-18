@@ -120,7 +120,7 @@ export function AttendancePage({
             : activeStores.map((store) => store.id),
         )
         const visiblePeople = people.filter((person) =>
-          allowedStoreIds.has(person.storeId),
+          allowedStoreIds.has(person.storeId) && person.status === 'active',
         )
         const existing = new Map(
           records.map((record) => [record.collaboratorId, record.status]),
@@ -198,6 +198,9 @@ export function AttendancePage({
         cause instanceof Error &&
           cause.message.includes('FUTURE_ATTENDANCE_NOT_ALLOWED')
           ? 'No se pueden registrar asistencias futuras.'
+          : cause instanceof Error &&
+              cause.message.includes('COLLABORATOR_INACTIVE')
+            ? 'El colaborador está inactivo y no puede generar nuevas asistencias.'
           : 'No fue posible guardar la asistencia en este dispositivo.',
       )
     } finally {

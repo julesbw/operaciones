@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { OperationsDatabase } from '../db/database'
-import type { AttendanceRecord } from '../domain/models'
+import type { AttendanceRecord, Collaborator } from '../domain/models'
 import { OperationsRepository } from '../repositories/operationsRepository'
 import { AttendanceService } from './attendanceService'
 
@@ -89,6 +89,46 @@ describe('AttendanceService multi-store saves', () => {
           '2026-08-13',
         ),
       ).rejects.toThrow('FUTURE_ATTENDANCE_NOT_ALLOWED')
+      await expect(database.attendanceRecords.count()).resolves.toBe(0)
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
+  it('rejects new attendance for an inactive collaborator', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const service = new AttendanceService(repository)
+    const collaborator: Collaborator = {
+      id: 'inactive-collaborator',
+      name: 'Colaborador inactivo',
+      storeId: 'store-id',
+      restDay: 0,
+      payCycleEndWeekday: 6,
+      status: 'inactive',
+      weeklyPay: 1_000,
+      createdAt: '2026-08-01T12:00:00.000Z',
+      updatedAt: '2026-08-10T12:00:00.000Z',
+    }
+
+    try {
+      await repository.saveCollaborators([collaborator])
+
+      await expect(
+        service.save(
+          [
+            {
+              collaboratorId: collaborator.id,
+              storeId: collaborator.storeId,
+              attendanceDate: '2026-08-10',
+              status: 'present',
+            },
+          ],
+          'admin-id',
+          '2026-08-10',
+        ),
+      ).rejects.toThrow('COLLABORATOR_INACTIVE')
       await expect(database.attendanceRecords.count()).resolves.toBe(0)
     } finally {
       database.close()

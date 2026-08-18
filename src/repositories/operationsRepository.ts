@@ -172,14 +172,29 @@ export class OperationsRepository {
     })
   }
 
-  listCollaborators(storeId?: string): Promise<Collaborator[]> {
+  listCollaborators(
+    storeId?: string,
+    includeInactive = false,
+  ): Promise<Collaborator[]> {
     if (storeId) {
+      if (includeInactive) {
+        return this.database.collaborators
+          .where('storeId')
+          .equals(storeId)
+          .sortBy('name')
+      }
       return this.database.collaborators
         .where('[storeId+status]')
         .equals([storeId, 'active'])
         .sortBy('name')
     }
 
+    if (includeInactive) {
+      return this.database.collaborators.toArray().then((collaborators) =>
+        // oxlint-disable-next-line unicorn/no-array-sort
+        collaborators.sort((left, right) => left.name.localeCompare(right.name)),
+      )
+    }
     return this.database.collaborators
       .filter((collaborator) => collaborator.status === 'active')
       .sortBy('name')

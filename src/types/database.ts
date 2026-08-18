@@ -765,6 +765,13 @@ export type Database = {
         }
         Returns: CollaboratorRow
       }
+      set_collaborator_status: {
+        Args: {
+          p_id: string
+          p_status: Extract<EntityStatus, 'active' | 'inactive'>
+        }
+        Returns: CollaboratorRow
+      }
       confirm_collaborator_payment: {
         Args: {
           p_payment_id: string

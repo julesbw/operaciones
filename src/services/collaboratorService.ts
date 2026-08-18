@@ -1,4 +1,4 @@
-import type { Collaborator } from '../domain/models'
+import type { Collaborator, EntityStatus } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { connectivityService } from './connectivityService'
@@ -13,6 +13,29 @@ export type CollaboratorInput = {
 }
 
 class CollaboratorService {
+  private mapRow(data: {
+    id: string
+    name: string
+    store_id: string
+    rest_day: number
+    pay_cycle_end_weekday: number | null
+    status: EntityStatus
+    created_at: string
+    updated_at: string
+  }, weeklyPay?: number): Collaborator {
+    return {
+      id: data.id,
+      name: data.name,
+      storeId: data.store_id,
+      restDay: data.rest_day,
+      payCycleEndWeekday: data.pay_cycle_end_weekday ?? undefined,
+      weeklyPay,
+      status: data.status,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    }
+  }
+
   async create(input: CollaboratorInput): Promise<Collaborator> {
     const name = input.name.trim()
     if (!name) throw new Error('Escribe el nombre del colaborador')
@@ -60,17 +83,7 @@ class CollaboratorService {
       })
       if (error) throw error
 
-      collaborator = {
-        id: data.id,
-        name: data.name,
-        storeId: data.store_id,
-        restDay: data.rest_day,
-        payCycleEndWeekday: data.pay_cycle_end_weekday ?? undefined,
-        weeklyPay,
-        status: data.status,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      }
+      collaborator = this.mapRow(data, weeklyPay)
     }
 
     await operationsRepository.saveCollaborators([collaborator])
@@ -153,16 +166,41 @@ class CollaboratorService {
     })
     if (error) throw error
 
+    const collaborator = this.mapRow(data, weeklyPay)
+    await operationsRepository.saveCollaborators([collaborator])
+    return collaborator
+  }
+
+  async setStatus(
+    id: string,
+    status: Extract<EntityStatus, 'active' | 'inactive'>,
+  ): Promise<Collaborator> {
+    if (!id) throw new Error('El colaborador no es válido')
+    if (status !== 'active' && status !== 'inactive') {
+      throw new Error('El estado del colaborador no es válido')
+    }
+
+    const existing = await operationsRepository.getCollaborator(id)
+    if (!existing) throw new Error('El colaborador ya no existe')
+
+    if (supabase) {
+      connectivityService.requireOnline(
+        'Se necesita conexión para cambiar el estado de un colaborador.',
+      )
+      const { data, error } = await supabase.rpc('set_collaborator_status', {
+        p_id: id,
+        p_status: status,
+      })
+      if (error) throw error
+      const collaborator = this.mapRow(data, existing.weeklyPay)
+      await operationsRepository.saveCollaborators([collaborator])
+      return collaborator
+    }
+
     const collaborator: Collaborator = {
-      id: data.id,
-      name: data.name,
-      storeId: data.store_id,
-      restDay: data.rest_day,
-      payCycleEndWeekday: data.pay_cycle_end_weekday ?? undefined,
-      weeklyPay,
-      status: data.status,
-      createdAt: data.created_at,
-      updatedAt: data.updated_at,
+      ...existing,
+      status,
+      updatedAt: new Date().toISOString(),
     }
     await operationsRepository.saveCollaborators([collaborator])
     return collaborator

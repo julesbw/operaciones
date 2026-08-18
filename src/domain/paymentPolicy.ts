@@ -231,13 +231,16 @@ export function buildCollaboratorPaymentState(options: {
           ...record,
           paid: paidItemByAttendance.has(record.id),
         })),
-        missingAttendanceDates: enumerateMissingDates(
-          periodStart,
-          periodEnd,
-          today,
-          collaborator.restDay,
-          periodAttendance,
-        ),
+        missingAttendanceDates:
+          collaborator.status === 'active'
+            ? enumerateMissingDates(
+                periodStart,
+                periodEnd,
+                today,
+                collaborator.restDay,
+                periodAttendance,
+              )
+            : [],
       }
     },
   )

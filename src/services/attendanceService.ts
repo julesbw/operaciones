@@ -28,6 +28,12 @@ export class AttendanceService {
     if (inputs.some((input) => input.attendanceDate !== attendanceDate)) {
       throw new Error('Todas las asistencias deben corresponder a la misma fecha')
     }
+    const collaborators = await Promise.all(
+      inputs.map((input) => this.repository.getCollaborator(input.collaboratorId)),
+    )
+    if (collaborators.some((collaborator) => collaborator && collaborator.status !== 'active')) {
+      throw new Error('COLLABORATOR_INACTIVE')
+    }
     const existingRecords = await this.repository.listAttendance(
       undefined,
       attendanceDate,
