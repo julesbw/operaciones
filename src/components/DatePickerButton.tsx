@@ -59,17 +59,22 @@ export function DatePickerButtonView({
   inputRef: RefObject<HTMLInputElement | null>
 }) {
   return (
-    <button
-      aria-label={ariaLabel}
-      className={[
-        variant === 'field' ? 'field relative' : 'expense-date-control',
-        className,
-      ].filter(Boolean).join(' ')}
-      disabled={disabled}
-      type="button"
-      onClick={() => openDatePicker(inputRef.current)}
+    <span
+      className="date-picker-button"
     >
-      <span aria-hidden="true" className="date-picker-button-label">{children}</span>
+      <button
+        aria-label={ariaLabel}
+        className={[
+          variant === 'field' ? 'field relative' : 'expense-date-control',
+          className,
+          'date-picker-button-trigger',
+        ].filter(Boolean).join(' ')}
+        disabled={disabled}
+        type="button"
+        onClick={() => openDatePicker(inputRef.current)}
+      >
+        <span aria-hidden="true" className="date-picker-button-label">{children}</span>
+      </button>
       <input
         ref={inputRef}
         aria-hidden="true"
@@ -82,6 +87,6 @@ export function DatePickerButtonView({
         value={value}
         onChange={onChange}
       />
-    </button>
+    </span>
   )
 }
