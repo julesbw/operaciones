@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AppModal } from '../components/AppModal'
+import { DatePickerButton } from '../components/DatePickerButton'
 import {
   FilterChipGroup,
   type FilterChipOption,
@@ -783,29 +784,25 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
         <div className="panel grid grid-cols-2 gap-x-2 gap-y-3 p-3 sm:gap-4 sm:p-5">
           <label className="field-label min-w-0">
             Desde
-            <span className="expense-date-control">
-              <span aria-hidden="true">{compactDate(dateFrom)}</span>
-              <input
-                aria-label="Fecha inicial"
-                max={dateTo}
-                type="date"
-                value={dateFrom}
-                onChange={(event) => changeDateFrom(event.target.value)}
-              />
-            </span>
+            <DatePickerButton
+              aria-label="Fecha inicial"
+              max={dateTo}
+              value={dateFrom}
+              onChange={(event) => changeDateFrom(event.target.value)}
+            >
+              {compactDate(dateFrom)}
+            </DatePickerButton>
           </label>
           <label className="field-label min-w-0">
             Hasta
-            <span className="expense-date-control">
-              <span aria-hidden="true">{compactDate(dateTo)}</span>
-              <input
-                aria-label="Fecha final"
-                min={dateFrom}
-                type="date"
-                value={dateTo}
-                onChange={(event) => changeDateTo(event.target.value)}
-              />
-            </span>
+            <DatePickerButton
+              aria-label="Fecha final"
+              min={dateFrom}
+              value={dateTo}
+              onChange={(event) => changeDateTo(event.target.value)}
+            >
+              {compactDate(dateTo)}
+            </DatePickerButton>
           </label>
         </div>
 

@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react'
 import { AppModal } from '../components/AppModal'
+import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import {
   ALL_STORES,
@@ -39,6 +40,12 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   otro: 'Otro',
 }
 
+const FILTER_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+})
+
 type OriginFilter = PaymentFundingSource | 'all'
 
 type PurchasesPageProps = {
@@ -50,6 +57,10 @@ type PurchasesPageProps = {
 
 function groupLabel(value: string): string {
   return formatLongDate(value).toLocaleUpperCase('es-MX')
+}
+
+function formatFilterDate(value: string): string {
+  return FILTER_DATE_FORMATTER.format(new Date(`${value}T12:00:00`))
 }
 
 export function PurchasesPage({
@@ -330,8 +341,30 @@ export function PurchasesPage({
               {suppliers.map((supplier) => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
             </select>
           </label>
-          <label className="field-label">Desde<input className="field" max={dateTo} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label>
-          <label className="field-label">Hasta<input className="field" min={dateFrom} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label>
+          <label className="field-label">
+            Desde
+            <DatePickerButton
+              aria-label="Fecha inicial de Compras"
+              max={dateTo}
+              variant="field"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+            >
+              {formatFilterDate(dateFrom)}
+            </DatePickerButton>
+          </label>
+          <label className="field-label">
+            Hasta
+            <DatePickerButton
+              aria-label="Fecha final de Compras"
+              min={dateFrom}
+              variant="field"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+            >
+              {formatFilterDate(dateTo)}
+            </DatePickerButton>
+          </label>
         </div>
       </div>
 

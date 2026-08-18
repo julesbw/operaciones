@@ -3,6 +3,7 @@ import {
   FilterChipGroup,
   type FilterChipOption,
 } from '../components/filters/FilterChipGroup'
+import { DatePickerButton } from '../components/DatePickerButton'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -110,29 +111,25 @@ function Filters({
       <div className="panel grid grid-cols-2 gap-x-2 gap-y-3 p-3 sm:gap-4 sm:p-5">
         <label className="field-label min-w-0">
           Desde
-          <span className="expense-date-control">
-            <span aria-hidden="true">{compactDate(dateFrom)}</span>
-            <input
-              aria-label="Fecha inicial de exportación"
-              max={dateTo}
-              type="date"
-              value={dateFrom}
-              onChange={(event) => onDateFromChange(event.target.value)}
-            />
-          </span>
+          <DatePickerButton
+            aria-label="Fecha inicial de exportación"
+            max={dateTo}
+            value={dateFrom}
+            onChange={(event) => onDateFromChange(event.target.value)}
+          >
+            {compactDate(dateFrom)}
+          </DatePickerButton>
         </label>
         <label className="field-label min-w-0">
           Hasta
-          <span className="expense-date-control">
-            <span aria-hidden="true">{compactDate(dateTo)}</span>
-            <input
-              aria-label="Fecha final de exportación"
-              min={dateFrom}
-              type="date"
-              value={dateTo}
-              onChange={(event) => onDateToChange(event.target.value)}
-            />
-          </span>
+          <DatePickerButton
+            aria-label="Fecha final de exportación"
+            min={dateFrom}
+            value={dateTo}
+            onChange={(event) => onDateToChange(event.target.value)}
+          >
+            {compactDate(dateTo)}
+          </DatePickerButton>
         </label>
       </div>
     </div>

@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react'
 import { AppModal } from '../components/AppModal'
+import { DatePickerButton } from '../components/DatePickerButton'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -349,30 +350,26 @@ export function TransfersPage({
         <div className="panel grid grid-cols-2 gap-x-2 gap-y-3 p-3 sm:gap-4 sm:p-5 xl:grid-cols-[minmax(150px,0.7fr)_minmax(150px,0.7fr)_minmax(260px,1.4fr)]">
           <label className="field-label min-w-0">
             Desde
-            <span className="expense-date-control">
-              <span aria-hidden="true">{compactDate(dateFrom)}</span>
-              <input
-                aria-label="Fecha inicial"
-                max={dateTo}
-                type="date"
-                value={dateFrom}
-                onChange={(event) => changeDateFrom(event.target.value)}
-              />
-            </span>
+            <DatePickerButton
+              aria-label="Fecha inicial"
+              max={dateTo}
+              value={dateFrom}
+              onChange={(event) => changeDateFrom(event.target.value)}
+            >
+              {compactDate(dateFrom)}
+            </DatePickerButton>
           </label>
           <label className="field-label min-w-0">
             Hasta
-            <span className="expense-date-control">
-              <span aria-hidden="true">{compactDate(dateTo)}</span>
-              <input
-                aria-label="Fecha final"
-                max={today}
-                min={dateFrom}
-                type="date"
-                value={dateTo}
-                onChange={(event) => changeDateTo(event.target.value)}
-              />
-            </span>
+            <DatePickerButton
+              aria-label="Fecha final"
+              max={today}
+              min={dateFrom}
+              value={dateTo}
+              onChange={(event) => changeDateTo(event.target.value)}
+            >
+              {compactDate(dateTo)}
+            </DatePickerButton>
           </label>
           <label className="field-label col-span-2 xl:col-span-1">
             Ticket

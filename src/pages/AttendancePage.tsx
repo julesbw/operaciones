@@ -220,28 +220,40 @@ export function AttendancePage({
             </p>
           )}
         </div>
-        <input
-          aria-label="Fecha"
-          className="compact-field"
-          max={operationalDate}
-          type="date"
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-        />
+        {user.role !== 'admin' && (
+          <input
+            aria-label="Fecha"
+            className="compact-field"
+            max={operationalDate}
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+        )}
       </div>
 
       {user.role === 'admin' && (
-        <div className="mt-4">
-          <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-400">
-            Vista
-          </p>
-          <StoreScopeSelector
-            ariaLabel="Filtrar asistencia por tienda"
-            assignedStoreId={user.storeId}
-            role={user.role}
-            stores={stores}
-            value={storeFilter}
-            onChange={onStoreFilterChange}
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.12em] text-slate-400">
+              Vista
+            </p>
+            <StoreScopeSelector
+              ariaLabel="Filtrar asistencia por tienda"
+              assignedStoreId={user.storeId}
+              role={user.role}
+              stores={stores}
+              value={storeFilter}
+              onChange={onStoreFilterChange}
+            />
+          </div>
+          <input
+            aria-label="Fecha"
+            className="compact-field shrink-0"
+            max={operationalDate}
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
           />
         </div>
       )}

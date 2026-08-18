@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppModal } from '../components/AppModal'
+import { DatePickerButton } from '../components/DatePickerButton'
 import {
   FilterChipGroup,
   type FilterChipOption,
@@ -196,29 +197,27 @@ function DateFilters({
     <div className="panel grid grid-cols-2 gap-x-2 gap-y-3 p-3 sm:gap-4 sm:p-5 lg:w-auto lg:grid-cols-[auto_auto] lg:gap-3 lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
       <label className="field-label min-w-0 lg:flex lg:items-center lg:gap-2">
         Desde
-        <span className="expense-date-control lg:mt-0 lg:min-h-10 lg:w-28">
-          <span aria-hidden="true">{compactDate(dateFrom)}</span>
-          <input
-            aria-label="Fecha inicial de Caja Central"
-            max={dateTo}
-            type="date"
-            value={dateFrom}
-            onChange={(event) => onDateFromChange(event.target.value)}
-          />
-        </span>
+        <DatePickerButton
+          aria-label="Fecha inicial de Caja Central"
+          className="lg:mt-0 lg:min-h-10 lg:w-28"
+          max={dateTo}
+          value={dateFrom}
+          onChange={(event) => onDateFromChange(event.target.value)}
+        >
+          {compactDate(dateFrom)}
+        </DatePickerButton>
       </label>
       <label className="field-label min-w-0 lg:flex lg:items-center lg:gap-2">
         Hasta
-        <span className="expense-date-control lg:mt-0 lg:min-h-10 lg:w-28">
-          <span aria-hidden="true">{compactDate(dateTo)}</span>
-          <input
-            aria-label="Fecha final de Caja Central"
-            min={dateFrom}
-            type="date"
-            value={dateTo}
-            onChange={(event) => onDateToChange(event.target.value)}
-          />
-        </span>
+        <DatePickerButton
+          aria-label="Fecha final de Caja Central"
+          className="lg:mt-0 lg:min-h-10 lg:w-28"
+          min={dateFrom}
+          value={dateTo}
+          onChange={(event) => onDateToChange(event.target.value)}
+        >
+          {compactDate(dateTo)}
+        </DatePickerButton>
       </label>
     </div>
   )
