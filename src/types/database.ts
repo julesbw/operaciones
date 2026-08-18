@@ -219,6 +219,19 @@ export type CashClosingPurchaseItemRow = {
   created_at: string
 }
 
+export type CashClosingAdjustmentRow = {
+  id: string
+  cash_closing_id: string
+  type: 'inflow' | 'outflow'
+  amount: number
+  concept: string
+  notes: string | null
+  bills: CentralCashBills
+  coins_amount: number
+  created_by: string
+  created_at: string
+}
+
 export type CashClosingCandidatesResult = {
   expenses: Array<
     Pick<
@@ -583,6 +596,11 @@ export type Database = {
         never,
         never
       >
+      cash_closing_adjustments: TableDefinition<
+        CashClosingAdjustmentRow,
+        never,
+        never
+      >
       central_cash_receipts: TableDefinition<
         CentralCashReceiptRow,
         never,
@@ -719,6 +737,19 @@ export type Database = {
           p_coins_amount: number
         }
         Returns: CentralCashMovementRow
+      }
+      create_cash_closing_adjustment: {
+        Args: {
+          p_id: string
+          p_cash_closing_id: string
+          p_type: 'inflow' | 'outflow'
+          p_amount: number
+          p_concept: string
+          p_notes: string | null
+          p_bills: CentralCashBills
+          p_coins_amount: number
+        }
+        Returns: CashClosingAdjustmentRow
       }
       get_export_candidates: {
         Args: {

@@ -16,9 +16,11 @@ import type {
   CashClosingPurchaseItemRow,
   CashClosingTransferItemRow,
 } from '../types/database'
+import type { ClosingAdjustment } from '../domain/models'
 import { calculateBillsTotal } from '../utils/money'
 import { connectivityService } from './connectivityService'
 import { syncService } from './syncService'
+import { closingAdjustmentService } from './closingAdjustmentService'
 
 export type ClosingExpenseTotals = {
   total: number
@@ -49,6 +51,7 @@ export type CashClosingDetail = {
   transfers: CashClosingTransferItemRow[]
   payments: CashClosingPaymentItemRow[]
   purchases: CashClosingPurchaseItemRow[]
+  adjustments: ClosingAdjustment[]
 }
 
 export type ClosingDomainErrorCode =
@@ -525,7 +528,7 @@ class ClosingService {
       'Se necesita conexión para consultar un corte cerrado.',
     )
 
-    const [closingResult, expensesResult, transfersResult, paymentsResult, purchasesResult] = await Promise.all([
+    const [closingResult, expensesResult, transfersResult, paymentsResult, purchasesResult, adjustments] = await Promise.all([
       supabase.from('cash_closings').select('*').eq('id', id).single(),
       supabase
         .from('cash_closing_expense_items')
@@ -547,6 +550,7 @@ class ClosingService {
         .select('*')
         .eq('cash_closing_id', id)
         .order('created_at'),
+      closingAdjustmentService.list(id),
     ])
     if (closingResult.error) throw closingResult.error
     if (expensesResult.error) throw expensesResult.error
@@ -560,6 +564,7 @@ class ClosingService {
       transfers: transfersResult.data,
       payments: paymentsResult.data,
       purchases: purchasesResult.data,
+      adjustments,
     }
   }
 

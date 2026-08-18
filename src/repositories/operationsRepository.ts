@@ -3,6 +3,7 @@ import type { ExportBatch, ExportCandidate } from '../domain/exportContract'
 import type {
   AttendanceRecord,
   CashClosingDraft,
+  ClosingAdjustment,
   CentralCashMovement,
   CentralCashPendingClosing,
   CentralCashSummary,
@@ -68,6 +69,7 @@ export class OperationsRepository {
         this.database.centralCashMovements,
         this.database.centralCashPendingClosings,
         this.database.centralCashSummary,
+        this.database.closingAdjustments,
       ],
       async () => {
         await Promise.all([
@@ -90,6 +92,7 @@ export class OperationsRepository {
           this.database.centralCashMovements.clear(),
           this.database.centralCashPendingClosings.clear(),
           this.database.centralCashSummary.clear(),
+          this.database.closingAdjustments.clear(),
         ])
       },
     )
@@ -998,6 +1001,30 @@ export class OperationsRepository {
 
   deleteCentralCashPendingClosing(id: string): Promise<void> {
     return this.database.centralCashPendingClosings.delete(id)
+  }
+
+  async replaceClosingAdjustments(
+    cashClosingId: string,
+    adjustments: ClosingAdjustment[],
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.closingAdjustments,
+      async () => {
+        await this.database.closingAdjustments
+          .where('cashClosingId')
+          .equals(cashClosingId)
+          .delete()
+        await this.database.closingAdjustments.bulkPut(adjustments)
+      },
+    )
+  }
+
+  listClosingAdjustments(cashClosingId: string): Promise<ClosingAdjustment[]> {
+    return this.database.closingAdjustments
+      .where('cashClosingId')
+      .equals(cashClosingId)
+      .sortBy('createdAt')
   }
 
   async replaceExportCandidatesForScope(

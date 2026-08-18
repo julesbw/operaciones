@@ -304,6 +304,21 @@ function BatchDetail({
               <div className="summary-row"><dt>Billetes</dt><dd>{currencyFormatter.format(closing.physical_cash.bills_total)}</dd></div>
               <div className="summary-row"><dt>Monedas</dt><dd>{currencyFormatter.format(closing.physical_cash.coins_amount)}</dd></div>
             </dl>
+            {(closing.closing_adjustments?.length ?? 0) > 0 && (
+              <div className="mt-5 rounded-xl border border-teal-100 bg-teal-50/40 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.12em] text-teal-800">Ajustes incluidos</p>
+                <div className="mt-3 space-y-2 text-sm">
+                  {closing.closing_adjustments?.map((adjustment) => (
+                    <div className="summary-row" key={adjustment.id}>
+                      <span className="font-semibold text-slate-700">{adjustment.concept}</span>
+                      <strong className={adjustment.type === 'inflow' ? 'text-teal-800' : 'text-red-700'}>
+                        {adjustment.type === 'inflow' ? '+' : '-'}{currencyFormatter.format(adjustment.amount)}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </article>
         ))}
       </div>

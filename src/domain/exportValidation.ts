@@ -45,6 +45,9 @@ function validateClosing(
   const purchaseMovements = closing.financial_movements.filter(
     (movement) => movement.source_type === 'purchase',
   )
+  const adjustmentMovements = closing.financial_movements.filter(
+    (movement) => movement.source_type === 'closing_adjustment',
+  )
   const purchasesTotal = closing.purchases_total ?? 0
   const cashPurchasesTotal = closing.cash_purchases_total ?? 0
   const purchaseItems = closing.purchase_items ?? []
@@ -74,6 +77,32 @@ function validateClosing(
   }
   if (purchaseMovements.some((movement) => movement.tipo !== 'salida')) {
     errors.push(`${prefix}las compras deben ser salidas.`)
+  }
+  if (adjustmentMovements.some((movement) => !['entrada', 'salida'].includes(movement.tipo))) {
+    errors.push(`${prefix}los ajustes deben indicar entrada o salida.`)
+  }
+
+  const adjustments = closing.closing_adjustments ?? []
+  const adjustmentsNet = sum(
+    adjustments.map((adjustment) => adjustment.type === 'inflow' ? adjustment.amount : -adjustment.amount),
+  )
+  if (closing.adjustments_net !== undefined && !sameMoney(closing.adjustments_net, adjustmentsNet)) {
+    errors.push(`${prefix}adjustments_net no coincide con el historial.`)
+  }
+  if (closing.effective_counted_cash !== undefined && !sameMoney(closing.effective_counted_cash, closing.net_cash)) {
+    errors.push(`${prefix}effective_counted_cash no coincide con net_cash.`)
+  }
+  if (closing.effective_cash_to_withdraw !== undefined && !sameMoney(closing.effective_cash_to_withdraw, closing.physical_cash_amount)) {
+    errors.push(`${prefix}effective_cash_to_withdraw no coincide con el efectivo físico.`)
+  }
+  for (const adjustment of adjustments) {
+    const billsTotal = Object.entries(BILL_VALUES).reduce(
+      (total, [key, value]) => total + adjustment.bills[key as keyof typeof BILL_VALUES] * value,
+      0,
+    )
+    if (adjustment.amount <= 0 || !sameMoney(billsTotal + adjustment.coins_amount, adjustment.amount)) {
+      errors.push(`${prefix}un ajuste no coincide con sus denominaciones.`)
+    }
   }
 
   const expenseMovementTotal = sum(

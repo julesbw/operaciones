@@ -24,9 +24,15 @@ import type {
   Bills,
   CashClosingDraft,
   CashClosingStep,
+  CentralCashBills,
+  ClosingAdjustment,
   Store,
   UserProfile,
 } from '../domain/models'
+import {
+  calculateEffectiveClosing,
+  limitAdjustmentToAvailableStock,
+} from '../domain/closingAdjustments'
 import { isSupabaseConfigured } from '../lib/supabase'
 import type { CashClosingRow } from '../types/database'
 import {
@@ -39,6 +45,10 @@ import {
   type ClosingOperationalSummary,
   type ClosingOperationalTotals,
 } from '../services/closingService'
+import {
+  closingAdjustmentService,
+  type ClosingAdjustmentLockState,
+} from '../services/closingAdjustmentService'
 import { connectivityService } from '../services/connectivityService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
@@ -199,13 +209,156 @@ export function reconcileDraftSelection(
   }
 }
 
+function ClosingAdjustmentForm({
+  closingId,
+  availableStock,
+  networkAvailable,
+  onCreated,
+  onClose,
+}: {
+  closingId: string
+  availableStock: Bills
+  networkAvailable: boolean
+  onCreated: (adjustment: ClosingAdjustment) => void
+  onClose: () => void
+}) {
+  const [type, setType] = useState<'inflow' | 'outflow'>('inflow')
+  const [amount, setAmount] = useState('')
+  const [concept, setConcept] = useState('')
+  const [notes, setNotes] = useState('')
+  const [coinsAmount, setCoinsAmount] = useState('')
+  const [bills, setBills] = useState<CentralCashBills>({
+    b1000: 0, b500: 0, b200: 0, b100: 0, b50: 0, b20: 0,
+  })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const billTotal =
+    bills.b1000 * 1000 + bills.b500 * 500 + bills.b200 * 200 +
+    bills.b100 * 100 + bills.b50 * 50 + bills.b20 * 20 + Number(coinsAmount || 0)
+  const amountValue = moneyValue(amount)
+  const valid = Boolean(
+    networkAvailable && amountValue > 0 && concept.trim() &&
+      Math.abs(billTotal - amountValue) < 0.005,
+  )
+
+  function selectType(nextType: 'inflow' | 'outflow') {
+    setType(nextType)
+    if (nextType !== 'outflow') return
+    const limited = limitAdjustmentToAvailableStock(
+      bills,
+      moneyValue(coinsAmount),
+      availableStock,
+    )
+    setBills(limited.bills)
+    setCoinsAmount(limited.coinsAmount ? String(limited.coinsAmount) : '')
+  }
+
+  async function save() {
+    if (!valid) return
+    setSaving(true)
+    setError('')
+    try {
+      const adjustment = await closingAdjustmentService.create({
+        id: crypto.randomUUID(),
+        cashClosingId: closingId,
+        type,
+        amount: amountValue,
+        concept,
+        notes,
+        bills,
+        coinsAmount: moneyValue(coinsAmount),
+      })
+      onCreated(adjustment)
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'No fue posible crear el ajuste.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-6 space-y-5">
+      <div className="grid grid-cols-2 gap-2">
+        {(['inflow', 'outflow'] as const).map((movementType) => (
+          <button
+            className={type === movementType ? 'filter-chip-active' : 'filter-chip-item'}
+            key={movementType}
+            type="button"
+            onClick={() => selectType(movementType)}
+          >
+            {movementType === 'inflow' ? 'Entrada' : 'Salida'}
+          </button>
+        ))}
+      </div>
+      <label className="field-label">Monto
+        <input className="field" inputMode="decimal" min="0.01" step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} />
+      </label>
+      <fieldset>
+        <legend className="field-label">Desglose de efectivo</legend>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {(['b1000', 'b500', 'b200', 'b100', 'b50', 'b20'] as const).map((key) => (
+            <label className="field-label text-xs" key={key}>{key.replace('b', '$')}
+              <input className="field" max={type === 'outflow' ? availableStock[key] : undefined} min="0" step="1" type="number" value={bills[key]} onChange={(event) => {
+                const value = Math.max(0, Math.trunc(Number(event.target.value) || 0))
+                setBills((current) => ({
+                  ...current,
+                  [key]: type === 'outflow'
+                    ? Math.min(value, Math.max(0, availableStock[key]))
+                    : value,
+                }))
+              }} />
+            </label>
+          ))}
+          <label className="field-label text-xs">Monedas
+            <input className="field" max={type === 'outflow' ? availableStock.monedas : undefined} min="0" step="0.01" type="number" value={coinsAmount} onChange={(event) => {
+              const rawValue = event.target.value
+              if (rawValue === '') {
+                setCoinsAmount('')
+                return
+              }
+              const value = Number(rawValue)
+              setCoinsAmount(String(type === 'outflow'
+                ? Math.min(Math.max(0, value || 0), Math.max(0, availableStock.monedas))
+                : Math.max(0, value || 0)))
+            }} />
+          </label>
+        </div>
+        <p className={`mt-2 text-right text-sm font-black ${Math.abs(billTotal - amountValue) < 0.005 ? 'text-slate-900' : 'text-red-700'}`}>
+          Desglose: {currencyFormatter.format(billTotal)}
+        </p>
+      </fieldset>
+      <label className="field-label">Concepto
+        <input className="field" maxLength={200} value={concept} onChange={(event) => setConcept(event.target.value)} />
+      </label>
+      <label className="field-label">Notas
+        <textarea className="field min-h-20" maxLength={1000} value={notes} onChange={(event) => setNotes(event.target.value)} />
+      </label>
+      <div className="rounded-xl bg-slate-50 p-4 text-sm">
+        <p className="font-black">Confirmar ajuste</p>
+        <p className="mt-1">{type === 'inflow' ? 'Entrada' : 'Salida'} {type === 'inflow' ? '+' : '-'}{currencyFormatter.format(amountValue)}</p>
+        <p className="mt-1 text-slate-500">El Corte original permanecerá sin cambios.</p>
+      </div>
+      {error && <p className="alert-error">{error}</p>}
+      {!networkAvailable && <p className="alert-error">Crear ajustes requiere conexión.</p>}
+      <button className="button-primary w-full" disabled={!valid || saving} type="button" onClick={() => void save()}>
+        {saving ? 'Confirmando…' : 'Confirmar ajuste'}
+      </button>
+      <button className="button-secondary w-full" disabled={saving} type="button" onClick={onClose}>Cancelar</button>
+    </div>
+  )
+}
+
 function ClosingDetailView({
   closingId,
   stores,
+  user,
+  networkAvailable,
   onBack,
 }: {
   closingId: string
   stores: Store[]
+  user: UserProfile
+  networkAvailable: boolean
   onBack: () => void
 }) {
   const [detail, setDetail] = useState<CashClosingDetail>()
@@ -214,6 +367,8 @@ function ClosingDetailView({
   const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [showPaymentDetails, setShowPaymentDetails] = useState(false)
   const [showPurchaseDetails, setShowPurchaseDetails] = useState(false)
+  const [adjustmentOpen, setAdjustmentOpen] = useState(false)
+  const [lockState, setLockState] = useState<ClosingAdjustmentLockState>()
 
   useEffect(() => {
     let active = true
@@ -223,11 +378,13 @@ function ClosingDetailView({
     setShowTransferDetails(false)
     setShowPaymentDetails(false)
     setShowPurchaseDetails(false)
+    setLockState(undefined)
     void closingService
       .getClosedDetail(closingId)
       .then((result) => {
         if (active) setDetail(result)
       })
+    void closingAdjustmentService.lockState(closingId).then(setLockState).catch(() => setLockState(undefined))
       .catch((cause: unknown) => {
         console.error('No fue posible consultar el corte', cause)
         if (active) setError('No fue posible consultar el detalle del corte.')
@@ -247,10 +404,27 @@ function ClosingDetailView({
   }
   if (!detail) return <p className="empty-state">Cargando corte…</p>
 
-  const { closing, expenses, transfers, payments, purchases } = detail
+  const { closing, expenses, transfers, payments, purchases, adjustments } = detail
   const storeName = stores.find((store) => store.id === closing.store_id)?.name
+  const effective = calculateEffectiveClosing(
+    {
+      countedCash: Number(closing.counted_cash),
+      cashBalance: Number(closing.cash_balance),
+      cashToWithdraw: Number(closing.cash_to_withdraw),
+      countedBills: closing.bills,
+      withdrawBills: closing.withdraw_bills,
+    },
+    adjustments,
+  )
   const grossCash =
-    Number(closing.counted_cash) + Number(closing.cash_outflows_total_snapshot)
+    effective.countedCash + Number(closing.cash_outflows_total_snapshot)
+  const countedCashRows = BILL_DENOMINATIONS.map((denomination) => {
+    const quantity = Number(effective.countedBills[denomination.key] ?? 0)
+    const subtotal = denomination.key === 'monedas'
+      ? quantity
+      : quantity * denomination.value
+    return { denomination, quantity, subtotal }
+  })
 
   return (
     <section className="mx-auto max-w-3xl">
@@ -269,6 +443,28 @@ function ClosingDetailView({
           <dl className="mt-5 space-y-4 text-sm">
             <div className="summary-row"><dt>Ventas brutas</dt><dd>{currencyFormatter.format(Number(closing.gross_sales))}</dd></div>
           </dl>
+        </article>
+
+        <article className="panel">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Ajustes</p>
+              <dl className="mt-5 space-y-3 text-sm">
+                <div className="summary-row"><dt>Efectivo contado original</dt><dd>{currencyFormatter.format(Number(closing.counted_cash))}</dd></div>
+                <div className="summary-row"><dt>Ajustes netos</dt><dd className={effective.adjustmentsNet >= 0 ? 'text-teal-800' : 'text-red-700'}>{effective.adjustmentsNet >= 0 ? '+' : ''}{currencyFormatter.format(effective.adjustmentsNet)}</dd></div>
+                <div className="summary-row border-t border-slate-200 pt-3 font-extrabold"><dt>Efectivo corregido</dt><dd>{currencyFormatter.format(effective.countedCash)}</dd></div>
+                <div className="summary-row"><dt>A retirar original</dt><dd>{currencyFormatter.format(Number(closing.cash_to_withdraw))}</dd></div>
+                <div className="summary-row font-extrabold"><dt>A retirar corregido</dt><dd>{currencyFormatter.format(effective.cashToWithdraw)}</dd></div>
+              </dl>
+            </div>
+            {user.role === 'admin' && lockState === 'adjustable' && networkAvailable && (
+              <button className="button-primary" type="button" onClick={() => setAdjustmentOpen(true)}>+ Ajuste</button>
+            )}
+          </div>
+          {lockState === 'prepared' && <p className="mt-5 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">Este Corte pertenece a una exportación preparada. Cancela ese lote antes de realizar un ajuste.</p>}
+          {lockState === 'confirmed' && <p className="mt-5 rounded-xl bg-slate-100 p-3 text-sm font-semibold text-slate-700">Este Corte ya fue exportado correctamente y no admite nuevos ajustes.</p>}
+          {lockState === 'received' && <p className="mt-5 rounded-xl bg-slate-100 p-3 text-sm font-semibold text-slate-700">Este Corte ya fue recibido en Caja Central y no admite nuevos ajustes.</p>}
+          {adjustments.length > 0 && <div className="mt-6 space-y-2">{adjustments.map((adjustment) => <div className="summary-row rounded-xl border border-slate-100 px-3 py-3 text-sm" key={adjustment.id}><span><strong className={adjustment.type === 'inflow' ? 'text-teal-800' : 'text-red-700'}>{adjustment.type === 'inflow' ? '↑ +' : '↓ -'}{currencyFormatter.format(adjustment.amount)}</strong><span className="ml-3 font-semibold text-slate-700">{adjustment.concept}</span><span className="block text-xs text-slate-500">{formatLongDate(adjustment.createdAt.slice(0, 10))}</span></span></div>)}</div>}
         </article>
 
         <article className="panel">
@@ -380,20 +576,59 @@ function ClosingDetailView({
         <article className="panel">
           <p className="eyebrow">Efectivo</p>
           <dl className="mt-5 space-y-4 text-sm">
-            <div className="summary-row"><dt>Efectivo contado</dt><dd>{currencyFormatter.format(Number(closing.counted_cash))}</dd></div>
+            <div className="summary-row"><dt>Efectivo contado</dt><dd>{currencyFormatter.format(effective.countedCash)}</dd></div>
             <div className="summary-row"><dt>Salidas desde caja</dt><dd>{currencyFormatter.format(Number(closing.cash_outflows_total_snapshot))}</dd></div>
             <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Efectivo bruto</dt><dd>{currencyFormatter.format(grossCash)}</dd></div>
           </dl>
+          <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.08em] text-slate-500">
+              <span>Denominación</span>
+              <span className="text-right">Cantidad</span>
+              <span className="text-right">Subtotal</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {countedCashRows.map(({ denomination, quantity, subtotal }) => (
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 px-4 py-3 text-sm" key={denomination.key}>
+                  <span className="font-semibold text-slate-700">{denomination.label}</span>
+                  <span className="text-right tabular-nums">
+                    {denomination.key === 'monedas'
+                      ? currencyFormatter.format(quantity)
+                      : quantity.toLocaleString('es-MX')}
+                  </span>
+                  <strong className="text-right tabular-nums">{currencyFormatter.format(subtotal)}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
         </article>
 
         <article className="panel">
           <p className="eyebrow">Saldo</p>
           <dl className="mt-5 space-y-4 text-sm">
             <div className="summary-row"><dt>Saldo de caja</dt><dd>{currencyFormatter.format(Number(closing.cash_balance))}</dd></div>
-            <div className="summary-row"><dt>Efectivo retirado</dt><dd>{currencyFormatter.format(Number(closing.cash_to_withdraw))}</dd></div>
+            <div className="summary-row"><dt>Efectivo retirado</dt><dd>{currencyFormatter.format(effective.cashToWithdraw)}</dd></div>
           </dl>
         </article>
       </div>
+      <AppModal closeLabel="Cerrar ajuste" open={adjustmentOpen} title="Nuevo ajuste" onClose={() => setAdjustmentOpen(false)}>
+        <ClosingAdjustmentForm
+          availableStock={effective.withdrawBills}
+          closingId={closingId}
+          networkAvailable={networkAvailable}
+          onClose={() => setAdjustmentOpen(false)}
+          onCreated={(adjustment) => {
+            setDetail((current) => {
+              if (!current) return current
+              const nextAdjustments = [
+                ...current.adjustments.filter(({ id }) => id !== adjustment.id),
+                adjustment,
+              ]
+              return { ...current, adjustments: nextAdjustments }
+            })
+            setAdjustmentOpen(false)
+          }}
+        />
+      </AppModal>
     </section>
   )
 }
@@ -521,6 +756,8 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
       <ClosingDetailView
         closingId={view.closingId}
         stores={stores}
+        user={user}
+        networkAvailable={connectivityService.isNetworkAvailable()}
         onBack={() => setView({ kind: 'history' })}
       />
     )

@@ -214,6 +214,21 @@ export type Bills = {
   monedas: number
 }
 
+export type ClosingAdjustmentType = 'inflow' | 'outflow'
+
+export type ClosingAdjustment = {
+  id: string
+  cashClosingId: string
+  type: ClosingAdjustmentType
+  amount: number
+  concept: string
+  notes?: string
+  bills: CentralCashBills
+  coinsAmount: number
+  createdBy: string
+  createdAt: string
+}
+
 export type CentralCashBills = Omit<Bills, 'monedas'>
 
 export const CENTRAL_CASH_MOVEMENT_TYPES = ['inflow', 'outflow'] as const

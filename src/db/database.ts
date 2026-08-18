@@ -4,6 +4,7 @@ import type { ExportBatch, ExportCandidate } from '../domain/exportContract'
 import type {
   AttendanceRecord,
   CashClosingDraft,
+  ClosingAdjustment,
   CentralCashMovement,
   CentralCashPendingClosing,
   CentralCashSummary,
@@ -65,6 +66,7 @@ export class OperationsDatabase extends Dexie {
   centralCashMovements!: Table<CentralCashMovement, string>
   centralCashPendingClosings!: Table<CentralCashPendingClosing, string>
   centralCashSummary!: Table<CentralCashSummary, string>
+  closingAdjustments!: Table<ClosingAdjustment, string>
 
   constructor(databaseName = OPERATIONS_DATABASE_NAME) {
     super(databaseName)
@@ -123,6 +125,10 @@ export class OperationsDatabase extends Dexie {
         '&id, supplierId, businessDate, [supplierId+businessDate], syncStatus, createdAt',
       purchasePayments:
         '&id, purchaseId, fundingSource, sourceStoreId, paidAt',
+    }
+    const schemaV14 = {
+      ...schemaV13,
+      closingAdjustments: '&id, cashClosingId, createdAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -237,6 +243,7 @@ export class OperationsDatabase extends Dexie {
             draft.knownPurchasePaymentIds ??= []
           })
       })
+    this.version(14).stores(schemaV14)
   }
 }
 

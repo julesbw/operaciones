@@ -16,6 +16,7 @@ export type ExportMovementSource =
   | 'expense'
   | 'payment'
   | 'purchase'
+  | 'closing_adjustment'
 
 export type ExportedMovement = {
   id: string
@@ -61,6 +62,18 @@ export type ExportedPurchaseItem = {
   affects_cash: boolean
 }
 
+export type ExportedClosingAdjustment = {
+  id: string
+  type: 'inflow' | 'outflow'
+  amount: number
+  concept: string
+  notes?: string | null
+  bills: Omit<Bills, 'monedas'>
+  coins_amount: number
+  created_by: string
+  created_at: string
+}
+
 export type ExportedPhysicalCash = {
   amount: number
   bills_total: number
@@ -88,6 +101,10 @@ export type ExportedClosing = {
   payment_items: ExportedPaymentItem[]
   transfer_items: ExportedTransferItem[]
   purchase_items?: ExportedPurchaseItem[]
+  closing_adjustments?: ExportedClosingAdjustment[]
+  adjustments_net?: number
+  effective_counted_cash?: number
+  effective_cash_to_withdraw?: number
   financial_movements: ExportedMovement[]
   physical_cash: ExportedPhysicalCash
   closed_at: string
