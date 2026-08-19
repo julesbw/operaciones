@@ -15,6 +15,13 @@ const coinCompensationMigration = readFileSync(
   ),
   'utf8',
 )
+const optionalStoreBreakdownMigration = readFileSync(
+  new URL(
+    '../../supabase/migrations/202608190001_purchase_optional_store_cash_breakdown.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
 
 describe('Purchases migration', () => {
   it('keeps purchases, payments and suppliers as distinct entities', () => {
@@ -59,6 +66,24 @@ describe('Purchases migration', () => {
     expect(migration).toContain("'source_type', 'purchase'")
     expect(migration).toContain('prepare_export_batch_without_purchases')
     expect(migration).toContain('Las Compras históricas no coinciden con el Corte')
+  })
+
+  it('keeps central cash strict while allowing store cash without breakdown', () => {
+    expect(optionalStoreBreakdownMigration).toContain(
+      "p_funding_source = 'central_cash'",
+    )
+    expect(optionalStoreBreakdownMigration).toContain(
+      'elsif p_bills is null',
+    )
+    expect(optionalStoreBreakdownMigration).toContain(
+      "'Crea una Compra idempotente; exige desglose en Caja Central y lo hace opcional en Caja de Tienda.'",
+    )
+    expect(optionalStoreBreakdownMigration).toContain(
+      "'purchase_coin_compensation'",
+    )
+    expect(optionalStoreBreakdownMigration).not.toContain(
+      'drop function public.create_paid_purchase',
+    )
   })
 
   it('denies direct financial writes and enables RLS', () => {

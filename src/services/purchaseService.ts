@@ -7,6 +7,7 @@ import type {
   SyncQueueItem,
   UserProfile,
 } from '../domain/models'
+import { requiresCashBreakdown } from '../domain/purchasePolicy'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import type {
@@ -186,7 +187,8 @@ export function validatePurchaseInput(input: CreatePurchaseInput): void {
     throw new PurchaseDomainError('PURCHASE_STORE_FORBIDDEN')
   }
 
-  if (input.paymentMethod === 'efectivo') {
+  const breakdownRequired = requiresCashBreakdown(input)
+  if (input.paymentMethod === 'efectivo' && breakdownRequired) {
     if (!input.bills) {
       throw new PurchaseDomainError('PURCHASE_BILLS_MISMATCH')
     }
@@ -206,7 +208,10 @@ export function validatePurchaseInput(input: CreatePurchaseInput): void {
     ) {
       throw new PurchaseDomainError('PURCHASE_BILLS_MISMATCH')
     }
-  } else if (input.bills || (input.coinsAmount ?? 0) !== 0) {
+  } else if (
+    input.bills ||
+    (input.coinsAmount ?? 0) !== 0
+  ) {
     throw new PurchaseDomainError('PURCHASE_BILLS_MISMATCH')
   }
 }
@@ -273,6 +278,8 @@ class PurchaseService {
       }
     }
 
+    const breakdownRequired = requiresCashBreakdown(input)
+
     if (input.fundingSource === 'central_cash') {
       if (!supabase || !connectivityService.isNetworkAvailable()) {
         throw new PurchaseDomainError(
@@ -313,8 +320,8 @@ class PurchaseService {
       fundingSource: input.fundingSource,
       sourceStoreId: input.sourceStoreId,
       paymentMethod: input.paymentMethod,
-      bills: input.bills,
-      coinsAmount: roundMoney(input.coinsAmount ?? 0),
+      bills: breakdownRequired ? input.bills : undefined,
+      coinsAmount: breakdownRequired ? roundMoney(input.coinsAmount ?? 0) : 0,
       paidAt: now,
       createdBy: user.id,
       createdAt: now,
@@ -354,6 +361,7 @@ class PurchaseService {
         fundingSource: payment.fundingSource,
         sourceStoreId: payment.sourceStoreId,
         paymentMethod: payment.paymentMethod,
+        cashBreakdownEnabled: payment.bills !== undefined,
         bills: payment.bills,
         coinsAmount: payment.coinsAmount,
       },
@@ -383,9 +391,10 @@ class PurchaseService {
       p_funding_source: input.fundingSource,
       p_source_store_id: input.sourceStoreId ?? null,
       p_payment_method: input.paymentMethod,
-      p_bills: input.paymentMethod === 'efectivo' ? input.bills! : null,
+      p_bills:
+        requiresCashBreakdown(input) && input.bills ? input.bills : null,
       p_coins_amount:
-        input.paymentMethod === 'efectivo'
+        requiresCashBreakdown(input)
           ? roundMoney(input.coinsAmount ?? 0)
           : 0,
       p_created_at: createdAt,

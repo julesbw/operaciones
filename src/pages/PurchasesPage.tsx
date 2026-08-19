@@ -18,6 +18,10 @@ import {
 import { CheckIcon, PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
 import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
 import {
+  cashBreakdownEnabledAfterFundingSourceChange,
+  requiresCashBreakdown as requiresPurchaseCashBreakdown,
+} from '../domain/purchasePolicy'
+import {
   PAYMENT_METHODS,
   type CentralCashBills,
   type PaidPurchase,
@@ -106,6 +110,9 @@ export function PurchasesPage({
     ...EMPTY_CENTRAL_CASH_BILLS,
   })
   const [coinsAmount, setCoinsAmount] = useState('')
+  const [cashBreakdownEnabled, setCashBreakdownEnabled] = useState(false)
+  const [breakdownConfirmationOpen, setBreakdownConfirmationOpen] =
+    useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -173,6 +180,14 @@ export function PurchasesPage({
   const denominationTotal = useMemo(() => {
     return calculateCentralCashBillsTotal(bills) + Number(coinsAmount || 0)
   }, [bills, coinsAmount])
+  const hasCapturedCashBreakdown =
+    Object.values(bills).some((count) => count > 0) ||
+    Number(coinsAmount || 0) > 0
+  const requiresCashBreakdown = requiresPurchaseCashBreakdown({
+    fundingSource,
+    paymentMethod,
+    cashBreakdownEnabled,
+  })
 
   const initialSupplierId = activeSuppliers[0]?.id ?? ''
   const initialStoreId = activeStores[0]?.id ?? ''
@@ -185,6 +200,7 @@ export function PurchasesPage({
     businessDate !== today ||
     fundingSource !== 'store_cash' ||
     paymentMethod !== 'efectivo' ||
+    cashBreakdownEnabled ||
     Object.values(bills).some((count) => count > 0) ||
     Number(coinsAmount || 0) > 0
 
@@ -198,12 +214,47 @@ export function PurchasesPage({
     setPaymentMethod('efectivo')
     setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
     setCoinsAmount('')
+    setCashBreakdownEnabled(false)
+    setBreakdownConfirmationOpen(false)
     setNotes('')
     setPurchaseId(crypto.randomUUID())
     setPaymentId(crypto.randomUUID())
     setFormError('')
     setConfirming(false)
     setFormOpen(true)
+  }
+
+  function handleFundingSourceChange(nextFundingSource: PaymentFundingSource) {
+    if (nextFundingSource === fundingSource) return
+    setFundingSource(nextFundingSource)
+    setCashBreakdownEnabled(
+      cashBreakdownEnabledAfterFundingSourceChange({
+        currentFundingSource: fundingSource,
+        nextFundingSource,
+        hasCapturedBreakdown: hasCapturedCashBreakdown,
+      }),
+    )
+  }
+
+  function handleCashBreakdownToggle(enabled: boolean) {
+    if (enabled) {
+      setCashBreakdownEnabled(true)
+      return
+    }
+    if (hasCapturedCashBreakdown) {
+      setBreakdownConfirmationOpen(true)
+      return
+    }
+    setCashBreakdownEnabled(false)
+    setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
+    setCoinsAmount('')
+  }
+
+  function hideCashBreakdown() {
+    setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
+    setCoinsAmount('')
+    setCashBreakdownEnabled(false)
+    setBreakdownConfirmationOpen(false)
   }
 
   function prepareConfirmation(event: FormEvent<HTMLFormElement>) {
@@ -223,7 +274,7 @@ export function PurchasesPage({
       return
     }
     if (
-      paymentMethod === 'efectivo' &&
+      requiresCashBreakdown &&
       Math.round(denominationTotal * 100) !== Math.round(numericAmount * 100)
     ) {
       setFormError('Las denominaciones deben sumar exactamente el monto.')
@@ -249,9 +300,10 @@ export function PurchasesPage({
           sourceStoreId:
             fundingSource === 'store_cash' ? sourceStoreId : undefined,
           paymentMethod,
-          bills: paymentMethod === 'efectivo' ? bills : undefined,
+          cashBreakdownEnabled,
+          bills: requiresCashBreakdown ? bills : undefined,
           coinsAmount:
-            paymentMethod === 'efectivo' ? Number(coinsAmount || 0) : 0,
+            requiresCashBreakdown ? Number(coinsAmount || 0) : 0,
         },
         user,
       )
@@ -461,15 +513,33 @@ export function PurchasesPage({
                       { value: 'central_cash', label: 'Caja Central', disabled: !centralAvailable },
                     ]}
                     value={fundingSource}
-                    onChange={setFundingSource}
+                    onChange={handleFundingSourceChange}
                   />
                   {!centralAvailable && <p className="mt-2 text-xs text-slate-500">Caja Central requiere conexión y una sesión Supabase.</p>}
                 </div>
                 {fundingSource === 'store_cash' && <label className="field-label">Tienda<select className="field" required value={sourceStoreId} onChange={(event) => setSourceStoreId(event.target.value)}>{activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>}
                 <label className="field-label">Forma de pago<select className="field" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>)}</select></label>
-                {paymentMethod === 'efectivo' && (
+                {fundingSource === 'store_cash' && paymentMethod === 'efectivo' && (
+                  <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div>
+                      <p className="font-bold text-slate-800">Registrar desglose de efectivo</p>
+                      <p className="mt-1 text-xs text-slate-500">Opcional para pagos desde la tienda.</p>
+                    </div>
+                    <button
+                      aria-checked={cashBreakdownEnabled}
+                      aria-label="Registrar desglose de efectivo"
+                      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${cashBreakdownEnabled ? 'bg-teal-700' : 'bg-slate-300'}`}
+                      role="switch"
+                      type="button"
+                      onClick={() => handleCashBreakdownToggle(!cashBreakdownEnabled)}
+                    >
+                      <span className={`size-5 rounded-full bg-white shadow transition ${cashBreakdownEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </div>
+                )}
+                {requiresCashBreakdown && (
                   <div>
-                    <p className="field-label">Denominaciones</p>
+                    <p className="field-label">Desglose de efectivo</p>
                     <div className="mt-2">
                       <BillCounter
                         coinsValue={coinsAmount}
@@ -491,6 +561,25 @@ export function PurchasesPage({
             </div>
           </form>
         )}
+      </AppModal>
+
+      <AppModal
+        closeLabel="Cerrar confirmación de desglose"
+        open={breakdownConfirmationOpen}
+        title="Ocultar desglose de efectivo"
+        onClose={() => setBreakdownConfirmationOpen(false)}
+      >
+        <p className="mt-5 text-sm leading-6 text-slate-600">
+          Las cantidades de billetes y monedas capturadas se eliminarán.
+        </p>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <button className="button-secondary" type="button" onClick={() => setBreakdownConfirmationOpen(false)}>
+            Cancelar
+          </button>
+          <button className="button-primary" type="button" onClick={hideCashBreakdown}>
+            Ocultar
+          </button>
+        </div>
       </AppModal>
 
       <AppModal closeLabel="Cerrar detalle" eyebrow="Compra pagada" open={Boolean(selected)} title={selected?.purchase.supplierNameSnapshot ?? ''} onClose={() => setSelected(undefined)}>

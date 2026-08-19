@@ -14,6 +14,7 @@ const input: CreatePurchaseInput = {
   fundingSource: 'store_cash',
   sourceStoreId: 'store-id',
   paymentMethod: 'efectivo',
+  cashBreakdownEnabled: true,
   bills: {
     b1000: 1,
     b500: 0,
@@ -28,6 +29,45 @@ const input: CreatePurchaseInput = {
 describe('purchase validation', () => {
   it('accepts an exact cash breakdown', () => {
     expect(() => validatePurchaseInput(input)).not.toThrow()
+  })
+
+  it('allows store cash without a captured breakdown', () => {
+    expect(() =>
+      validatePurchaseInput({
+        ...input,
+        cashBreakdownEnabled: false,
+        bills: undefined,
+        coinsAmount: 0,
+      }),
+    ).not.toThrow()
+  })
+
+  it('requires a breakdown for central cash even when the toggle is off', () => {
+    expect(() =>
+      validatePurchaseInput({
+        ...input,
+        fundingSource: 'central_cash',
+        sourceStoreId: undefined,
+        cashBreakdownEnabled: false,
+        bills: undefined,
+        coinsAmount: 0,
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<PurchaseDomainError>>({
+        code: 'PURCHASE_BILLS_MISMATCH',
+      }),
+    )
+  })
+
+  it('accepts a valid central cash breakdown', () => {
+    expect(() =>
+      validatePurchaseInput({
+        ...input,
+        fundingSource: 'central_cash',
+        sourceStoreId: undefined,
+        cashBreakdownEnabled: true,
+      }),
+    ).not.toThrow()
   })
 
   it('rejects cash denominations that do not match the amount', () => {

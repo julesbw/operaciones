@@ -393,6 +393,7 @@ export type CreatePurchaseInput = {
   fundingSource: PaymentFundingSource
   sourceStoreId?: string
   paymentMethod: PaymentMethod
+  cashBreakdownEnabled: boolean
   bills?: CentralCashBills
   coinsAmount?: number
 }

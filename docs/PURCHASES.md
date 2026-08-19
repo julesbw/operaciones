@@ -43,12 +43,15 @@ no altera el histórico.
   idempotente y se sincroniza después. No crea movimiento de Caja Central y
   queda disponible para el Corte de esa tienda y fecha.
 
-Para pagos `cash`, tanto centrales como de tienda, el total de billetes y
-monedas debe coincidir exactamente con el monto. En Caja Central, las monedas
-se compensan dentro de la misma transacción y no requieren saldo previo; los
-billetes declarados sí deben existir físicamente. Las formas `transfer`, `card`
-y `other` no modifican el inventario físico, aunque una Compra central sí
-reduce el saldo financiero por el monto completo.
+Para pagos `cash` desde `central_cash`, el desglose de billetes y monedas es
+obligatorio y debe coincidir exactamente con el monto. En `store_cash` el
+desglose es opcional: cuando no se captura, `purchase_payments.bills` permanece
+en `null` y la Compra conserva únicamente su monto financiero; cuando se activa
+la captura, el desglose debe coincidir exactamente con el monto. En Caja
+Central, las monedas se compensan dentro de la misma transacción y no requieren
+saldo previo; los billetes declarados sí deben existir físicamente. Las formas
+`transfer`, `card` y `other` no modifican el inventario físico, aunque una
+Compra central sí reduce el saldo financiero por el monto completo.
 
 La creación de Compras es administrativa en v1. RLS y la RPC vuelven a validar
 el rol, el proveedor, la tienda, el saldo y las denominaciones; ocultar opciones
