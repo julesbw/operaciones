@@ -108,7 +108,7 @@ function App() {
   }, [])
 
   const runRemoteBootstrap = useCallback(
-    async (profile?: UserProfile) => {
+    async (profile?: UserProfile, forceRetry = false) => {
       if (!connectivityService.isNetworkAvailable()) {
         setNetworkAvailable(false)
         setBackendReachable(undefined)
@@ -124,6 +124,7 @@ function App() {
 
       try {
         const result = await remoteBootstrapService.process({
+          forceRetry,
           profile,
           onIdentityResolved: (remoteUserId) => {
             setUser((current) =>
@@ -154,7 +155,8 @@ function App() {
         setStartupNotice(undefined)
         setSyncError(
           result.sync.failed > 0
-            ? `${result.sync.failed} cambio${result.sync.failed === 1 ? '' : 's'} no se pudo sincronizar.`
+            ? result.sync.errors?.join(' · ') ||
+              `${result.sync.failed} cambio${result.sync.failed === 1 ? '' : 's'} no se pudo sincronizar.`
             : undefined,
         )
         await refreshLocalState()
@@ -401,7 +403,7 @@ function App() {
       user={user}
       onNavigate={navigate}
       onSignOut={() => void signOut()}
-      onSync={() => void runRemoteBootstrap()}
+      onSync={() => void runRemoteBootstrap(undefined, true)}
     >
       {page === 'home' && (
         <DashboardPage pendingCount={pendingCount} revision={revision} stores={stores} user={user} onNavigate={navigate} />

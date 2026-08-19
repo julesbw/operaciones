@@ -22,6 +22,13 @@ const optionalStoreBreakdownMigration = readFileSync(
   ),
   'utf8',
 )
+const cashBreakdownConstraintMigration = readFileSync(
+  new URL(
+    '../../supabase/migrations/202608190002_purchase_cash_breakdown_constraint.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
 
 describe('Purchases migration', () => {
   it('keeps purchases, payments and suppliers as distinct entities', () => {
@@ -84,6 +91,41 @@ describe('Purchases migration', () => {
     expect(optionalStoreBreakdownMigration).not.toContain(
       'drop function public.create_paid_purchase',
     )
+  })
+
+  describe('purchase payment cash breakdown constraint', () => {
+    const constraint = cashBreakdownConstraintMigration.replace(/\s+/g, ' ')
+
+    it('allows central cash cash payments only when bills exist', () => {
+      expect(constraint).toContain(
+        "funding_source = 'central_cash' and payment_method = 'efectivo' and bills is not null",
+      )
+    })
+
+    it('allows store cash cash payments with bills', () => {
+      expect(constraint).toContain(
+        "funding_source = 'store_cash' and payment_method = 'efectivo'",
+      )
+      expect(constraint).toContain('bills is not null or coins_amount = 0')
+    })
+
+    it('allows store cash cash payments without bills when coins are zero', () => {
+      expect(constraint).toContain(
+        "funding_source = 'store_cash' and payment_method = 'efectivo' and (bills is not null or coins_amount = 0)",
+      )
+    })
+
+    it('rejects store cash cash payments without bills when coins are nonzero', () => {
+      expect(constraint).toContain(
+        "(bills is not null or coins_amount = 0)",
+      )
+    })
+
+    it('requires null bills and zero coins for non-cash payments', () => {
+      expect(constraint).toContain(
+        "payment_method <> 'efectivo' and bills is null and coins_amount = 0",
+      )
+    })
   })
 
   it('denies direct financial writes and enables RLS', () => {

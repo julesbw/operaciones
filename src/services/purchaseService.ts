@@ -7,7 +7,10 @@ import type {
   SyncQueueItem,
   UserProfile,
 } from '../domain/models'
-import { requiresCashBreakdown } from '../domain/purchasePolicy'
+import {
+  hasCapturedCashBreakdown,
+  requiresCashBreakdown,
+} from '../domain/purchasePolicy'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import type {
@@ -69,10 +72,15 @@ function roundMoney(value: number): number {
 function sameBills(
   left: PurchasePayment['bills'],
   right: CreatePurchaseInput['bills'],
+  rightCoinsAmount = 0,
 ): boolean {
-  if (!left || !right) return left === right
+  const normalizedRight = normalizePurchaseBreakdown(
+    right,
+    rightCoinsAmount,
+  ).bills
+  if (!left || !normalizedRight) return left === normalizedRight
   return (Object.keys(EMPTY_CENTRAL_CASH_BILLS) as Array<keyof typeof left>).every(
-    (key) => left[key] === right[key],
+    (key) => left[key] === normalizedRight[key],
   )
 }
 
@@ -91,7 +99,7 @@ function isSamePurchaseRequest(
     payment.fundingSource === input.fundingSource &&
     payment.sourceStoreId === input.sourceStoreId &&
     payment.paymentMethod === input.paymentMethod &&
-    sameBills(payment.bills, input.bills) &&
+    sameBills(payment.bills, input.bills, input.coinsAmount) &&
     roundMoney(payment.coinsAmount) === roundMoney(input.coinsAmount ?? 0)
   )
 }
@@ -112,7 +120,7 @@ function mapPurchase(row: PurchaseRow, synced = true): Purchase {
   }
 }
 
-function mapPayment(row: PurchasePaymentRow): PurchasePayment {
+export function mapPurchasePayment(row: PurchasePaymentRow): PurchasePayment {
   return {
     id: row.id,
     purchaseId: row.purchase_id,
@@ -125,6 +133,38 @@ function mapPayment(row: PurchasePaymentRow): PurchasePayment {
     paidAt: row.paid_at,
     createdBy: row.created_by,
     createdAt: row.created_at,
+  }
+}
+
+export function normalizePurchaseBreakdown(
+  bills?: CreatePurchaseInput['bills'],
+  coinsAmount = 0,
+): { bills: CreatePurchaseInput['bills']; coinsAmount: number } {
+  if (!hasCapturedCashBreakdown(bills, coinsAmount)) {
+    return { bills: undefined, coinsAmount: 0 }
+  }
+  return { bills, coinsAmount: roundMoney(coinsAmount) }
+}
+
+export function purchaseToRpcArgs(
+  input: CreatePurchaseInput,
+  createdAt: string,
+) {
+  const breakdown = normalizePurchaseBreakdown(input.bills, input.coinsAmount)
+  return {
+    p_purchase_id: input.purchaseId,
+    p_payment_id: input.paymentId,
+    p_supplier_id: input.supplierId,
+    p_business_date: input.businessDate,
+    p_folio: input.folio?.trim() || null,
+    p_amount: roundMoney(input.amount),
+    p_notes: input.notes?.trim() || null,
+    p_funding_source: input.fundingSource,
+    p_source_store_id: input.sourceStoreId ?? null,
+    p_payment_method: input.paymentMethod,
+    p_bills: breakdown.bills ?? null,
+    p_coins_amount: breakdown.coinsAmount,
+    p_created_at: createdAt,
   }
 }
 
@@ -187,7 +227,14 @@ export function validatePurchaseInput(input: CreatePurchaseInput): void {
     throw new PurchaseDomainError('PURCHASE_STORE_FORBIDDEN')
   }
 
-  const breakdownRequired = requiresCashBreakdown(input)
+  const breakdownRequired = requiresCashBreakdown({
+    fundingSource: input.fundingSource,
+    paymentMethod: input.paymentMethod,
+    hasCapturedBreakdown: hasCapturedCashBreakdown(
+      input.bills,
+      input.coinsAmount,
+    ),
+  })
   if (input.paymentMethod === 'efectivo' && breakdownRequired) {
     if (!input.bills) {
       throw new PurchaseDomainError('PURCHASE_BILLS_MISMATCH')
@@ -208,10 +255,7 @@ export function validatePurchaseInput(input: CreatePurchaseInput): void {
     ) {
       throw new PurchaseDomainError('PURCHASE_BILLS_MISMATCH')
     }
-  } else if (
-    input.bills ||
-    (input.coinsAmount ?? 0) !== 0
-  ) {
+  } else if (hasCapturedCashBreakdown(input.bills, input.coinsAmount)) {
     throw new PurchaseDomainError('PURCHASE_BILLS_MISMATCH')
   }
 }
@@ -238,7 +282,10 @@ class PurchaseService {
     const items = purchasesResult.data.flatMap((purchase) => {
       const payment = paymentByPurchase.get(purchase.id)
       return payment
-        ? [{ purchase: mapPurchase(purchase), payment: mapPayment(payment) }]
+        ? [{
+            purchase: mapPurchase(purchase),
+            payment: mapPurchasePayment(payment),
+          }]
         : []
     })
     await operationsRepository.saveRemotePaidPurchases(items)
@@ -278,8 +325,6 @@ class PurchaseService {
       }
     }
 
-    const breakdownRequired = requiresCashBreakdown(input)
-
     if (input.fundingSource === 'central_cash') {
       if (!supabase || !connectivityService.isNetworkAvailable()) {
         throw new PurchaseDomainError(
@@ -313,6 +358,7 @@ class PurchaseService {
       updatedAt: now,
       syncStatus: 'pending',
     }
+    const breakdown = normalizePurchaseBreakdown(input.bills, input.coinsAmount)
     const payment: PurchasePayment = {
       id: input.paymentId,
       purchaseId: purchase.id,
@@ -320,8 +366,8 @@ class PurchaseService {
       fundingSource: input.fundingSource,
       sourceStoreId: input.sourceStoreId,
       paymentMethod: input.paymentMethod,
-      bills: breakdownRequired ? input.bills : undefined,
-      coinsAmount: breakdownRequired ? roundMoney(input.coinsAmount ?? 0) : 0,
+      bills: breakdown.bills,
+      coinsAmount: breakdown.coinsAmount,
       paidAt: now,
       createdBy: user.id,
       createdAt: now,
@@ -361,7 +407,6 @@ class PurchaseService {
         fundingSource: payment.fundingSource,
         sourceStoreId: payment.sourceStoreId,
         paymentMethod: payment.paymentMethod,
-        cashBreakdownEnabled: payment.bills !== undefined,
         bills: payment.bills,
         coinsAmount: payment.coinsAmount,
       },
@@ -380,32 +425,17 @@ class PurchaseService {
     if (!supabase) {
       throw new PurchaseDomainError('PURCHASE_CENTRAL_CASH_REQUIRES_ONLINE')
     }
-    const { data, error } = await supabase.rpc('create_paid_purchase', {
-      p_purchase_id: input.purchaseId,
-      p_payment_id: input.paymentId,
-      p_supplier_id: input.supplierId,
-      p_business_date: input.businessDate,
-      p_folio: input.folio?.trim() || null,
-      p_amount: roundMoney(input.amount),
-      p_notes: input.notes?.trim() || null,
-      p_funding_source: input.fundingSource,
-      p_source_store_id: input.sourceStoreId ?? null,
-      p_payment_method: input.paymentMethod,
-      p_bills:
-        requiresCashBreakdown(input) && input.bills ? input.bills : null,
-      p_coins_amount:
-        requiresCashBreakdown(input)
-          ? roundMoney(input.coinsAmount ?? 0)
-          : 0,
-      p_created_at: createdAt,
-    })
+    const { data, error } = await supabase.rpc(
+      'create_paid_purchase',
+      purchaseToRpcArgs(input, createdAt),
+    )
     if (error) throw purchaseError(error)
     if (!data?.purchase || !data.payment) {
       throw new Error('Supabase no confirmó la compra.')
     }
     return {
       purchase: mapPurchase(data.purchase),
-      payment: mapPayment(data.payment),
+      payment: mapPurchasePayment(data.payment),
     }
   }
 }

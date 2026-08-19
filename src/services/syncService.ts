@@ -13,6 +13,7 @@ export type SyncResult = {
   synced: number
   failed: number
   pending: number
+  errors?: string[]
 }
 
 export class SyncAuthenticationError extends Error {
@@ -108,12 +109,12 @@ function merchandiseTransferToRpcArgs(transfer: MerchandiseTransfer) {
   }
 }
 
-class SyncService {
+export class SyncService {
   private running?: Promise<SyncResult>
 
-  process(): Promise<SyncResult> {
+  process(options: { forceRetry?: boolean } = {}): Promise<SyncResult> {
     if (this.running) return this.running
-    this.running = this.processQueue().finally(() => {
+    this.running = this.processQueue(options.forceRetry === true).finally(() => {
       this.running = undefined
     })
     return this.running
@@ -123,7 +124,7 @@ class SyncService {
     return operationsRepository.countPendingQueue()
   }
 
-  private async processQueue(): Promise<SyncResult> {
+  private async processQueue(forceRetry: boolean): Promise<SyncResult> {
     const items = await operationsRepository.listPendingQueue()
     if (!supabase) {
       return { synced: 0, failed: 0, pending: items.length }
@@ -147,22 +148,29 @@ class SyncService {
     }
 
     const now = new Date().toISOString()
-    const dueItems = items.filter(
-      (item) => !item.nextAttemptAt || item.nextAttemptAt <= now,
-    )
+    const dueItems = forceRetry
+      ? items
+      : items.filter(
+          (item) => !item.nextAttemptAt || item.nextAttemptAt <= now,
+        )
     const results = await Promise.all(
       dueItems.map((item) => this.processItem(item)),
     )
     await this.pullRecent()
 
     return {
-      synced: results.filter(Boolean).length,
-      failed: results.filter((successful) => !successful).length,
+      synced: results.filter((result) => result.success).length,
+      failed: results.filter((result) => !result.success).length,
       pending: await operationsRepository.countPendingQueue(),
+      errors: results.flatMap((result) =>
+        result.success || !result.error ? [] : [result.error],
+      ),
     }
   }
 
-  private async processItem(item: SyncQueueItem): Promise<boolean> {
+  private async processItem(
+    item: SyncQueueItem,
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       await operationsRepository.markEntitySyncStatus(
         item.entityType,
@@ -171,12 +179,12 @@ class SyncService {
       )
       const remoteVersion = await this.pushItem(item)
       await operationsRepository.completeQueueItem(item, remoteVersion)
-      return true
+      return { success: true }
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'Error de sincronización'
       await operationsRepository.failQueueItem(item, message)
-      return false
+      return { success: false, error: message }
     }
   }
 

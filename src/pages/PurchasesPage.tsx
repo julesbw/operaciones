@@ -18,8 +18,10 @@ import {
 import { CheckIcon, PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
 import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
 import {
-  cashBreakdownEnabledAfterFundingSourceChange,
+  cashBreakdownOpenAfterFundingSourceChange,
+  hasCapturedCashBreakdown,
   requiresCashBreakdown as requiresPurchaseCashBreakdown,
+  shouldConfirmCashBreakdownClose,
 } from '../domain/purchasePolicy'
 import {
   PAYMENT_METHODS,
@@ -109,9 +111,9 @@ export function PurchasesPage({
   const [bills, setBills] = useState<CentralCashBills>({
     ...EMPTY_CENTRAL_CASH_BILLS,
   })
-  const [coinsAmount, setCoinsAmount] = useState('')
-  const [cashBreakdownEnabled, setCashBreakdownEnabled] = useState(false)
-  const [breakdownConfirmationOpen, setBreakdownConfirmationOpen] =
+  const [coinsAmount, setCoinsAmount] = useState(0)
+  const [cashBreakdownOpen, setCashBreakdownOpen] = useState(false)
+  const [breakdownCloseConfirmationOpen, setBreakdownCloseConfirmationOpen] =
     useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -178,16 +180,17 @@ export function PurchasesPage({
   }, [purchases])
 
   const denominationTotal = useMemo(() => {
-    return calculateCentralCashBillsTotal(bills) + Number(coinsAmount || 0)
+    return calculateCentralCashBillsTotal(bills) + coinsAmount
   }, [bills, coinsAmount])
-  const hasCapturedCashBreakdown =
-    Object.values(bills).some((count) => count > 0) ||
-    Number(coinsAmount || 0) > 0
+  const hasCapturedBreakdown = hasCapturedCashBreakdown(bills, coinsAmount)
   const requiresCashBreakdown = requiresPurchaseCashBreakdown({
     fundingSource,
     paymentMethod,
-    cashBreakdownEnabled,
+    hasCapturedBreakdown,
   })
+  const cashBreakdownVisible =
+    paymentMethod === 'efectivo' &&
+    (cashBreakdownOpen || fundingSource === 'central_cash')
 
   const initialSupplierId = activeSuppliers[0]?.id ?? ''
   const initialStoreId = activeStores[0]?.id ?? ''
@@ -200,9 +203,8 @@ export function PurchasesPage({
     businessDate !== today ||
     fundingSource !== 'store_cash' ||
     paymentMethod !== 'efectivo' ||
-    cashBreakdownEnabled ||
     Object.values(bills).some((count) => count > 0) ||
-    Number(coinsAmount || 0) > 0
+    coinsAmount > 0
 
   function openForm() {
     setSupplierId(initialSupplierId)
@@ -213,9 +215,9 @@ export function PurchasesPage({
     setSourceStoreId(initialStoreId)
     setPaymentMethod('efectivo')
     setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
-    setCoinsAmount('')
-    setCashBreakdownEnabled(false)
-    setBreakdownConfirmationOpen(false)
+    setCoinsAmount(0)
+    setCashBreakdownOpen(false)
+    setBreakdownCloseConfirmationOpen(false)
     setNotes('')
     setPurchaseId(crypto.randomUUID())
     setPaymentId(crypto.randomUUID())
@@ -227,34 +229,38 @@ export function PurchasesPage({
   function handleFundingSourceChange(nextFundingSource: PaymentFundingSource) {
     if (nextFundingSource === fundingSource) return
     setFundingSource(nextFundingSource)
-    setCashBreakdownEnabled(
-      cashBreakdownEnabledAfterFundingSourceChange({
+    setCashBreakdownOpen(
+      cashBreakdownOpenAfterFundingSourceChange({
         currentFundingSource: fundingSource,
         nextFundingSource,
-        hasCapturedBreakdown: hasCapturedCashBreakdown,
+        hasCapturedBreakdown,
       }),
     )
   }
 
   function handleCashBreakdownToggle(enabled: boolean) {
-    if (enabled) {
-      setCashBreakdownEnabled(true)
+    if (
+      shouldConfirmCashBreakdownClose({
+        nextOpen: enabled,
+        hasCapturedBreakdown,
+      })
+    ) {
+      setBreakdownCloseConfirmationOpen(true)
       return
     }
-    if (hasCapturedCashBreakdown) {
-      setBreakdownConfirmationOpen(true)
-      return
-    }
-    setCashBreakdownEnabled(false)
-    setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
-    setCoinsAmount('')
+    setCashBreakdownOpen(enabled)
   }
 
-  function hideCashBreakdown() {
+  function closeCashBreakdownAndClear() {
     setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
-    setCoinsAmount('')
-    setCashBreakdownEnabled(false)
-    setBreakdownConfirmationOpen(false)
+    setCoinsAmount(0)
+    setCashBreakdownOpen(false)
+    setBreakdownCloseConfirmationOpen(false)
+  }
+
+  function closeForm() {
+    setFormOpen(false)
+    setBreakdownCloseConfirmationOpen(false)
   }
 
   function prepareConfirmation(event: FormEvent<HTMLFormElement>) {
@@ -287,6 +293,8 @@ export function PurchasesPage({
     setSaving(true)
     setFormError('')
     try {
+      const financialBreakdownCaptured =
+        paymentMethod === 'efectivo' && hasCapturedBreakdown
       await purchaseService.create(
         {
           purchaseId,
@@ -300,10 +308,8 @@ export function PurchasesPage({
           sourceStoreId:
             fundingSource === 'store_cash' ? sourceStoreId : undefined,
           paymentMethod,
-          cashBreakdownEnabled,
-          bills: requiresCashBreakdown ? bills : undefined,
-          coinsAmount:
-            requiresCashBreakdown ? Number(coinsAmount || 0) : 0,
+          bills: financialBreakdownCaptured ? bills : undefined,
+          coinsAmount: financialBreakdownCaptured ? coinsAmount : 0,
         },
         user,
       )
@@ -467,7 +473,7 @@ export function PurchasesPage({
         open={formOpen}
         returnFocusRef={fabRef}
         title={confirming ? 'Confirmar compra' : 'Nueva Compra'}
-        onClose={() => setFormOpen(false)}
+        onClose={closeForm}
       >
         {formError && <p className="alert-error mt-5">{formError}</p>}
         {confirming ? (
@@ -526,18 +532,18 @@ export function PurchasesPage({
                       <p className="mt-1 text-xs text-slate-500">Opcional para pagos desde la tienda.</p>
                     </div>
                     <button
-                      aria-checked={cashBreakdownEnabled}
+                      aria-checked={cashBreakdownOpen}
                       aria-label="Registrar desglose de efectivo"
-                      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${cashBreakdownEnabled ? 'bg-teal-700' : 'bg-slate-300'}`}
+                      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${cashBreakdownOpen ? 'bg-teal-700' : 'bg-slate-300'}`}
                       role="switch"
                       type="button"
-                      onClick={() => handleCashBreakdownToggle(!cashBreakdownEnabled)}
+                      onClick={() => handleCashBreakdownToggle(!cashBreakdownOpen)}
                     >
-                      <span className={`size-5 rounded-full bg-white shadow transition ${cashBreakdownEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                      <span className={`size-5 rounded-full bg-white shadow transition ${cashBreakdownOpen ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
                   </div>
                 )}
-                {requiresCashBreakdown && (
+                {cashBreakdownVisible && (
                   <div>
                     <p className="field-label">Desglose de efectivo</p>
                     <div className="mt-2">
@@ -545,7 +551,9 @@ export function PurchasesPage({
                         coinsValue={coinsAmount}
                         showTotal={false}
                         value={bills}
-                        onCoinsChange={setCoinsAmount}
+                        onCoinsChange={(value) =>
+                          setCoinsAmount(value === '' ? 0 : Number(value))
+                        }
                         onChange={setBills}
                       />
                     </div>
@@ -556,7 +564,7 @@ export function PurchasesPage({
               </div>
             )}
             <div className="mt-6 grid grid-cols-2 gap-3">
-              <button className="button-secondary" disabled={saving} type="button" onClick={() => setFormOpen(false)}>Cancelar</button>
+              <button className="button-secondary" disabled={saving} type="button" onClick={closeForm}>Cancelar</button>
               <button className="button-primary" disabled={saving || activeSuppliers.length === 0} type="submit">Continuar</button>
             </div>
           </form>
@@ -564,20 +572,29 @@ export function PurchasesPage({
       </AppModal>
 
       <AppModal
-        closeLabel="Cerrar confirmación de desglose"
-        open={breakdownConfirmationOpen}
-        title="Ocultar desglose de efectivo"
-        onClose={() => setBreakdownConfirmationOpen(false)}
+        closeLabel="Cancelar cierre del contador"
+        open={breakdownCloseConfirmationOpen}
+        title="¿Cerrar contador de efectivo?"
+        onClose={() => setBreakdownCloseConfirmationOpen(false)}
       >
         <p className="mt-5 text-sm leading-6 text-slate-600">
-          Las cantidades de billetes y monedas capturadas se eliminarán.
+          Hay billetes o monedas capturados por encima de cero. Si cierras el
+          contador, esos valores se eliminarán.
         </p>
         <div className="mt-6 grid grid-cols-2 gap-3">
-          <button className="button-secondary" type="button" onClick={() => setBreakdownConfirmationOpen(false)}>
+          <button
+            className="button-secondary"
+            type="button"
+            onClick={() => setBreakdownCloseConfirmationOpen(false)}
+          >
             Cancelar
           </button>
-          <button className="button-primary" type="button" onClick={hideCashBreakdown}>
-            Ocultar
+          <button
+            className="button-primary"
+            type="button"
+            onClick={closeCashBreakdownAndClear}
+          >
+            Cerrar y limpiar
           </button>
         </div>
       </AppModal>

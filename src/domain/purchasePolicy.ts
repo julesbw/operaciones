@@ -1,22 +1,33 @@
 import type {
+  CentralCashBills,
   PaymentFundingSource,
   PaymentMethod,
 } from './models'
 
+export function hasCapturedCashBreakdown(
+  bills?: CentralCashBills,
+  coinsAmount = 0,
+): boolean {
+  return (
+    Boolean(bills && Object.values(bills).some((count) => count !== 0)) ||
+    coinsAmount !== 0
+  )
+}
+
 export function requiresCashBreakdown(options: {
   fundingSource: PaymentFundingSource
   paymentMethod: PaymentMethod
-  cashBreakdownEnabled: boolean
+  hasCapturedBreakdown: boolean
 }): boolean {
   return (
     options.paymentMethod === 'efectivo' &&
     (options.fundingSource === 'central_cash' ||
       (options.fundingSource === 'store_cash' &&
-        options.cashBreakdownEnabled))
+        options.hasCapturedBreakdown))
   )
 }
 
-export function cashBreakdownEnabledAfterFundingSourceChange(options: {
+export function cashBreakdownOpenAfterFundingSourceChange(options: {
   currentFundingSource: PaymentFundingSource
   nextFundingSource: PaymentFundingSource
   hasCapturedBreakdown: boolean
@@ -26,4 +37,11 @@ export function cashBreakdownEnabledAfterFundingSourceChange(options: {
     (options.currentFundingSource === 'central_cash' &&
       options.hasCapturedBreakdown)
   )
+}
+
+export function shouldConfirmCashBreakdownClose(options: {
+  nextOpen: boolean
+  hasCapturedBreakdown: boolean
+}): boolean {
+  return !options.nextOpen && options.hasCapturedBreakdown
 }

@@ -19,6 +19,7 @@ export type RemoteBootstrapResult =
   | { status: 'requires-login' }
 
 type RemoteBootstrapOptions = {
+  forceRetry?: boolean
   profile?: UserProfile
   onIdentityResolved?: (userId: string | undefined) => void
 }
@@ -102,7 +103,9 @@ export class RemoteBootstrapService {
       await localContextService.setAccessState('signed-out')
       throw new RemoteBootstrapCancelledError()
     }
-    const sync = await syncService.process()
+    const sync = await syncService.process({
+      forceRetry: options.forceRetry,
+    })
     ensureActive()
     if (profile.role === 'admin' && !profile.demo) {
       await Promise.all([

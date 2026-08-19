@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  cashBreakdownEnabledAfterFundingSourceChange,
+  cashBreakdownOpenAfterFundingSourceChange,
+  hasCapturedCashBreakdown,
   requiresCashBreakdown,
+  shouldConfirmCashBreakdownClose,
 } from './purchasePolicy'
 
 describe('purchase cash breakdown policy', () => {
@@ -10,35 +12,35 @@ describe('purchase cash breakdown policy', () => {
       requiresCashBreakdown({
         fundingSource: 'store_cash',
         paymentMethod: 'efectivo',
-        cashBreakdownEnabled: false,
+        hasCapturedBreakdown: false,
       }),
     ).toBe(false)
     expect(
       requiresCashBreakdown({
         fundingSource: 'store_cash',
         paymentMethod: 'efectivo',
-        cashBreakdownEnabled: true,
+        hasCapturedBreakdown: true,
       }),
     ).toBe(true)
     expect(
       requiresCashBreakdown({
         fundingSource: 'central_cash',
         paymentMethod: 'efectivo',
-        cashBreakdownEnabled: false,
+        hasCapturedBreakdown: false,
       }),
     ).toBe(true)
     expect(
       requiresCashBreakdown({
         fundingSource: 'central_cash',
         paymentMethod: 'tarjeta',
-        cashBreakdownEnabled: false,
+        hasCapturedBreakdown: false,
       }),
     ).toBe(false)
   })
 
   it('turns the breakdown on when changing to central cash', () => {
     expect(
-      cashBreakdownEnabledAfterFundingSourceChange({
+      cashBreakdownOpenAfterFundingSourceChange({
         currentFundingSource: 'store_cash',
         nextFundingSource: 'central_cash',
         hasCapturedBreakdown: false,
@@ -48,17 +50,64 @@ describe('purchase cash breakdown policy', () => {
 
   it('keeps captured values visible when changing central cash to store cash', () => {
     expect(
-      cashBreakdownEnabledAfterFundingSourceChange({
+      cashBreakdownOpenAfterFundingSourceChange({
         currentFundingSource: 'central_cash',
         nextFundingSource: 'store_cash',
         hasCapturedBreakdown: true,
       }),
     ).toBe(true)
     expect(
-      cashBreakdownEnabledAfterFundingSourceChange({
+      cashBreakdownOpenAfterFundingSourceChange({
         currentFundingSource: 'central_cash',
         nextFundingSource: 'store_cash',
         hasCapturedBreakdown: false,
+      }),
+    ).toBe(false)
+  })
+
+  it('detects only real captured cash values', () => {
+    expect(
+      hasCapturedCashBreakdown({
+        b1000: 0,
+        b500: 0,
+        b200: 0,
+        b100: 0,
+        b50: 0,
+        b20: 0,
+      }),
+    ).toBe(false)
+    expect(
+      hasCapturedCashBreakdown(
+        {
+          b1000: 1,
+          b500: 0,
+          b200: 0,
+          b100: 0,
+          b50: 0,
+          b20: 0,
+        },
+        0,
+      ),
+    ).toBe(true)
+  })
+
+  it('confirms before closing a counter that has captured values', () => {
+    expect(
+      shouldConfirmCashBreakdownClose({
+        nextOpen: false,
+        hasCapturedBreakdown: true,
+      }),
+    ).toBe(true)
+    expect(
+      shouldConfirmCashBreakdownClose({
+        nextOpen: false,
+        hasCapturedBreakdown: false,
+      }),
+    ).toBe(false)
+    expect(
+      shouldConfirmCashBreakdownClose({
+        nextOpen: true,
+        hasCapturedBreakdown: true,
       }),
     ).toBe(false)
   })

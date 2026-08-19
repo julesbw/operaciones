@@ -326,7 +326,7 @@ export function AppShell({
               <span className="hidden sm:inline">
                 {!networkAvailable
                   ? 'Sin conexión'
-                  : backendReachable === false
+                  : backendReachable === false || syncError
                     ? 'Error de sincronización'
                   : syncing
                     ? 'Sincronizando'
