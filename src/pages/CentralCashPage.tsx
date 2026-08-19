@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppModal } from '../components/AppModal'
+import { BillCounter } from '../components/BillCounter'
 import { DatePickerButton } from '../components/DatePickerButton'
 import {
   FilterChipGroup,
@@ -84,7 +85,7 @@ function newAdjustment(): AdjustmentForm {
     concept: '',
     notes: '',
     bills: { ...EMPTY_CENTRAL_CASH_BILLS },
-    coinsAmount: '0',
+    coinsAmount: '',
   }
 }
 
@@ -905,81 +906,23 @@ export function CentralCashPage({
                   </strong>
                 </div>
               </div>
-              <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200">
-                    <div className="grid grid-cols-[minmax(5rem,1fr)_minmax(4.25rem,0.8fr)_minmax(5.5rem,auto)] gap-2 bg-slate-50 px-3 py-2.5 text-center text-[10px] font-extrabold uppercase tracking-wider text-slate-400 sm:grid-cols-[minmax(6rem,1fr)_7rem_minmax(7rem,auto)] sm:px-4">
-                      <span className="text-left">Denominación</span>
-                      <span>Conteo</span>
-                      <span className="text-right">Subtotal</span>
-                    </div>
-                    <div className="divide-y divide-slate-100 px-3 sm:px-4">
-                      {BILL_DENOMINATIONS.map((denomination) => {
-                        const isCoins = denomination.key === 'monedas'
-                        const fieldValue = isCoins
-                          ? adjustment.coinsAmount
-                          : adjustment.bills[denomination.key]
-                        const numericValue = Number(fieldValue || 0)
-                        const subtotal = isCoins
-                          ? numericValue
-                          : numericValue * denomination.value
-
-                        return (
-                          <label
-                            className="grid min-h-14 grid-cols-[minmax(5rem,1fr)_minmax(4.25rem,0.8fr)_minmax(5.5rem,auto)] items-center gap-2 sm:grid-cols-[minmax(6rem,1fr)_7rem_minmax(7rem,auto)]"
-                            key={denomination.key}
-                          >
-                            <span className="text-sm font-bold text-slate-700">
-                              {denomination.label}
-                            </span>
-                            <input
-                              aria-label={
-                                isCoins
-                                  ? 'Monto total en monedas del ajuste'
-                                  : `Cantidad de billetes de ${denomination.value} pesos del ajuste`
-                              }
-                              className="h-10 min-w-0 rounded-lg border border-slate-300 px-2 text-center text-base font-bold outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15"
-                              inputMode={isCoins ? 'decimal' : 'numeric'}
-                              min="0"
-                              step={isCoins ? '0.01' : '1'}
-                              type="number"
-                              value={fieldValue}
-                              onChange={(event) => {
-                                if (isCoins) {
-                                  setAdjustment((current) =>
-                                    current
-                                      ? {
-                                          ...current,
-                                          coinsAmount: event.target.value,
-                                        }
-                                      : current,
-                                  )
-                                  return
-                                }
-
-                                const count = Math.max(
-                                  0,
-                                  Math.trunc(Number(event.target.value) || 0),
-                                )
-                                setAdjustment((current) =>
-                                  current
-                                    ? {
-                                        ...current,
-                                        bills: {
-                                          ...current.bills,
-                                          [denomination.key]: count,
-                                        },
-                                      }
-                                    : current,
-                                )
-                              }}
-                            />
-                            <span className="text-right text-sm font-extrabold tabular-nums text-slate-900">
-                              {currencyFormatter.format(subtotal)}
-                            </span>
-                          </label>
-                        )
-                      })}
-                    </div>
-                    <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="mt-2">
+                <BillCounter
+                  coinsValue={adjustment.coinsAmount}
+                  showTotal={false}
+                  value={adjustment.bills}
+                  onCoinsChange={(coinsAmount) =>
+                    setAdjustment((current) =>
+                      current ? { ...current, coinsAmount } : current,
+                    )
+                  }
+                  onChange={(bills) =>
+                    setAdjustment((current) =>
+                      current ? { ...current, bills } : current,
+                    )
+                  }
+                />
+                    <div className="mt-3 flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-4 py-3">
                       <div>
                         <p className="text-sm font-bold text-slate-700">
                           Efectivo total

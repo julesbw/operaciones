@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AppModal } from '../components/AppModal'
+import { BillCounter } from '../components/BillCounter'
 import { DatePickerButton } from '../components/DatePickerButton'
 import {
   FilterChipGroup,
@@ -53,7 +54,10 @@ import {
 import { connectivityService } from '../services/connectivityService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
-import { currencyFormatter } from '../utils/money'
+import {
+  calculateCentralCashBillsTotal,
+  currencyFormatter,
+} from '../utils/money'
 
 type ClosingsPageProps = {
   stores: Store[]
@@ -233,9 +237,7 @@ function ClosingAdjustmentForm({
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const billTotal =
-    bills.b1000 * 1000 + bills.b500 * 500 + bills.b200 * 200 +
-    bills.b100 * 100 + bills.b50 * 50 + bills.b20 * 20 + Number(coinsAmount || 0)
+  const billTotal = calculateCentralCashBillsTotal(bills) + Number(coinsAmount || 0)
   const amountValue = moneyValue(amount)
   const valid = Boolean(
     networkAvailable && amountValue > 0 && concept.trim() &&
@@ -296,23 +298,14 @@ function ClosingAdjustmentForm({
       </label>
       <fieldset>
         <legend className="field-label">Desglose de efectivo</legend>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          {(['b1000', 'b500', 'b200', 'b100', 'b50', 'b20'] as const).map((key) => (
-            <label className="field-label text-xs" key={key}>{key.replace('b', '$')}
-              <input className="field" max={type === 'outflow' ? availableStock[key] : undefined} min="0" step="1" type="number" value={bills[key]} onChange={(event) => {
-                const value = Math.max(0, Math.trunc(Number(event.target.value) || 0))
-                setBills((current) => ({
-                  ...current,
-                  [key]: type === 'outflow'
-                    ? Math.min(value, Math.max(0, availableStock[key]))
-                    : value,
-                }))
-              }} />
-            </label>
-          ))}
-          <label className="field-label text-xs">Monedas
-            <input className="field" max={type === 'outflow' ? availableStock.monedas : undefined} min="0" step="0.01" type="number" value={coinsAmount} onChange={(event) => {
-              const rawValue = event.target.value
+        <div className="mt-2">
+          <BillCounter
+            coinsValue={coinsAmount}
+            coinsMax={type === 'outflow' ? availableStock.monedas : undefined}
+            maxCounts={type === 'outflow' ? availableStock : undefined}
+            showTotal={false}
+            value={bills}
+            onCoinsChange={(rawValue) => {
               if (rawValue === '') {
                 setCoinsAmount('')
                 return
@@ -321,8 +314,9 @@ function ClosingAdjustmentForm({
               setCoinsAmount(String(type === 'outflow'
                 ? Math.min(Math.max(0, value || 0), Math.max(0, availableStock.monedas))
                 : Math.max(0, value || 0)))
-            }} />
-          </label>
+            }}
+            onChange={setBills}
+          />
         </div>
         <p className={`mt-2 text-right text-sm font-black ${Math.abs(billTotal - amountValue) < 0.005 ? 'text-slate-900' : 'text-red-700'}`}>
           Desglose: {currencyFormatter.format(billTotal)}
@@ -1329,44 +1323,23 @@ function ClosingFlow({
                   <h2 className="mt-2 text-2xl font-black text-slate-950">Cuenta el efectivo físico</h2>
                   <p className="mt-2 text-sm text-slate-500">Captura cantidades de billetes; en monedas registra el monto total.</p>
                 </div>
-                <div className="divide-y divide-slate-100 border-y border-slate-200 px-5 sm:px-6">
-                  {BILL_DENOMINATIONS.map((denomination) => {
-                    const isCoins = denomination.key === 'monedas'
-                    const value = draft.bills[denomination.key]
-                    const subtotal = isCoins ? value : value * denomination.value
-                    return (
-                      <label
-                        className="grid min-h-16 grid-cols-[minmax(3.5rem,0.8fr)_minmax(4.25rem,1fr)_minmax(4.5rem,auto)] items-center gap-2 sm:grid-cols-[5rem_1fr_minmax(5rem,auto)] sm:gap-3"
-                        key={denomination.key}
-                      >
-                        <span className="text-sm font-bold text-slate-700">{denomination.label}</span>
-                        <input
-                          aria-label={isCoins ? 'Monto total en monedas' : `Cantidad de billetes de ${denomination.value} pesos`}
-                          className="h-11 min-w-0 rounded-lg border border-slate-300 px-3 text-center text-base font-bold outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15"
-                          inputMode={isCoins ? 'decimal' : 'numeric'}
-                          min="0"
-                          placeholder="0"
-                          step={isCoins ? '0.01' : '1'}
-                          type="number"
-                          value={value || ''}
-                          onChange={(event) => {
-                            const parsed = numberValue(event.target.value)
-                            updateDraft({
-                              bills: {
-                                ...draft.bills,
-                                [denomination.key]: isCoins
-                                  ? Math.round(parsed * 100) / 100
-                                  : Math.floor(parsed),
-                              } as Bills,
-                            })
-                          }}
-                        />
-                        <span className="text-right text-sm font-extrabold tabular-nums text-slate-900">
-                          {currencyFormatter.format(subtotal)}
-                        </span>
-                      </label>
-                    )
-                  })}
+                <div className="border-y border-slate-200 px-5 py-5 sm:px-6">
+                  <BillCounter
+                    coinsValue={draft.bills.monedas}
+                    showTotal={false}
+                    value={draft.bills}
+                    onCoinsChange={(rawValue) =>
+                      updateDraft({
+                        bills: {
+                          ...draft.bills,
+                          monedas: Math.round(Number(rawValue || 0) * 100) / 100,
+                        },
+                      })
+                    }
+                    onChange={(billCounts) =>
+                      updateDraft({ bills: { ...draft.bills, ...billCounts } })
+                    }
+                  />
                 </div>
                 <div className="flex items-center justify-between gap-4 bg-slate-50 px-5 py-5 sm:px-6">
                   <div className="min-w-0">
@@ -1404,52 +1377,56 @@ function ClosingFlow({
                     <span>Permanece</span>
                     <span>Retirar</span>
                   </div>
-                  <div className="divide-y divide-slate-100 px-2 sm:px-4">
-                    {BILL_DENOMINATIONS.map((denomination, index) => {
-                      const isCoins = denomination.key === 'monedas'
-                      const counted = draft.bills[denomination.key]
-                      const balance = draft.balanceBills[denomination.key]
-                      const withdraw = summary.withdrawBills[denomination.key]
-                      const invalid = balance > counted
+                  <BillCounter
+                    autoFocusFirst
+                    coinsValue={draft.balanceBills.monedas}
+                    coinsMax={draft.bills.monedas}
+                    getAriaLabel={(key) => `${key.replace('b', '$')} que permanecen en caja`}
+                    getInputClassName={(key) => {
+                      const invalid = draft.balanceBills[key] > draft.bills[key]
+                      return `h-10 min-w-0 rounded-lg border px-1 text-center font-bold outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 sm:px-2 ${invalid ? 'border-red-400 bg-red-50 text-red-800' : 'border-slate-300'}`
+                    }}
+                    maxCounts={draft.bills}
+                    renderAfterInput={(key) => {
+                      const invalid = draft.balanceBills[key] > draft.bills[key]
                       return (
-                        <label
-                          className="grid min-h-16 grid-cols-[minmax(3.25rem,1fr)_2.625rem_3.5rem_2.75rem] items-center gap-1 sm:grid-cols-[minmax(6rem,1fr)_5rem_7rem_5rem] sm:gap-2"
-                          key={denomination.key}
-                        >
-                          <span className="text-sm font-bold text-slate-700">{denomination.label}</span>
-                          <span className="text-center text-sm font-semibold tabular-nums text-slate-500">
-                            {counted}
-                          </span>
-                          <input
-                            aria-label={`${denomination.label} que permanecen en caja`}
-                            autoFocus={index === 0}
-                            className={`h-10 min-w-0 rounded-lg border px-1 text-center font-bold outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-600/15 sm:px-2 ${invalid ? 'border-red-400 bg-red-50 text-red-800' : 'border-slate-300'}`}
-                            inputMode={isCoins ? 'decimal' : 'numeric'}
-                            max={counted}
-                            min="0"
-                            placeholder="0"
-                            step={isCoins ? '0.01' : '1'}
-                            type="number"
-                            value={balance || ''}
-                            onChange={(event) => {
-                              const parsed = numberValue(event.target.value)
-                              updateDraft({
-                                balanceBills: {
-                                  ...draft.balanceBills,
-                                  [denomination.key]: isCoins
-                                    ? Math.round(parsed * 100) / 100
-                                    : Math.floor(parsed),
-                                } as Bills,
-                              })
-                            }}
-                          />
-                          <span className={`text-center text-sm font-extrabold tabular-nums ${invalid ? 'text-red-700' : 'text-teal-800'}`}>
-                            {withdraw}
-                          </span>
-                        </label>
+                        <span className={`text-center text-sm font-extrabold tabular-nums ${invalid ? 'text-red-700' : 'text-teal-800'}`}>
+                          {summary.withdrawBills[key]}
+                        </span>
                       )
-                    })}
-                  </div>
+                    }}
+                    renderCoinsAfterInput={
+                      <span className={`text-center text-sm font-extrabold tabular-nums ${draft.balanceBills.monedas > draft.bills.monedas ? 'text-red-700' : 'text-teal-800'}`}>
+                        {summary.withdrawBills.monedas}
+                      </span>
+                    }
+                    renderCoinsBeforeInput={
+                      <span className="text-center text-sm font-semibold tabular-nums text-slate-500">
+                        {draft.bills.monedas}
+                      </span>
+                    }
+                    renderBeforeInput={(key) => (
+                      <span className="text-center text-sm font-semibold tabular-nums text-slate-500">
+                        {draft.bills[key]}
+                      </span>
+                    )}
+                    showTotal={false}
+                    value={draft.balanceBills}
+                    variant="table"
+                    onChange={(billCounts) =>
+                      updateDraft({
+                        balanceBills: { ...draft.balanceBills, ...billCounts },
+                      })
+                    }
+                    onCoinsChange={(rawValue) =>
+                      updateDraft({
+                        balanceBills: {
+                          ...draft.balanceBills,
+                          monedas: Math.round(Number(rawValue || 0) * 100) / 100,
+                        },
+                      })
+                    }
+                  />
                 </div>
                 {invalidCashBalance && (
                   <p className="alert-error mt-4">

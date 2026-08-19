@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { calculateBillsTotal, calculateSuggestedPay } from './money'
+import {
+  calculateBillsTotal,
+  calculateCentralCashBillsTotal,
+  calculateSuggestedPay,
+} from './money'
 
 describe('calculateSuggestedPay', () => {
   it('preserves the exact weekly pay for six worked days', () => {
@@ -29,5 +33,20 @@ describe('calculateBillsTotal', () => {
         monedas: 35,
       }),
     ).toBe(2_425)
+  })
+})
+
+describe('calculateCentralCashBillsTotal', () => {
+  it('calculates only the six bill denominations', () => {
+    expect(
+      calculateCentralCashBillsTotal({
+        b1000: 2,
+        b500: 1,
+        b200: 0,
+        b100: 3,
+        b50: 0,
+        b20: 1,
+      }),
+    ).toBe(2_820)
   })
 })

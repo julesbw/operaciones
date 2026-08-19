@@ -1,18 +1,14 @@
-import { BILL_DENOMINATIONS } from './constants'
 import type {
   CentralCashBills,
   CentralCashMovementType,
 } from './models'
+import { calculateCentralCashBillsTotal } from '../utils/money'
 
 export function calculateCentralCashPhysicalTotal(
   bills: CentralCashBills,
   coinsAmount: number,
 ): number {
-  const billsTotal = BILL_DENOMINATIONS.reduce((total, denomination) => {
-    if (denomination.key === 'monedas') return total
-    return total + bills[denomination.key] * denomination.value
-  }, 0)
-  return Math.round((billsTotal + coinsAmount) * 100) / 100
+  return Math.round((calculateCentralCashBillsTotal(bills) + coinsAmount) * 100) / 100
 }
 
 export function centralCashSignedAmount(

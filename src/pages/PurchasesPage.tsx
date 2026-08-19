@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react'
 import { AppModal } from '../components/AppModal'
+import { BillCounter } from '../components/BillCounter'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import {
@@ -15,7 +16,7 @@ import {
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
 import { CheckIcon, PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
-import { BILL_DENOMINATIONS, EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
+import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
 import {
   PAYMENT_METHODS,
   type CentralCashBills,
@@ -31,7 +32,10 @@ import { purchaseService } from '../services/purchaseService'
 import { referenceDataService } from '../services/referenceDataService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
-import { currencyFormatter } from '../utils/money'
+import {
+  calculateCentralCashBillsTotal,
+  currencyFormatter,
+} from '../utils/money'
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   efectivo: 'Efectivo',
@@ -167,14 +171,7 @@ export function PurchasesPage({
   }, [purchases])
 
   const denominationTotal = useMemo(() => {
-    const billsTotal = BILL_DENOMINATIONS.filter(
-      (denomination) => denomination.key !== 'monedas',
-    ).reduce(
-      (total, denomination) =>
-        total + bills[denomination.key as keyof CentralCashBills] * denomination.value,
-      0,
-    )
-    return billsTotal + Number(coinsAmount || 0)
+    return calculateCentralCashBillsTotal(bills) + Number(coinsAmount || 0)
   }, [bills, coinsAmount])
 
   const initialSupplierId = activeSuppliers[0]?.id ?? ''
@@ -473,11 +470,14 @@ export function PurchasesPage({
                 {paymentMethod === 'efectivo' && (
                   <div>
                     <p className="field-label">Denominaciones</p>
-                    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      {BILL_DENOMINATIONS.filter((denomination) => denomination.key !== 'monedas').map((denomination) => (
-                        <label className="text-xs font-bold text-slate-600" key={denomination.key}>{denomination.label}<input className="field" min="0" step="1" type="number" value={bills[denomination.key as keyof CentralCashBills] || ''} onChange={(event) => setBills((current) => ({ ...current, [denomination.key]: Math.max(0, Math.trunc(Number(event.target.value) || 0)) }))} /></label>
-                      ))}
-                      <label className="text-xs font-bold text-slate-600">Monedas<input className="field" min="0" step="0.01" type="number" value={coinsAmount} onChange={(event) => setCoinsAmount(event.target.value)} /></label>
+                    <div className="mt-2">
+                      <BillCounter
+                        coinsValue={coinsAmount}
+                        showTotal={false}
+                        value={bills}
+                        onCoinsChange={setCoinsAmount}
+                        onChange={setBills}
+                      />
                     </div>
                     <p className={`mt-3 text-right text-sm font-extrabold ${Math.round(denominationTotal * 100) === Math.round(Number(amount || 0) * 100) ? 'text-emerald-700' : 'text-amber-700'}`}>Total: {currencyFormatter.format(denominationTotal)}</p>
                   </div>

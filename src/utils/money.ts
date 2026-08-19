@@ -1,5 +1,5 @@
 import { BILL_DENOMINATIONS } from '../domain/constants'
-import type { Bills } from '../domain/models'
+import type { Bills, CentralCashBills } from '../domain/models'
 
 export const currencyFormatter = new Intl.NumberFormat('es-MX', {
   style: 'currency',
@@ -14,6 +14,13 @@ export function calculateBillsTotal(bills: Bills): number {
       total + bills[denomination.key] * denomination.value,
     0,
   )
+}
+
+export function calculateCentralCashBillsTotal(bills: CentralCashBills): number {
+  return BILL_DENOMINATIONS.reduce((total, denomination) => {
+    if (denomination.key === 'monedas') return total
+    return total + bills[denomination.key] * denomination.value
+  }, 0)
 }
 
 export function calculateSuggestedPay(
