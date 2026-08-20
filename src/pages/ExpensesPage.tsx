@@ -25,6 +25,10 @@ import {
   EMPTY_CENTRAL_CASH_BILLS,
 } from '../domain/constants'
 import {
+  cashBreakdownMatchesAmount,
+  hasCapturedCashBreakdown,
+} from '../domain/purchasePolicy'
+import {
   PAYMENT_METHODS,
   type CentralCashBills,
   type Expense,
@@ -290,6 +294,16 @@ export function ExpensesPage({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrors([])
+
+    if (
+      cashBreakdownVisible &&
+      hasCapturedCashBreakdown(bills, coinsAmount) &&
+      !cashBreakdownMatchesAmount(bills, coinsAmount, Number(amount))
+    ) {
+      setErrors(['Las denominaciones deben sumar exactamente el monto'])
+      return
+    }
+
     setSaving(true)
 
     try {

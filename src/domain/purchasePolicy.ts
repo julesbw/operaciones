@@ -3,6 +3,7 @@ import type {
   PaymentFundingSource,
   PaymentMethod,
 } from './models'
+import { calculateCentralCashBillsTotal } from '../utils/money'
 
 export function hasCapturedCashBreakdown(
   bills?: CentralCashBills,
@@ -12,6 +13,16 @@ export function hasCapturedCashBreakdown(
     Boolean(bills && Object.values(bills).some((count) => count !== 0)) ||
     coinsAmount !== 0
   )
+}
+
+export function cashBreakdownMatchesAmount(
+  bills: CentralCashBills,
+  coinsAmount: number,
+  amount: number,
+): boolean {
+  if (!Number.isFinite(amount)) return false
+  const total = calculateCentralCashBillsTotal(bills) + coinsAmount
+  return Math.round(total * 100) === Math.round(amount * 100)
 }
 
 export function requiresCashBreakdown(options: {

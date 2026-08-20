@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   cashBreakdownOpenAfterFundingSourceChange,
+  cashBreakdownMatchesAmount,
   hasCapturedCashBreakdown,
   requiresCashBreakdown,
   shouldConfirmCashBreakdownClose,
@@ -110,5 +111,20 @@ describe('purchase cash breakdown policy', () => {
         hasCapturedBreakdown: true,
       }),
     ).toBe(false)
+  })
+
+  it('requires captured bills and coins to match the entered amount', () => {
+    const bills = {
+      b1000: 1,
+      b500: 0,
+      b200: 0,
+      b100: 0,
+      b50: 0,
+      b20: 0,
+    }
+
+    expect(cashBreakdownMatchesAmount(bills, 0, 1_000)).toBe(true)
+    expect(cashBreakdownMatchesAmount(bills, 0, 950)).toBe(false)
+    expect(cashBreakdownMatchesAmount(bills, 10, 1_010)).toBe(true)
   })
 })

@@ -3,14 +3,12 @@ import { AppModal } from './AppModal'
 import { BillCounter } from './BillCounter'
 import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
 import {
+  cashBreakdownMatchesAmount,
   hasCapturedCashBreakdown,
   shouldConfirmCashBreakdownClose,
 } from '../domain/purchasePolicy'
 import type { CentralCashBills } from '../domain/models'
-import {
-  calculateCentralCashBillsTotal,
-  currencyFormatter,
-} from '../utils/money'
+import { calculateCentralCashBillsTotal, currencyFormatter } from '../utils/money'
 
 type CashBreakdownControlProps = {
   amount: number | string
@@ -97,7 +95,7 @@ export function CashBreakdownControl({
               onChange={onBillsChange}
             />
           </div>
-          <p className={`mt-3 text-right text-sm font-extrabold ${Math.round(breakdownTotal * 100) === Math.round(Number(amount || 0) * 100) ? 'text-emerald-700' : 'text-amber-700'}`}>
+          <p className={`mt-3 text-right text-sm font-extrabold ${cashBreakdownMatchesAmount(bills, coinsAmount, Number(amount || 0)) ? 'text-emerald-700' : 'text-amber-700'}`}>
             Total: {currencyFormatter.format(breakdownTotal)}
           </p>
         </div>

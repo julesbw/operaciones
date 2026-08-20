@@ -19,6 +19,7 @@ import { CheckIcon, PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
 import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
 import {
   cashBreakdownOpenAfterFundingSourceChange,
+  cashBreakdownMatchesAmount,
   hasCapturedCashBreakdown,
   requiresCashBreakdown as requiresPurchaseCashBreakdown,
 } from '../domain/purchasePolicy'
@@ -37,10 +38,7 @@ import { purchaseService } from '../services/purchaseService'
 import { referenceDataService } from '../services/referenceDataService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
-import {
-  calculateCentralCashBillsTotal,
-  currencyFormatter,
-} from '../utils/money'
+import { currencyFormatter } from '../utils/money'
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   efectivo: 'Efectivo',
@@ -176,9 +174,6 @@ export function PurchasesPage({
     return [...groups.entries()]
   }, [purchases])
 
-  const denominationTotal = useMemo(() => {
-    return calculateCentralCashBillsTotal(bills) + coinsAmount
-  }, [bills, coinsAmount])
   const hasCapturedBreakdown = hasCapturedCashBreakdown(bills, coinsAmount)
   const requiresCashBreakdown = requiresPurchaseCashBreakdown({
     fundingSource,
@@ -256,7 +251,7 @@ export function PurchasesPage({
     }
     if (
       requiresCashBreakdown &&
-      Math.round(denominationTotal * 100) !== Math.round(numericAmount * 100)
+      !cashBreakdownMatchesAmount(bills, coinsAmount, numericAmount)
     ) {
       setFormError('Las denominaciones deben sumar exactamente el monto.')
       return
