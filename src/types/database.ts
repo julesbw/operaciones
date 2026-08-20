@@ -1,4 +1,5 @@
 import type {
+  AppAccountRole,
   AttendanceStatus,
   Bills,
   CentralCashBills,
@@ -389,6 +390,36 @@ export type ExportBatchItemRow = {
   reservation_status: 'reserved' | 'confirmed' | 'released'
   created_at: string
 }
+
+export type AppAccountResultRow = {
+  id: string
+  username: string
+  display_name: string
+  role: AppAccountRole
+  store_id: string
+  store_name: string
+  collaborator_id: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type OperatorSessionResultRow = {
+  session_token: string
+  account_id: string
+  username: string
+  display_name: string
+  role: AppAccountRole
+  store_id: string
+  store_name: string
+  collaborator_id: string | null
+  expires_at: string
+}
+
+export type ValidatedOperatorSessionResultRow = Omit<
+  OperatorSessionResultRow,
+  'session_token'
+>
 
 export type Database = {
   public: {
@@ -860,6 +891,52 @@ export type Database = {
           compensation_history: CollaboratorCompensationHistoryRow[]
           attendance: AttendanceRow[]
         }
+      }
+      list_app_accounts: {
+        Args: Record<never, never>
+        Returns: AppAccountResultRow[]
+      }
+      create_app_account: {
+        Args: {
+          p_display_name: string
+          p_username: string
+          p_role: AppAccountRole
+          p_store_id: string
+          p_collaborator_id: string | null
+          p_pin: string
+        }
+        Returns: AppAccountResultRow[]
+      }
+      update_app_account: {
+        Args: {
+          p_id: string
+          p_display_name: string
+          p_username: string
+          p_role: AppAccountRole
+          p_store_id: string
+          p_collaborator_id: string | null
+        }
+        Returns: AppAccountResultRow[]
+      }
+      set_app_account_status: {
+        Args: { p_id: string; p_is_active: boolean }
+        Returns: AppAccountResultRow[]
+      }
+      reset_app_account_pin: {
+        Args: { p_id: string; p_pin: string }
+        Returns: undefined
+      }
+      login_app_account: {
+        Args: { p_username: string; p_pin: string }
+        Returns: OperatorSessionResultRow[]
+      }
+      validate_app_session: {
+        Args: { p_session_token: string }
+        Returns: ValidatedOperatorSessionResultRow[]
+      }
+      revoke_app_session: {
+        Args: { p_session_token: string }
+        Returns: undefined
       }
     }
     Enums: Record<string, never>

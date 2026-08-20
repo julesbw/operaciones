@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AppModal } from '../components/AppModal'
+import { AppAccountsSection } from './AppAccountsSection'
 import { CheckIcon, PlusIcon, ReceiptIcon, SettingsIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
 import {
   ALL_STORES,
@@ -17,7 +18,7 @@ import { supplierService } from '../services/supplierService'
 import { WEEKDAYS } from '../domain/constants'
 import { currencyFormatter } from '../utils/money'
 
-type SettingsTab = 'stores' | 'suppliers' | 'team' | 'system'
+type SettingsTab = 'stores' | 'suppliers' | 'team' | 'users' | 'system'
 
 type SettingsPageProps = {
   stores: Store[]
@@ -466,6 +467,9 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
             <button className={tab === 'team' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('team')}>
               <UsersIcon className="size-4" /> Colaboradores
             </button>
+            <button className={tab === 'users' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('users')}>
+              <UsersIcon className="size-4" /> Usuarios
+            </button>
           </>
         )}
         <button className={tab === 'system' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('system')}>
@@ -671,6 +675,14 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
             )}
           </div>
         </div>
+      )}
+
+      {isAdmin && tab === 'users' && (
+        <AppAccountsSection
+          canMutate={canMutate && isSupabaseConfigured}
+          collaborators={collaborators}
+          stores={stores}
+        />
       )}
 
       {isAdmin && tab === 'suppliers' && (

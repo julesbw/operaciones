@@ -1,6 +1,10 @@
 export const APP_ROLES = ['cashier', 'admin'] as const
 export type AppRole = (typeof APP_ROLES)[number]
 
+// Esta identidad es deliberadamente independiente de la sesión técnica Supabase.
+export const APP_ACCOUNT_ROLES = ['cashier', 'store_manager'] as const
+export type AppAccountRole = (typeof APP_ACCOUNT_ROLES)[number]
+
 export const ENTITY_STATUSES = ['active', 'suspended', 'inactive'] as const
 export type EntityStatus = (typeof ENTITY_STATUSES)[number]
 
@@ -176,6 +180,34 @@ export type PaymentAttendanceItem = {
   dailyPaySnapshot: number
   suggestedAllocation: number
   createdAt: string
+}
+
+export type AppAccount = {
+  id: string
+  username: string
+  displayName: string
+  role: AppAccountRole
+  storeId: string
+  storeName?: string
+  collaboratorId?: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type OperatorSession = {
+  token: string
+  account: Pick<
+    AppAccount,
+    | 'id'
+    | 'username'
+    | 'displayName'
+    | 'role'
+    | 'storeId'
+    | 'storeName'
+    | 'collaboratorId'
+  >
+  expiresAt: string
 }
 
 export type Purchase = {
