@@ -130,6 +130,9 @@ export class OperationsDatabase extends Dexie {
       ...schemaV13,
       closingAdjustments: '&id, cashClosingId, createdAt',
     }
+    const schemaV15 = {
+      ...schemaV14,
+    }
 
     this.version(1).stores(schemaV1)
     this.version(2)
@@ -244,6 +247,17 @@ export class OperationsDatabase extends Dexie {
           })
       })
     this.version(14).stores(schemaV14)
+    this.version(15)
+      .stores(schemaV15)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<Expense, string>('expenses')
+          .toCollection()
+          .modify((expense) => {
+            expense.fundingSource ??= 'store_cash'
+            expense.sourceStoreId ??= expense.storeId
+          })
+      })
   }
 }
 

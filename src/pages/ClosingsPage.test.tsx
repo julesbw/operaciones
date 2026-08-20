@@ -74,6 +74,8 @@ function expense(id: string): Expense {
     amount: 100,
     concept: id,
     paymentMethod: 'efectivo',
+    fundingSource: 'store_cash',
+    sourceStoreId: draft.storeId,
     createdBy: user.id,
     createdAt: timestamp,
     updatedAt: timestamp,

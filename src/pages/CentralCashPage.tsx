@@ -231,6 +231,9 @@ function movementTitle(movement: CentralCashMovement): string {
   if (movement.sourceType === 'purchase_coin_compensation') {
     return 'Compensación de monedas · Compra'
   }
+  if (movement.sourceType === 'expense_coin_compensation') {
+    return 'Compensación de monedas · Gasto'
+  }
   return movement.concept
 }
 

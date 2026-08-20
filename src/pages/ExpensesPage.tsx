@@ -7,7 +7,9 @@ import {
   type FormEvent,
 } from 'react'
 import { AppModal } from '../components/AppModal'
+import { BillCounter } from '../components/BillCounter'
 import { DatePickerButton } from '../components/DatePickerButton'
+import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import {
   CheckIcon,
   PlusIcon,
@@ -20,20 +22,28 @@ import {
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
 import {
+  EMPTY_CENTRAL_CASH_BILLS,
+} from '../domain/constants'
+import {
   PAYMENT_METHODS,
+  type CentralCashBills,
   type Expense,
   type PaymentMethod,
+  type PaymentFundingSource,
   type Store,
   type UserProfile,
 } from '../domain/models'
+import { isSupabaseConfigured } from '../lib/supabase'
 import {
   expenseService,
   ExpenseValidationError,
 } from '../services/expenseService'
-import { connectivityService } from '../services/connectivityService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
-import { currencyFormatter } from '../utils/money'
+import {
+  calculateCentralCashBillsTotal,
+  currencyFormatter,
+} from '../utils/money'
 
 const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   efectivo: 'Efectivo',
@@ -58,6 +68,7 @@ type PaymentFilter = PaymentMethod | 'all'
 type ExpensesPageProps = {
   stores: Store[]
   user: UserProfile
+  networkAvailable: boolean
   onDataChanged: () => void
 }
 
@@ -83,7 +94,12 @@ function compactDate(value: string): string {
   return COMPACT_DATE_FORMATTER.format(new Date(`${value}T12:00:00`)).replace('.', '')
 }
 
-export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps) {
+export function ExpensesPage({
+  stores,
+  user,
+  networkAvailable,
+  onDataChanged,
+}: ExpensesPageProps) {
   const today = getLocalDate()
   const activeStores = useMemo(
     () => stores.filter((store) => store.status === 'active'),
@@ -110,12 +126,21 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
   const [initialFormDate, setInitialFormDate] = useState(today)
   const [amount, setAmount] = useState('')
   const [concept, setConcept] = useState('')
+  const [requestId, setRequestId] = useState('')
+  const [fundingSource, setFundingSource] =
+    useState<PaymentFundingSource>('store_cash')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo')
+  const [bills, setBills] = useState<CentralCashBills>({
+    ...EMPTY_CENTRAL_CASH_BILLS,
+  })
+  const [coinsAmount, setCoinsAmount] = useState(0)
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const amountInputRef = useRef<HTMLInputElement>(null)
+  const centralAvailable =
+    isAdmin && networkAvailable && isSupabaseConfigured && !user.demo
 
   const queryStoreId = isAdmin
     ? storeFilter === ALL_STORES
@@ -166,9 +191,12 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
     amount.trim().length > 0 ||
     concept.trim().length > 0 ||
     notes.trim().length > 0 ||
+    fundingSource !== 'store_cash' ||
     paymentMethod !== 'efectivo' ||
     formStoreId !== initialFormStoreId ||
-    formDate !== initialFormDate
+    formDate !== initialFormDate ||
+    Object.values(bills).some((count) => count > 0) ||
+    coinsAmount > 0
 
   const visibleExpenses = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('es-MX')
@@ -187,6 +215,8 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
     () => visibleExpenses.reduce((sum, expense) => sum + expense.amount, 0),
     [visibleExpenses],
   )
+  const centralBreakdownTotal =
+    calculateCentralCashBillsTotal(bills) + coinsAmount
 
   const groupedExpenses = useMemo(() => {
     const groups = new Map<string, Expense[]>()
@@ -232,7 +262,11 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
     setInitialFormDate(selectedDate)
     setAmount('')
     setConcept('')
+    setRequestId(crypto.randomUUID())
+    setFundingSource('store_cash')
     setPaymentMethod('efectivo')
+    setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
+    setCoinsAmount(0)
     setNotes('')
     setErrors([])
     setFormOpen(true)
@@ -242,40 +276,62 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
     setFormOpen(false)
   }
 
+  function changeFundingSource(nextFundingSource: PaymentFundingSource) {
+    setFundingSource(nextFundingSource)
+    setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
+    setCoinsAmount(0)
+    if (nextFundingSource === 'central_cash') {
+      setPaymentMethod('efectivo')
+    }
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setErrors([])
     setSaving(true)
 
     try {
+      if (fundingSource === 'central_cash' && !centralAvailable) {
+        throw new Error(
+          'Necesitas conexión para confirmar un Gasto desde Caja Central.',
+        )
+      }
       await expenseService.create(
         {
           storeId: formStoreId,
           businessDate: formDate,
           amount: Number(amount),
           concept,
+          requestId,
+          fundingSource,
+          sourceStoreId:
+            fundingSource === 'store_cash' ? formStoreId : undefined,
           paymentMethod,
+          bills: fundingSource === 'central_cash' ? bills : undefined,
+          coinsAmount: fundingSource === 'central_cash' ? coinsAmount : 0,
           notes,
         },
-        user.id,
+        user,
       )
       await load()
       setFeedback(
-        connectivityService.isNetworkAvailable()
-          ? 'Gasto registrado'
-          : 'Gasto registrado. Pendiente de sincronizar.',
+        fundingSource === 'store_cash' && !networkAvailable
+          ? 'Gasto registrado. Pendiente de sincronizar.'
+          : 'Gasto registrado',
       )
       setFormOpen(false)
       onDataChanged()
-      void syncService
-        .process()
-        .then(async () => {
-          await load()
-          onDataChanged()
-        })
-        .catch((cause: unknown) => {
-          console.error('No fue posible sincronizar el gasto', cause)
-        })
+      if (fundingSource === 'store_cash') {
+        void syncService
+          .process()
+          .then(async () => {
+            await load()
+            onDataChanged()
+          })
+          .catch((cause: unknown) => {
+            console.error('No fue posible sincronizar el gasto', cause)
+          })
+      }
     } catch (cause: unknown) {
       if (cause instanceof ExpenseValidationError) {
         setErrors(cause.messages)
@@ -464,12 +520,14 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
                           {expense.concept}
                         </p>
                         <p className="mt-0.5 text-xs leading-5 text-slate-500">
-                          {isAdmin && (
-                            <>
-                              <span>{storeNames.get(expense.storeId) ?? 'Tienda sin nombre'}</span>
-                              <span aria-hidden="true"> · </span>
-                            </>
-                          )}
+                          <span>
+                            {expense.fundingSource === 'central_cash'
+                              ? 'Caja Central'
+                              : isAdmin
+                                ? storeNames.get(expense.storeId) ?? 'Tienda sin nombre'
+                                : 'Caja de tienda'}
+                          </span>
+                          <span aria-hidden="true"> · </span>
                           {time}
                           <span aria-hidden="true"> · </span>
                           {PAYMENT_LABELS[expense.paymentMethod]}
@@ -548,6 +606,30 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
                 </div>
               )}
 
+              <div>
+                <p className="field-label">Fuente de fondos</p>
+                <FilterChipGroup
+                  ariaLabel="Fuente de fondos del gasto"
+                  options={[
+                    { value: 'store_cash', label: 'Caja de tienda' },
+                    ...(isAdmin
+                      ? [{
+                          value: 'central_cash' as const,
+                          label: 'Caja Central',
+                          disabled: !centralAvailable,
+                        }]
+                      : []),
+                  ]}
+                  value={fundingSource}
+                  onChange={changeFundingSource}
+                />
+                {isAdmin && !centralAvailable && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Caja Central requiere conexión y una sesión Supabase.
+                  </p>
+                )}
+              </div>
+
               <label className="field-label">
                 Monto
                 <div className="money-field">
@@ -596,12 +678,36 @@ export function ExpensesPage({ stores, user, onDataChanged }: ExpensesPageProps)
                     value={paymentMethod}
                     onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
                   >
-                    {PAYMENT_METHODS.map((method) => (
-                      <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>
-                    ))}
+                    {fundingSource === 'central_cash' ? (
+                      <option value="efectivo">Efectivo</option>
+                    ) : (
+                      PAYMENT_METHODS.map((method) => (
+                        <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>
+                      ))
+                    )}
                   </select>
                 </label>
               </div>
+
+              {fundingSource === 'central_cash' && paymentMethod === 'efectivo' && (
+                <div>
+                  <p className="field-label">Desglose de efectivo</p>
+                  <div className="mt-2">
+                    <BillCounter
+                      coinsValue={coinsAmount}
+                      showTotal={false}
+                      value={bills}
+                      onCoinsChange={(value) =>
+                        setCoinsAmount(value === '' ? 0 : Number(value))
+                      }
+                      onChange={setBills}
+                    />
+                  </div>
+                  <p className={`mt-3 text-right text-sm font-extrabold ${Math.round(centralBreakdownTotal * 100) === Math.round(Number(amount || 0) * 100) ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    Total: {currencyFormatter.format(centralBreakdownTotal)}
+                  </p>
+                </div>
+              )}
 
               <label className="field-label">
                 Notas <span className="font-normal text-slate-400">(opcional)</span>

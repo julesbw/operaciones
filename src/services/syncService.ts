@@ -4,9 +4,11 @@ import type {
   MerchandiseTransfer,
   SyncQueueItem,
 } from '../domain/models'
+import type { ExpenseRow } from '../types/database'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { connectivityService } from './connectivityService'
+import { mapExpenseRow } from './expenseService'
 import { purchaseService } from './purchaseService'
 
 export type SyncResult = {
@@ -21,20 +23,6 @@ export class SyncAuthenticationError extends Error {
     super(message)
     this.name = 'SyncAuthenticationError'
   }
-}
-
-type ExpenseRow = {
-  id: string
-  store_id: string
-  business_date: string
-  amount: number
-  concept: string
-  payment_method: Expense['paymentMethod']
-  notes: string | null
-  created_by: string
-  created_at: string
-  updated_at: string
-  version: number
 }
 
 type AttendanceRow = {
@@ -198,7 +186,7 @@ export class SyncService {
       supabase
         .from('expenses')
         .select(
-          'id, store_id, business_date, amount, concept, payment_method, notes, created_by, created_at, updated_at, version',
+          'id, store_id, business_date, amount, concept, payment_method, funding_source, source_store_id, notes, weekly_payment_id, created_by, created_at, updated_at, version',
         )
         .gte('business_date', sinceDate)
         .returns<ExpenseRow[]>(),
@@ -223,20 +211,7 @@ export class SyncService {
 
     await Promise.all([
       operationsRepository.saveRemoteExpenses(
-        expensesResult.data.map((expense) => ({
-          id: expense.id,
-          storeId: expense.store_id,
-          businessDate: expense.business_date,
-          amount: Number(expense.amount),
-          concept: expense.concept,
-          paymentMethod: expense.payment_method,
-          notes: expense.notes ?? undefined,
-          createdBy: expense.created_by,
-          createdAt: expense.created_at,
-          updatedAt: expense.updated_at,
-          version: expense.version,
-          syncStatus: 'synced',
-        })),
+        expensesResult.data.map((expense) => mapExpenseRow(expense)),
       ),
       operationsRepository.saveRemoteAttendance(
         attendanceResult.data.map((record) => ({

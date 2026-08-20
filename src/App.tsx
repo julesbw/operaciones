@@ -409,7 +409,12 @@ function App() {
         <DashboardPage pendingCount={pendingCount} revision={revision} stores={stores} user={user} onNavigate={navigate} />
       )}
       {page === 'expenses' && (
-        <ExpensesPage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />
+        <ExpensesPage
+          networkAvailable={networkAvailable}
+          stores={stores}
+          user={user}
+          onDataChanged={() => void refreshLocalState()}
+        />
       )}
       {page === 'transfers' && (
         <TransfersPage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />

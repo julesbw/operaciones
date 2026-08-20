@@ -105,6 +105,8 @@ function expense(
     amount,
     concept: id,
     paymentMethod,
+    fundingSource: 'store_cash',
+    sourceStoreId: draft.storeId,
     createdBy: 'admin-id',
     createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
@@ -311,6 +313,27 @@ describe('mergePendingStoreCashPurchases', () => {
         [remote, pending, staleSynced],
       ).map(({ purchase: item }) => item.id),
     ).toEqual([remote.purchase.id, pending.purchase.id])
+  })
+
+  it('never selects a central cash expense for a closing', () => {
+    const central = {
+      ...expense('central-expense', 800, 'efectivo'),
+      fundingSource: 'central_cash' as const,
+      sourceStoreId: undefined,
+    }
+
+    expect(
+      selectClosingMovements(
+        {
+          expenses: [central, expense('store-expense', 100, 'efectivo')],
+          outgoingTransfers: [],
+          storeCashPayments: [],
+          storeCashPurchases: [],
+        },
+        ['central-expense', 'store-expense'],
+        [],
+      ).expenses.map((item) => item.id),
+    ).toEqual(['store-expense'])
   })
 })
 

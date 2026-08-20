@@ -52,6 +52,8 @@ function expense(
     amount: 100,
     concept: `Gasto ${id}`,
     paymentMethod: 'efectivo',
+    fundingSource: 'store_cash',
+    sourceStoreId: storeId,
     createdBy: 'user-id',
     createdAt,
     updatedAt: createdAt,

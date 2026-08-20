@@ -85,6 +85,8 @@ export type Expense = {
   amount: number
   concept: string
   paymentMethod: PaymentMethod
+  fundingSource: PaymentFundingSource
+  sourceStoreId?: string
   notes?: string
   createdBy: string
   createdAt: string
@@ -241,6 +243,7 @@ export const CENTRAL_CASH_SOURCE_TYPES = [
   'purchase',
   'purchase_coin_compensation',
   'expense',
+  'expense_coin_compensation',
   'collaborator_payment',
   'bank_deposit',
   'other',
@@ -364,8 +367,19 @@ export type SyncQueueItem = {
 
 export type ExpenseInput = Pick<
   Expense,
-  'storeId' | 'businessDate' | 'amount' | 'concept' | 'paymentMethod' | 'notes'
->
+  | 'storeId'
+  | 'businessDate'
+  | 'amount'
+  | 'concept'
+  | 'paymentMethod'
+  | 'fundingSource'
+  | 'sourceStoreId'
+  | 'notes'
+> & {
+  requestId?: string
+  bills?: CentralCashBills
+  coinsAmount?: number
+}
 
 export type MerchandiseTransferInput = Pick<
   MerchandiseTransfer,

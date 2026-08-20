@@ -216,8 +216,9 @@ export function selectClosingMovements(
   const transferIdSet = new Set(transferIds)
   const paymentIdSet = new Set(paymentIds)
   const purchasePaymentIdSet = new Set(purchasePaymentIds)
-  const expenses = candidates.expenses.filter((expense) =>
-    expenseIdSet.has(expense.id),
+  const expenses = candidates.expenses.filter(
+    (expense) =>
+      expense.fundingSource === 'store_cash' && expenseIdSet.has(expense.id),
   )
   const outgoingTransfers = candidates.outgoingTransfers.filter((transfer) =>
     transferIdSet.has(transfer.id),
@@ -339,6 +340,8 @@ class ClosingService {
           amount: Number(expense.amount),
           concept: expense.concept,
           paymentMethod: expense.payment_method,
+          fundingSource: expense.funding_source ?? 'store_cash',
+          sourceStoreId: expense.source_store_id ?? undefined,
           notes: expense.notes ?? undefined,
           createdBy: expense.created_by,
           createdAt: expense.created_at,
@@ -446,7 +449,9 @@ class ClosingService {
       operationsRepository.listStoreCashPayments(storeId, businessDate),
       operationsRepository.listStoreCashPurchases(storeId, businessDate),
     ])
-    const expenses = localExpenses
+    const expenses = localExpenses.filter(
+      (expense) => expense.fundingSource === 'store_cash',
+    )
     const outgoingTransfers = localTransfers
     const storeCashPayments = localPayments
     const storeCashPurchases = localPurchases

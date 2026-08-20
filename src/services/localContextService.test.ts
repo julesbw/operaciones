@@ -35,6 +35,8 @@ function pendingExpense(userId: string): Expense {
     amount: 100,
     concept: 'Gasto local',
     paymentMethod: 'efectivo',
+    fundingSource: 'store_cash',
+    sourceStoreId: 'store-a',
     createdBy: userId,
     createdAt: now,
     updatedAt: now,

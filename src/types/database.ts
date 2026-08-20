@@ -123,6 +123,8 @@ export type ExpenseRow = {
   amount: number
   concept: string
   payment_method: PaymentMethod
+  funding_source: PaymentFundingSource
+  source_store_id: string | null
   notes: string | null
   weekly_payment_id: string | null
   created_by: string
@@ -239,10 +241,12 @@ export type CashClosingCandidatesResult = {
       | 'id'
       | 'store_id'
       | 'business_date'
-      | 'amount'
-      | 'concept'
-      | 'payment_method'
-      | 'notes'
+       | 'amount'
+       | 'concept'
+       | 'payment_method'
+       | 'funding_source'
+       | 'source_store_id'
+       | 'notes'
       | 'created_by'
       | 'created_at'
       | 'updated_at'
@@ -443,11 +447,13 @@ export type Database = {
           ExpenseRow,
           | 'id'
           | 'store_id'
-          | 'business_date'
-          | 'amount'
-          | 'concept'
-          | 'payment_method'
-          | 'created_by'
+           | 'business_date'
+           | 'amount'
+           | 'concept'
+           | 'payment_method'
+           | 'funding_source'
+           | 'source_store_id'
+           | 'created_by'
           | 'created_at'
           | 'updated_at'
           | 'version'
@@ -626,6 +632,27 @@ export type Database = {
           p_created_by: string
         }
         Returns: ExpenseRow
+      }
+      create_central_cash_expense: {
+        Args: {
+          p_expense_id: string
+          p_store_id: string
+          p_business_date: string
+          p_amount: number
+          p_concept: string
+          p_payment_method: PaymentMethod
+          p_notes: string | null
+          p_funding_source: PaymentFundingSource
+          p_bills: CentralCashBills
+          p_coins_amount: number
+          p_created_at: string
+          p_created_by: string
+        }
+        Returns: {
+          expense: ExpenseRow
+          movement: CentralCashMovementRow
+          coin_compensation: CentralCashMovementRow | null
+        }
       }
       sync_attendance: {
         Args: {

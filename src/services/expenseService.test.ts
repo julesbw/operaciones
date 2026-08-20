@@ -7,6 +7,8 @@ const validInput = {
   amount: 50,
   concept: 'Carne',
   paymentMethod: 'efectivo' as const,
+  fundingSource: 'store_cash' as const,
+  sourceStoreId: 'store-id',
   notes: '',
 }
 
@@ -20,5 +22,31 @@ describe('validateExpense', () => {
       'El monto debe ser mayor a cero',
       'Escribe el concepto del gasto',
     ])
+  })
+
+  it('requires an exact bill and coin breakdown for central cash', () => {
+    const centralInput = {
+      ...validInput,
+      amount: 1_000,
+      fundingSource: 'central_cash' as const,
+      sourceStoreId: undefined,
+      bills: {
+        b1000: 1,
+        b500: 0,
+        b200: 0,
+        b100: 0,
+        b50: 0,
+        b20: 0,
+      },
+      coinsAmount: 0,
+    }
+
+    expect(validateExpense(centralInput)).toEqual([])
+    expect(
+      validateExpense({
+        ...centralInput,
+        bills: { ...centralInput.bills, b500: 1 },
+      }),
+    ).toContain('Las denominaciones deben sumar exactamente el monto')
   })
 })
