@@ -23,6 +23,7 @@ import type {
 } from '../domain/models'
 
 type LegacyClosingDraft = CashClosingDraft & {
+  closingReconciliationMode?: CashClosingDraft['closingReconciliationMode']
   balanceBills?: CashClosingDraft['balanceBills']
   withdrawBills?: CashClosingDraft['withdrawBills']
   openingBalance?: number
@@ -132,6 +133,9 @@ export class OperationsDatabase extends Dexie {
     }
     const schemaV15 = {
       ...schemaV14,
+    }
+    const schemaV16 = {
+      ...schemaV15,
     }
 
     this.version(1).stores(schemaV1)
@@ -256,6 +260,16 @@ export class OperationsDatabase extends Dexie {
           .modify((expense) => {
             expense.fundingSource ??= 'store_cash'
             expense.sourceStoreId ??= expense.storeId
+          })
+      })
+    this.version(16)
+      .stores(schemaV16)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<LegacyClosingDraft, string>('closingDrafts')
+          .toCollection()
+          .modify((draft) => {
+            draft.closingReconciliationMode ??= 'normal'
           })
       })
   }

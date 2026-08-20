@@ -6,7 +6,7 @@ import {
   StoreFilter,
   type StoreFilterValue,
 } from '../components/StoreFilter'
-import type { Collaborator, Store, Supplier, UserProfile } from '../domain/models'
+import type { ClosingReconciliationMode, Collaborator, Store, Supplier, UserProfile } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { collaboratorService } from '../services/collaboratorService'
 import { connectivityService } from '../services/connectivityService'
@@ -206,6 +206,25 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     } catch (cause: unknown) {
       console.error('No fue posible cambiar el estado de la tienda', cause)
       setError('No fue posible cambiar el estado de la tienda.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function updateClosingReconciliationMode(
+    store: Store,
+    closingReconciliationMode: ClosingReconciliationMode,
+  ) {
+    setSaving(true)
+    setError(undefined)
+    setMessage(undefined)
+    try {
+      await storeService.update(store, { closingReconciliationMode })
+      setMessage(`El modo de corte de ${store.name} se actualizó.`)
+      onStoresChanged()
+    } catch (cause: unknown) {
+      console.error('No fue posible actualizar el modo de corte', cause)
+      setError('No fue posible actualizar el modo de corte.')
     } finally {
       setSaving(false)
     }
@@ -498,6 +517,21 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                           <p className={`mt-0.5 text-xs font-semibold ${store.status === 'active' ? 'text-emerald-600' : 'text-slate-400'}`}>
                             {store.status === 'active' ? 'Activa' : 'Inactiva'}
                           </p>
+                          <label className="mt-3 block text-xs font-semibold text-slate-600">
+                            Modo de conciliación del corte
+                            <select
+                              className="field mt-1"
+                              disabled={!canMutate || saving}
+                              value={store.closingReconciliationMode ?? 'normal'}
+                              onChange={(event) => void updateClosingReconciliationMode(
+                                store,
+                                event.target.value as ClosingReconciliationMode,
+                              )}
+                            >
+                              <option value="normal">Normal</option>
+                              <option value="sicar">Corte de Caja: SICAR</option>
+                            </select>
+                          </label>
                         </>
                       )}
                     </div>

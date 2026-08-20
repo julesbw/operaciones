@@ -7,6 +7,7 @@ import type {
   EntityStatus,
   PaymentMethod,
   PaymentFundingSource,
+  ClosingReconciliationMode,
   StoreStatus,
 } from '../domain/models'
 import type {
@@ -34,6 +35,7 @@ export type StoreRow = {
   id: string
   name: string
   status: StoreStatus
+  closing_reconciliation_mode: ClosingReconciliationMode
   created_at: string
   updated_at: string
 }
@@ -154,6 +156,7 @@ export type CashClosingRow = {
   closing_number: number
   store_name_snapshot: string
   gross_sales: number
+  closing_reconciliation_mode: ClosingReconciliationMode
   expense_total: number
   cash_expense_total: number
   expenses_total_snapshot: number
@@ -393,8 +396,8 @@ export type Database = {
       profiles: TableDefinition<ProfileRow, never, never>
       stores: TableDefinition<
         StoreRow,
-        Pick<StoreRow, 'id' | 'name'> & Partial<Pick<StoreRow, 'status'>>,
-        Partial<Pick<StoreRow, 'name' | 'status'>>
+        Pick<StoreRow, 'id' | 'name'> & Partial<Pick<StoreRow, 'status' | 'closing_reconciliation_mode'>>,
+        Partial<Pick<StoreRow, 'name' | 'status' | 'closing_reconciliation_mode'>>
       >
       suppliers: TableDefinition<
         SupplierRow,
@@ -503,6 +506,7 @@ export type Database = {
           | 'business_date'
               | 'closing_number'
           | 'gross_sales'
+          | 'closing_reconciliation_mode'
           | 'expense_total'
           | 'cash_expense_total'
           | 'other_movements'
@@ -533,6 +537,7 @@ export type Database = {
               | 'store_name_snapshot'
               | 'notes'
               | 'status'
+              | 'closing_reconciliation_mode'
             >
           >,
         Partial<
@@ -697,6 +702,7 @@ export type Database = {
           p_transfer_ids: string[]
           p_payment_ids: string[]
           p_purchase_payment_ids: string[]
+          p_closing_reconciliation_mode: ClosingReconciliationMode
         }
         Returns: CashClosingRow
       }

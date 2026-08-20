@@ -570,10 +570,17 @@ function ClosingDetailView({
 
         <article className="panel">
           <p className="eyebrow">Efectivo</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {closing.closing_reconciliation_mode === 'sicar'
+              ? 'Modo SICAR: las transferencias se descuentan del efectivo esperado.'
+              : 'Modo normal: las transferencias no afectan la diferencia de caja.'}
+          </p>
           <dl className="mt-5 space-y-4 text-sm">
             <div className="summary-row"><dt>Efectivo contado</dt><dd>{currencyFormatter.format(effective.countedCash)}</dd></div>
             <div className="summary-row"><dt>Salidas desde caja</dt><dd>{currencyFormatter.format(Number(closing.cash_outflows_total_snapshot))}</dd></div>
             <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Efectivo bruto</dt><dd>{currencyFormatter.format(grossCash)}</dd></div>
+            <div className="summary-row"><dt>Efectivo esperado</dt><dd>{currencyFormatter.format(Number(closing.expected_cash))}</dd></div>
+            <div className="summary-row font-extrabold"><dt>Diferencia de caja</dt><dd>{currencyFormatter.format(Number(closing.difference))}</dd></div>
           </dl>
           <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
             <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 bg-slate-50 px-4 py-3 text-xs font-black uppercase tracking-[0.08em] text-slate-500">
@@ -989,7 +996,12 @@ function ClosingFlow({
         if (!active) return
         setCandidates(eligibleMovements)
         const baseDraft =
-          savedDraft ?? closingService.create(storeId, date, user.id)
+          savedDraft ?? closingService.create(
+            storeId,
+            date,
+            user.id,
+            selectedStore?.closingReconciliationMode ?? 'normal',
+          )
         const reconciled = reconcileDraftSelection(
           baseDraft,
           eligibleMovements,
@@ -1472,8 +1484,8 @@ function ClosingFlow({
                     <div className="summary-row">
                       <dt>Ventas brutas</dt>
                       <dd className="flex items-center gap-3 font-bold">
-                        {currencyFormatter.format(draft.grossSales)}
                         <button className="text-action text-xs" type="button" onClick={() => void goToStep(1)}>Editar</button>
+                        {currencyFormatter.format(draft.grossSales)}
                       </dd>
                     </div>
                   </dl>
@@ -1717,7 +1729,11 @@ function ClosingFlow({
                     <div>
                       <p className="eyebrow">Conciliación de efectivo</p>
                       <h3 className="mt-2 text-xl font-black text-slate-950">Caja física</h3>
-                      <p className="mt-1 text-xs text-slate-500">Las transferencias de mercancía no modifican este cálculo; los pagos y Compras en efectivo sí.</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {draft.closingReconciliationMode === 'sicar'
+                          ? 'Modo SICAR: las transferencias se descuentan del efectivo esperado.'
+                          : 'Modo normal: las transferencias no afectan la diferencia de caja.'}
+                      </p>
                     </div>
                     <button className="text-action text-xs" type="button" onClick={() => void goToStep(2)}>Editar</button>
                   </div>
@@ -1731,13 +1747,13 @@ function ClosingFlow({
                       <dd>+ {currencyFormatter.format(summary.cashOutflowsTotal)}</dd>
                     </div>
                     <div className="summary-row border-t border-slate-200 pt-4 font-extrabold"><dt>Efectivo bruto reconstruido</dt><dd>{currencyFormatter.format(summary.grossCashReconstructed)}</dd></div>
-                    <div className="summary-row border-t border-slate-200 pt-4"><dt>Ventas brutas</dt><dd>{currencyFormatter.format(draft.grossSales)}</dd></div>
-                    <div className="summary-row"><dt>Efectivo esperado después de gastos de caja</dt><dd>{currencyFormatter.format(summary.expectedCash)}</dd></div>
+                    <div className="summary-row border-t border-slate-200 pt-4"><dt>Ventas brutas</dt><dd className="flex items-center gap-3"><button className="text-action text-xs" type="button" onClick={() => void goToStep(1)}>Editar</button>{currencyFormatter.format(draft.grossSales)}</dd></div>
+                    <div className="summary-row"><dt>Efectivo esperado</dt><dd>{currencyFormatter.format(summary.expectedCash)}</dd></div>
                     <div className="summary-row">
                       <dt>Saldo en caja</dt>
                       <dd className="flex items-center gap-3">
-                        {currencyFormatter.format(summary.cashBalance)}
                         <button className="text-action text-xs" type="button" onClick={() => void goToStep(3)}>Editar</button>
+                        {currencyFormatter.format(summary.cashBalance)}
                       </dd>
                     </div>
                     <div className="summary-row font-extrabold text-teal-800"><dt>Efectivo a retirar</dt><dd>{currencyFormatter.format(summary.cashToWithdraw)}</dd></div>
@@ -1746,7 +1762,7 @@ function ClosingFlow({
                   <div className={`mt-6 rounded-2xl p-5 ${summary.difference === 0 ? 'bg-emerald-50 text-emerald-900' : summary.difference > 0 ? 'bg-blue-50 text-blue-900' : 'bg-red-50 text-red-900'}`}>
                     <p className="text-xs font-bold uppercase tracking-wider">Diferencia de caja</p>
                     <p className="mt-1 text-3xl font-black">{currencyFormatter.format(summary.difference)}</p>
-                    <p className="mt-2 text-xs opacity-75">Contado menos efectivo esperado</p>
+                    <p className="mt-2 text-xs opacity-75">Efectivo bruto reconstruido menos efectivo esperado</p>
                   </div>
 
                   <button

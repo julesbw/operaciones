@@ -236,6 +236,22 @@ describe('calculateClosingSummary', () => {
     })
   })
 
+  it('adjusts expected cash and the difference for SICAR transfers', () => {
+    const operational = calculateOperationalTotals(
+      [expense('cash', 900, 'efectivo')],
+      [transfer('0018452', 2_350)],
+    )
+
+    const summary = calculateClosingSummary(
+      { ...draft, closingReconciliationMode: 'sicar' },
+      operational,
+    )
+
+    expect(summary.grossCashReconstructed).toBe(15_900)
+    expect(summary.expectedCash).toBe(12_750)
+    expect(summary.difference).toBe(2_250)
+  })
+
   it('separates all purchases from purchases that affect physical cash', () => {
     const operational = calculateOperationalTotals(
       [],

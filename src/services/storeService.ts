@@ -3,6 +3,25 @@ import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { connectivityService } from './connectivityService'
 
+type StoreUpdateInput = Pick<
+  Partial<Store>,
+  'name' | 'status' | 'closingReconciliationMode'
+>
+
+export function buildStoreUpdate(
+  input: StoreUpdateInput,
+  updatedAt: string,
+): StoreUpdateInput & Pick<Store, 'updatedAt'> {
+  return {
+    ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.closingReconciliationMode !== undefined
+      ? { closingReconciliationMode: input.closingReconciliationMode }
+      : {}),
+    updatedAt,
+  }
+}
+
 class StoreService {
   list() {
     return operationsRepository.listStores()
@@ -16,6 +35,7 @@ class StoreService {
       id: crypto.randomUUID(),
       name: normalizedName,
       status: 'active',
+      closingReconciliationMode: 'normal',
       createdAt: now,
       updatedAt: now,
     }
@@ -37,13 +57,12 @@ class StoreService {
 
   async update(
     store: Store,
-    changes: { name?: string; status?: Store['status'] },
+    changes: StoreUpdateInput,
   ): Promise<void> {
-    const normalizedChanges = {
-      ...changes,
-      name: changes.name?.trim() || undefined,
-      updatedAt: new Date().toISOString(),
-    }
+    const normalizedChanges = buildStoreUpdate(
+      changes,
+      new Date().toISOString(),
+    )
     if (changes.name !== undefined && !normalizedChanges.name) {
       throw new Error('El nombre de la tienda no puede quedar vacío')
     }
@@ -55,8 +74,18 @@ class StoreService {
       const { error } = await supabase
         .from('stores')
         .update({
-          ...(normalizedChanges.name ? { name: normalizedChanges.name } : {}),
-          ...(normalizedChanges.status ? { status: normalizedChanges.status } : {}),
+          ...(normalizedChanges.name !== undefined
+            ? { name: normalizedChanges.name }
+            : {}),
+          ...(normalizedChanges.status !== undefined
+            ? { status: normalizedChanges.status }
+            : {}),
+          ...(normalizedChanges.closingReconciliationMode !== undefined
+            ? {
+                closing_reconciliation_mode:
+                  normalizedChanges.closingReconciliationMode,
+              }
+            : {}),
         })
         .eq('id', store.id)
       if (error) throw error

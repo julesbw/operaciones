@@ -2,6 +2,7 @@ import { BILL_DENOMINATIONS, EMPTY_BILLS } from '../domain/constants'
 import type {
   Bills,
   CashClosingDraft,
+  ClosingReconciliationMode,
   Expense,
   MerchandiseTransfer,
   PaidPurchase,
@@ -272,7 +273,13 @@ export function calculateClosingSummary(
     draft.balanceBills,
   )
   const grossSales = roundMoney(draft.grossSales)
-  const expectedCash = roundMoney(grossSales - operational.cashOutflowsTotal)
+  const expectedCash = roundMoney(
+    grossSales -
+      operational.cashOutflowsTotal -
+      (draft.closingReconciliationMode === 'sicar'
+        ? operational.outgoingTransfersTotal
+        : 0),
+  )
 
   return {
     ...operational,
@@ -288,7 +295,14 @@ export function calculateClosingSummary(
     grossCashReconstructed: roundMoney(
       countedCash + operational.cashOutflowsTotal,
     ),
-    difference: roundMoney(countedCash - expectedCash),
+    difference: roundMoney(
+      countedCash +
+        operational.cashOutflowsTotal +
+        (draft.closingReconciliationMode === 'sicar'
+          ? operational.outgoingTransfersTotal
+          : 0) -
+        grossSales,
+    ),
   }
 }
 
@@ -594,6 +608,7 @@ class ClosingService {
     storeId: string,
     businessDate: string,
     userId: string,
+    closingReconciliationMode: ClosingReconciliationMode = 'normal',
   ): CashClosingDraft {
     const now = new Date().toISOString()
     return {
@@ -601,6 +616,7 @@ class ClosingService {
       storeId,
       businessDate,
       grossSales: 0,
+      closingReconciliationMode,
       bills: { ...EMPTY_BILLS },
       balanceBills: { ...EMPTY_BILLS },
       withdrawBills: { ...EMPTY_BILLS },
@@ -751,6 +767,8 @@ class ClosingService {
       p_transfer_ids: closedDraft.selectedTransferIds,
       p_payment_ids: closedDraft.selectedPaymentIds,
       p_purchase_payment_ids: closedDraft.selectedPurchasePaymentIds,
+      p_closing_reconciliation_mode:
+        closedDraft.closingReconciliationMode ?? 'normal',
     })
     if (error) {
       const domainCode = [

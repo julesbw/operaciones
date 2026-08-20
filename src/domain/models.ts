@@ -7,6 +7,10 @@ export type EntityStatus = (typeof ENTITY_STATUSES)[number]
 export const STORE_STATUSES = ['active', 'inactive'] as const
 export type StoreStatus = (typeof STORE_STATUSES)[number]
 
+export const CLOSING_RECONCILIATION_MODES = ['normal', 'sicar'] as const
+export type ClosingReconciliationMode =
+  (typeof CLOSING_RECONCILIATION_MODES)[number]
+
 export const PAYMENT_METHODS = [
   'efectivo',
   'tarjeta',
@@ -36,6 +40,7 @@ export type Store = {
   id: string
   name: string
   status: StoreStatus
+  closingReconciliationMode?: ClosingReconciliationMode
   createdAt: string
   updatedAt: string
 }
@@ -314,6 +319,7 @@ export type CashClosingDraft = {
   storeId: string
   businessDate: string
   grossSales: number
+  closingReconciliationMode?: ClosingReconciliationMode
   bills: Bills
   balanceBills: Bills
   withdrawBills: Bills

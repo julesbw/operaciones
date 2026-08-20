@@ -1,4 +1,5 @@
 import type {
+  ClosingReconciliationMode,
   Collaborator,
   EntityStatus,
   Store,
@@ -13,6 +14,7 @@ type StoreRow = {
   id: string
   name: string
   status: StoreStatus
+  closing_reconciliation_mode: ClosingReconciliationMode
   created_at: string
   updated_at: string
 }
@@ -64,7 +66,7 @@ class ReferenceDataService {
     const [storesResult, collaboratorsResult, compensationResult, suppliersResult] = await Promise.all([
       supabase
         .from('stores')
-        .select('id, name, status, created_at, updated_at')
+        .select('id, name, status, closing_reconciliation_mode, created_at, updated_at')
         .returns<StoreRow[]>(),
       supabase
         .from('collaborators')
@@ -98,6 +100,7 @@ class ReferenceDataService {
         id: store.id,
         name: store.name,
         status: store.status,
+        closingReconciliationMode: store.closing_reconciliation_mode,
         createdAt: store.created_at,
         updatedAt: store.updated_at,
       })),
