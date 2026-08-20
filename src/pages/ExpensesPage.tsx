@@ -7,7 +7,7 @@ import {
   type FormEvent,
 } from 'react'
 import { AppModal } from '../components/AppModal'
-import { BillCounter } from '../components/BillCounter'
+import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import {
@@ -41,7 +41,6 @@ import {
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import {
-  calculateCentralCashBillsTotal,
   currencyFormatter,
 } from '../utils/money'
 
@@ -134,6 +133,7 @@ export function ExpensesPage({
     ...EMPTY_CENTRAL_CASH_BILLS,
   })
   const [coinsAmount, setCoinsAmount] = useState(0)
+  const [cashBreakdownOpen, setCashBreakdownOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -215,8 +215,9 @@ export function ExpensesPage({
     () => visibleExpenses.reduce((sum, expense) => sum + expense.amount, 0),
     [visibleExpenses],
   )
-  const centralBreakdownTotal =
-    calculateCentralCashBillsTotal(bills) + coinsAmount
+  const cashBreakdownVisible =
+    paymentMethod === 'efectivo' &&
+    (cashBreakdownOpen || fundingSource === 'central_cash')
 
   const groupedExpenses = useMemo(() => {
     const groups = new Map<string, Expense[]>()
@@ -267,6 +268,7 @@ export function ExpensesPage({
     setPaymentMethod('efectivo')
     setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
     setCoinsAmount(0)
+    setCashBreakdownOpen(false)
     setNotes('')
     setErrors([])
     setFormOpen(true)
@@ -277,12 +279,12 @@ export function ExpensesPage({
   }
 
   function changeFundingSource(nextFundingSource: PaymentFundingSource) {
+    if (nextFundingSource === fundingSource) return
     setFundingSource(nextFundingSource)
     setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
     setCoinsAmount(0)
-    if (nextFundingSource === 'central_cash') {
-      setPaymentMethod('efectivo')
-    }
+    setCashBreakdownOpen(nextFundingSource === 'central_cash')
+    if (nextFundingSource === 'central_cash') setPaymentMethod('efectivo')
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -689,25 +691,18 @@ export function ExpensesPage({
                 </label>
               </div>
 
-              {fundingSource === 'central_cash' && paymentMethod === 'efectivo' && (
-                <div>
-                  <p className="field-label">Desglose de efectivo</p>
-                  <div className="mt-2">
-                    <BillCounter
-                      coinsValue={coinsAmount}
-                      showTotal={false}
-                      value={bills}
-                      onCoinsChange={(value) =>
-                        setCoinsAmount(value === '' ? 0 : Number(value))
-                      }
-                      onChange={setBills}
-                    />
-                  </div>
-                  <p className={`mt-3 text-right text-sm font-extrabold ${Math.round(centralBreakdownTotal * 100) === Math.round(Number(amount || 0) * 100) ? 'text-emerald-700' : 'text-amber-700'}`}>
-                    Total: {currencyFormatter.format(centralBreakdownTotal)}
-                  </p>
-                </div>
-              )}
+              <CashBreakdownControl
+                amount={amount}
+                bills={bills}
+                coinsAmount={coinsAmount}
+                open={cashBreakdownOpen}
+                showToggle={fundingSource === 'store_cash' && paymentMethod === 'efectivo'}
+                toggleDescription="Opcional para gastos desde la tienda."
+                visible={cashBreakdownVisible}
+                onBillsChange={setBills}
+                onCoinsChange={setCoinsAmount}
+                onOpenChange={setCashBreakdownOpen}
+              />
 
               <label className="field-label">
                 Notas <span className="font-normal text-slate-400">(opcional)</span>

@@ -7,7 +7,7 @@ import {
   type FormEvent,
 } from 'react'
 import { AppModal } from '../components/AppModal'
-import { BillCounter } from '../components/BillCounter'
+import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import {
@@ -21,7 +21,6 @@ import {
   cashBreakdownOpenAfterFundingSourceChange,
   hasCapturedCashBreakdown,
   requiresCashBreakdown as requiresPurchaseCashBreakdown,
-  shouldConfirmCashBreakdownClose,
 } from '../domain/purchasePolicy'
 import {
   PAYMENT_METHODS,
@@ -113,8 +112,6 @@ export function PurchasesPage({
   })
   const [coinsAmount, setCoinsAmount] = useState(0)
   const [cashBreakdownOpen, setCashBreakdownOpen] = useState(false)
-  const [breakdownCloseConfirmationOpen, setBreakdownCloseConfirmationOpen] =
-    useState(false)
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -217,7 +214,6 @@ export function PurchasesPage({
     setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
     setCoinsAmount(0)
     setCashBreakdownOpen(false)
-    setBreakdownCloseConfirmationOpen(false)
     setNotes('')
     setPurchaseId(crypto.randomUUID())
     setPaymentId(crypto.randomUUID())
@@ -238,29 +234,8 @@ export function PurchasesPage({
     )
   }
 
-  function handleCashBreakdownToggle(enabled: boolean) {
-    if (
-      shouldConfirmCashBreakdownClose({
-        nextOpen: enabled,
-        hasCapturedBreakdown,
-      })
-    ) {
-      setBreakdownCloseConfirmationOpen(true)
-      return
-    }
-    setCashBreakdownOpen(enabled)
-  }
-
-  function closeCashBreakdownAndClear() {
-    setBills({ ...EMPTY_CENTRAL_CASH_BILLS })
-    setCoinsAmount(0)
-    setCashBreakdownOpen(false)
-    setBreakdownCloseConfirmationOpen(false)
-  }
-
   function closeForm() {
     setFormOpen(false)
-    setBreakdownCloseConfirmationOpen(false)
   }
 
   function prepareConfirmation(event: FormEvent<HTMLFormElement>) {
@@ -525,41 +500,18 @@ export function PurchasesPage({
                 </div>
                 {fundingSource === 'store_cash' && <label className="field-label">Tienda<select className="field" required value={sourceStoreId} onChange={(event) => setSourceStoreId(event.target.value)}>{activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>}
                 <label className="field-label">Forma de pago<select className="field" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>)}</select></label>
-                {fundingSource === 'store_cash' && paymentMethod === 'efectivo' && (
-                  <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <div>
-                      <p className="font-bold text-slate-800">Registrar desglose de efectivo</p>
-                      <p className="mt-1 text-xs text-slate-500">Opcional para pagos desde la tienda.</p>
-                    </div>
-                    <button
-                      aria-checked={cashBreakdownOpen}
-                      aria-label="Registrar desglose de efectivo"
-                      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${cashBreakdownOpen ? 'bg-teal-700' : 'bg-slate-300'}`}
-                      role="switch"
-                      type="button"
-                      onClick={() => handleCashBreakdownToggle(!cashBreakdownOpen)}
-                    >
-                      <span className={`size-5 rounded-full bg-white shadow transition ${cashBreakdownOpen ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
-                  </div>
-                )}
-                {cashBreakdownVisible && (
-                  <div>
-                    <p className="field-label">Desglose de efectivo</p>
-                    <div className="mt-2">
-                      <BillCounter
-                        coinsValue={coinsAmount}
-                        showTotal={false}
-                        value={bills}
-                        onCoinsChange={(value) =>
-                          setCoinsAmount(value === '' ? 0 : Number(value))
-                        }
-                        onChange={setBills}
-                      />
-                    </div>
-                    <p className={`mt-3 text-right text-sm font-extrabold ${Math.round(denominationTotal * 100) === Math.round(Number(amount || 0) * 100) ? 'text-emerald-700' : 'text-amber-700'}`}>Total: {currencyFormatter.format(denominationTotal)}</p>
-                  </div>
-                )}
+                <CashBreakdownControl
+                  amount={amount}
+                  bills={bills}
+                  coinsAmount={coinsAmount}
+                  open={cashBreakdownOpen}
+                  showToggle={fundingSource === 'store_cash' && paymentMethod === 'efectivo'}
+                  toggleDescription="Opcional para pagos desde la tienda."
+                  visible={cashBreakdownVisible}
+                  onBillsChange={setBills}
+                  onCoinsChange={setCoinsAmount}
+                  onOpenChange={setCashBreakdownOpen}
+                />
                 <label className="field-label">Notas <span className="font-normal text-slate-400">(opcional)</span><textarea className="field min-h-20 resize-y" maxLength={500} value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
               </div>
             )}
@@ -569,34 +521,6 @@ export function PurchasesPage({
             </div>
           </form>
         )}
-      </AppModal>
-
-      <AppModal
-        closeLabel="Cancelar cierre del contador"
-        open={breakdownCloseConfirmationOpen}
-        title="¿Cerrar contador de efectivo?"
-        onClose={() => setBreakdownCloseConfirmationOpen(false)}
-      >
-        <p className="mt-5 text-sm leading-6 text-slate-600">
-          Hay billetes o monedas capturados por encima de cero. Si cierras el
-          contador, esos valores se eliminarán.
-        </p>
-        <div className="mt-6 grid grid-cols-2 gap-3">
-          <button
-            className="button-secondary"
-            type="button"
-            onClick={() => setBreakdownCloseConfirmationOpen(false)}
-          >
-            Cancelar
-          </button>
-          <button
-            className="button-primary"
-            type="button"
-            onClick={closeCashBreakdownAndClear}
-          >
-            Cerrar y limpiar
-          </button>
-        </div>
       </AppModal>
 
       <AppModal closeLabel="Cerrar detalle" eyebrow="Compra pagada" open={Boolean(selected)} title={selected?.purchase.supplierNameSnapshot ?? ''} onClose={() => setSelected(undefined)}>
