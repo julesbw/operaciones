@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { Store, UserProfile } from '../domain/models'
+import type { OperatorSession, Store, UserProfile } from '../domain/models'
+import { getEffectiveDisplayName } from '../domain/runtimeIdentity'
 import { ArrowIcon, CashIcon, ReceiptIcon, UsersIcon } from '../components/icons'
 import type { PageId } from '../components/AppShell'
 import { attendanceService } from '../services/attendanceService'
@@ -14,6 +15,7 @@ const HOME_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
 })
 
 type DashboardPageProps = {
+  operatorSession?: OperatorSession
   pendingCount: number
   revision: number
   stores: Store[]
@@ -22,6 +24,7 @@ type DashboardPageProps = {
 }
 
 export function DashboardPage({
+  operatorSession,
   pendingCount,
   revision,
   stores,
@@ -31,7 +34,8 @@ export function DashboardPage({
   const [todayExpenses, setTodayExpenses] = useState(0)
   const [attendanceCount, setAttendanceCount] = useState(0)
   const today = getLocalDate()
-  const firstName = user.fullName.trim().split(/\s+/)[0] || 'bienvenido'
+  const displayName = getEffectiveDisplayName(user, operatorSession ?? null)
+  const firstName = displayName.trim().split(/\s+/)[0] || 'bienvenido'
 
   useEffect(() => {
     const storeIds = user.storeId

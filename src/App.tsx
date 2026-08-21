@@ -546,7 +546,7 @@ function App() {
 
   return (
     <AppShell
-      activeOperator={operatorSession?.account}
+      operatorSession={operatorSession}
       backendReachable={backendReachable}
       currentPage={page}
       networkAvailable={networkAvailable}
@@ -560,7 +560,14 @@ function App() {
       onSync={() => void syncCurrentSession(true)}
     >
       {page === 'home' && (
-        <DashboardPage pendingCount={pendingCount} revision={revision} stores={stores} user={user} onNavigate={navigate} />
+        <DashboardPage
+          operatorSession={operatorSession}
+          pendingCount={pendingCount}
+          revision={revision}
+          stores={stores}
+          user={user}
+          onNavigate={navigate}
+        />
       )}
       {page === 'expenses' && (
         <ExpensesPage

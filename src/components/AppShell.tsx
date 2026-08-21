@@ -8,6 +8,7 @@ import {
   type SVGProps,
 } from 'react'
 import type { OperatorSession, UserProfile } from '../domain/models'
+import { getEffectiveDisplayName } from '../domain/runtimeIdentity'
 import {
   ArrowIcon,
   CashIcon,
@@ -104,7 +105,7 @@ export function navigationItemsForRole(
 }
 
 type AppShellProps = {
-  activeOperator?: OperatorSession['account']
+  operatorSession?: OperatorSession
   backendReachable?: boolean
   children: ReactNode
   currentPage: PageId
@@ -129,7 +130,7 @@ function initials(name: string): string {
 }
 
 export function AppShell({
-  activeOperator,
+  operatorSession,
   backendReachable,
   children,
   currentPage,
@@ -160,7 +161,7 @@ export function AppShell({
   const moreActive = moreMobileItems.some((item) => item.id === currentPage)
   const moreMenuState = moreMenuOpen ? 'open' : 'closed'
   const roleLabel = user.role === 'admin' ? 'Administrador' : 'Cashier'
-  const activeName = activeOperator?.displayName ?? user.fullName
+  const activeName = getEffectiveDisplayName(user, operatorSession ?? null)
 
   useEffect(() => {
     setMoreMenuOpen(false)
@@ -483,7 +484,7 @@ export function AppShell({
                   {activeName}
                 </h2>
                 <p className="mt-1 text-sm font-semibold text-slate-500">
-                  {activeOperator ? 'Operador activo' : roleLabel}
+                  {operatorSession ? 'Operador activo' : roleLabel}
                 </p>
                 {user.storeName && (
                   <p className="mt-1 text-sm text-slate-500">{user.storeName}</p>
@@ -520,7 +521,7 @@ export function AppShell({
                   onClick={signOutFromProfile}
                 >
                   <LogoutIcon className="size-5" />
-                  <span>{activeOperator ? 'Cerrar sesión del dispositivo' : 'Cerrar sesión'}</span>
+                  <span>{operatorSession ? 'Cerrar sesión del dispositivo' : 'Cerrar sesión'}</span>
                 </button>
                 <p className="mt-6 text-xs font-semibold text-slate-400">
                   La Piedad Operaciones · v{import.meta.env.APP_VERSION}
