@@ -19,7 +19,6 @@ import type {
 } from '../domain/models'
 import { attendanceService } from '../services/attendanceService'
 import { referenceDataService } from '../services/referenceDataService'
-import { syncService } from '../services/syncService'
 import { getOperationalDate, getWeekday } from '../utils/date'
 
 type AttendancePageProps = {
@@ -27,8 +26,10 @@ type AttendancePageProps = {
   stores: Store[]
   storeFilter: StoreScopeValue
   user: UserProfile
+  operatorAccountId?: string | null
   onDataChanged: () => void
   onStoreFilterChange: (value: StoreScopeValue) => void
+  onSync?: () => Promise<void>
 }
 
 const STATUS_OPTIONS: Array<{
@@ -54,8 +55,10 @@ export function AttendancePage({
   stores,
   storeFilter,
   user,
+  operatorAccountId,
   onDataChanged,
   onStoreFilterChange,
+  onSync,
 }: AttendancePageProps) {
   const operationalDate = getOperationalDate()
   const [date, setDate] = useState(operationalDate)
@@ -183,15 +186,13 @@ export function AttendancePage({
           status: statuses[collaborator.id] ?? 'present',
         })),
         user.id,
+        undefined,
+        operatorAccountId,
       )
       setSaved(true)
       onDataChanged()
-      void syncService
-        .process()
-        .then(onDataChanged)
-        .catch((cause: unknown) => {
-          console.error('No fue posible sincronizar la asistencia', cause)
-        })
+      await onSync?.()
+      onDataChanged()
     } catch (cause: unknown) {
       console.error('No fue posible guardar la asistencia', cause)
       setError(

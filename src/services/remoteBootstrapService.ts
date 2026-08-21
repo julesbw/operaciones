@@ -21,6 +21,7 @@ export type RemoteBootstrapResult =
 type RemoteBootstrapOptions = {
   forceRetry?: boolean
   profile?: UserProfile
+  skipSync?: boolean
   onIdentityResolved?: (userId: string | undefined) => void
 }
 
@@ -103,9 +104,9 @@ export class RemoteBootstrapService {
       await localContextService.setAccessState('signed-out')
       throw new RemoteBootstrapCancelledError()
     }
-    const sync = await syncService.process({
-      forceRetry: options.forceRetry,
-    })
+    const sync = options.skipSync
+      ? { synced: 0, failed: 0, pending: await syncService.countPending() }
+      : await syncService.process({ forceRetry: options.forceRetry })
     ensureActive()
     if (profile.role === 'admin' && !profile.demo) {
       await Promise.all([
@@ -117,7 +118,7 @@ export class RemoteBootstrapService {
       await operationsRepository.clearAdministrativePaymentData()
       ensureActive()
     }
-    if (sync.failed === 0) {
+    if (!options.skipSync && sync.failed === 0) {
       await localContextService.recordSuccessfulSync(profile.id)
     }
 

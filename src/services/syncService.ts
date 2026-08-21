@@ -100,9 +100,15 @@ function merchandiseTransferToRpcArgs(transfer: MerchandiseTransfer) {
 export class SyncService {
   private running?: Promise<SyncResult>
 
-  process(options: { forceRetry?: boolean } = {}): Promise<SyncResult> {
+  process(options: {
+    forceRetry?: boolean
+    operatorAccountId?: string | null
+  } = {}): Promise<SyncResult> {
     if (this.running) return this.running
-    this.running = this.processQueue(options.forceRetry === true).finally(() => {
+    this.running = this.processQueue(
+      options.forceRetry === true,
+      options.operatorAccountId,
+    ).finally(() => {
       this.running = undefined
     })
     return this.running
@@ -112,7 +118,10 @@ export class SyncService {
     return operationsRepository.countPendingQueue()
   }
 
-  private async processQueue(forceRetry: boolean): Promise<SyncResult> {
+  private async processQueue(
+    forceRetry: boolean,
+    operatorAccountId?: string | null,
+  ): Promise<SyncResult> {
     const items = await operationsRepository.listPendingQueue()
     if (!supabase) {
       return { synced: 0, failed: 0, pending: items.length }
@@ -141,8 +150,13 @@ export class SyncService {
       : items.filter(
           (item) => !item.nextAttemptAt || item.nextAttemptAt <= now,
         )
+    const operatorItems = typeof operatorAccountId === 'string'
+      ? dueItems.filter(
+          (item) => !item.operatorAccountId || item.operatorAccountId === operatorAccountId,
+        )
+      : dueItems
     const results = await Promise.all(
-      dueItems.map((item) => this.processItem(item)),
+      operatorItems.map((item) => this.processItem(item)),
     )
     await this.pullRecent()
 

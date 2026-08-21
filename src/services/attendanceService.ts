@@ -17,6 +17,7 @@ export class AttendanceService {
     inputs: AttendanceInput[],
     userId: string,
     today = getOperationalDate(),
+    operatorAccountId?: string | null,
   ): Promise<AttendanceRecord[]> {
     if (inputs.length === 0) return []
 
@@ -48,6 +49,7 @@ export class AttendanceService {
         ...input,
         id: existing?.id ?? crypto.randomUUID(),
         recordedBy: userId,
+        operatorAccountId: operatorAccountId ?? existing?.operatorAccountId ?? null,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
         version: existing?.version ?? 0,
@@ -63,6 +65,7 @@ export class AttendanceService {
         : 'insert',
       createdAt: now,
       attempts: 0,
+      operatorAccountId: operatorAccountId ?? null,
     }))
 
     await this.repository.saveAttendanceWithQueue(records, queueItems)

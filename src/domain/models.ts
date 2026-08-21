@@ -98,6 +98,7 @@ export type Expense = {
   sourceStoreId?: string
   notes?: string
   createdBy: string
+  operatorAccountId?: string | null
   createdAt: string
   updatedAt: string
   version: number
@@ -113,6 +114,7 @@ export type MerchandiseTransfer = {
   businessDate: string
   notes?: string
   createdBy: string
+  operatorAccountId?: string | null
   createdAt: string
   updatedAt: string
   version: number
@@ -147,6 +149,7 @@ export type AttendanceRecord = {
   attendanceDate: string
   status: AttendanceStatus
   recordedBy: string
+  operatorAccountId?: string | null
   createdAt: string
   updatedAt: string
   version: number
@@ -219,6 +222,7 @@ export type Purchase = {
   amount: number
   notes?: string
   createdBy: string
+  operatorAccountId?: string | null
   createdAt: string
   updatedAt: string
   syncStatus: SyncStatus
@@ -381,6 +385,7 @@ export type CashClosingDraft = {
   currentStep: CashClosingStep
   status: 'draft'
   createdBy: string
+  operatorAccountId?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -399,6 +404,7 @@ export type SyncQueueItem = {
   operation: SyncOperation
   createdAt: string
   attempts: number
+  operatorAccountId?: string | null
   lastError?: string
   nextAttemptAt?: string
 }

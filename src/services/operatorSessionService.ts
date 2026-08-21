@@ -8,7 +8,12 @@ import { connectivityService } from './connectivityService'
 
 const STORAGE_KEY = 'operaciones.operator_session'
 
-type StoredOperatorSession = OperatorSession
+type StoredOperatorSession = OperatorSession & { technicalUserId: string }
+
+function isExpired(session: OperatorSession): boolean {
+  const expiresAt = Date.parse(session.expiresAt)
+  return Number.isNaN(expiresAt) || expiresAt <= Date.now()
+}
 
 function mapAccount(row: OperatorSessionResultRow | ValidatedOperatorSessionResultRow) {
   return {
@@ -32,7 +37,8 @@ function readStoredSession(): StoredOperatorSession | undefined {
       typeof parsed === 'object' && parsed !== null &&
       'token' in parsed && typeof parsed.token === 'string' &&
       'account' in parsed && typeof parsed.account === 'object' && parsed.account !== null &&
-      'expiresAt' in parsed && typeof parsed.expiresAt === 'string'
+      'expiresAt' in parsed && typeof parsed.expiresAt === 'string' &&
+      'technicalUserId' in parsed && typeof parsed.technicalUserId === 'string'
     ) {
       return parsed as StoredOperatorSession
     }
@@ -43,7 +49,7 @@ function readStoredSession(): StoredOperatorSession | undefined {
   return undefined
 }
 
-function saveSession(session: OperatorSession): void {
+function saveSession(session: StoredOperatorSession): void {
   if (typeof window !== 'undefined') {
     window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session))
   }
@@ -62,7 +68,11 @@ function requireClient() {
 }
 
 class OperatorSessionService {
-  async login(username: string, pin: string): Promise<OperatorSession> {
+  async login(
+    username: string,
+    pin: string,
+    technicalUserId: string,
+  ): Promise<OperatorSession> {
     const client = requireClient()
     try {
       const { data, error } = await client.rpc('login_app_account', {
@@ -77,7 +87,7 @@ class OperatorSessionService {
         account: mapAccount(result),
         expiresAt: result.expires_at,
       }
-      saveSession(session)
+      saveSession({ ...session, technicalUserId })
       return session
     } finally {
       // El PIN sólo existe durante la llamada RPC; nunca se persiste.
@@ -85,13 +95,26 @@ class OperatorSessionService {
     }
   }
 
-  getStored(): OperatorSession | undefined {
-    return readStoredSession()
+  getStored(technicalUserId: string): OperatorSession | undefined {
+    const stored = readStoredSession()
+    return stored?.technicalUserId === technicalUserId ? stored : undefined
   }
 
-  async validate(): Promise<OperatorSession | undefined> {
+  restoreOffline(technicalUserId: string): OperatorSession | undefined {
     const stored = readStoredSession()
-    if (!stored) return undefined
+    if (!stored || stored.technicalUserId !== technicalUserId || isExpired(stored)) {
+      if (stored) clearSession()
+      return undefined
+    }
+    return stored
+  }
+
+  async validate(technicalUserId: string): Promise<OperatorSession | undefined> {
+    const stored = readStoredSession()
+    if (!stored || stored.technicalUserId !== technicalUserId || isExpired(stored)) {
+      if (stored) clearSession()
+      return undefined
+    }
     try {
       const client = requireClient()
       const { data, error } = await client.rpc('validate_app_session', {
@@ -105,7 +128,7 @@ class OperatorSessionService {
         account: mapAccount(result),
         expiresAt: result.expires_at,
       }
-      saveSession(session)
+      saveSession({ ...session, technicalUserId })
       return session
     } catch {
       clearSession()

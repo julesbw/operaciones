@@ -4,7 +4,12 @@ import {
   ALL_STORES,
   type StoreScopeValue,
 } from './components/filters/StoreScopeSelector'
-import type { LocalAppContext, Store, UserProfile } from './domain/models'
+import type {
+  LocalAppContext,
+  OperatorSession,
+  Store,
+  UserProfile,
+} from './domain/models'
 import { CentralCashPage } from './pages/CentralCashPage'
 import { ClosingsPage } from './pages/ClosingsPage'
 import { CollaboratorsPage } from './pages/CollaboratorsPage'
@@ -12,6 +17,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ExpensesPage } from './pages/ExpensesPage'
 import { ExportsPage } from './pages/ExportsPage'
 import { LoginPage } from './pages/LoginPage'
+import { OperatorLoginPage } from './pages/OperatorLoginPage'
 import { PurchasesPage } from './pages/PurchasesPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TransfersPage } from './pages/TransfersPage'
@@ -24,6 +30,8 @@ import {
   UserSwitchBlockedError,
 } from './services/localContextService'
 import { referenceDataService } from './services/referenceDataService'
+import { operatorSessionService } from './services/operatorSessionService'
+import { operationsRepository } from './repositories/operationsRepository'
 import {
   RemoteBootstrapCancelledError,
   remoteBootstrapService,
@@ -36,6 +44,8 @@ type AppBootstrapState =
   | 'ready-offline'
   | 'ready-online'
   | 'recovering-session'
+  | 'awaiting-operator'
+  | 'validating-operator'
   | 'fatal-error'
 
 function errorMessage(cause: unknown): string {
@@ -64,6 +74,7 @@ function App() {
   const [startupNotice, setStartupNotice] = useState<string>()
   const [localContext, setLocalContext] = useState<LocalAppContext>()
   const [user, setUser] = useState<UserProfile>()
+  const [operatorSession, setOperatorSession] = useState<OperatorSession>()
   const userRef = useRef<UserProfile | undefined>(undefined)
   const [page, setPage] = useState<PageId>('home')
   const [attendanceStoreFilter, setAttendanceStoreFilter] =
@@ -98,11 +109,16 @@ function App() {
     if (context?.accessState === 'enabled') {
       const profile = profileFromLocalContext(context)
       setUser(profile)
-      setState('ready-offline')
+      const storedOperator = profile.role === 'admin'
+        ? undefined
+        : operatorSessionService.restoreOffline(profile.id)
+      setOperatorSession(storedOperator)
+      setState(profile.role === 'admin' || storedOperator ? 'ready-offline' : 'awaiting-operator')
       return profile
     }
 
     setUser(undefined)
+    setOperatorSession(undefined)
     setState('requires-first-login')
     return undefined
   }, [])
@@ -126,6 +142,7 @@ function App() {
         const result = await remoteBootstrapService.process({
           forceRetry,
           profile,
+          skipSync: true,
           onIdentityResolved: (remoteUserId) => {
             setUser((current) =>
               remoteUserId && current?.id === remoteUserId
@@ -139,6 +156,7 @@ function App() {
           const context = await localContextService.load()
           setLocalContext(context)
           setUser(undefined)
+          setOperatorSession(undefined)
           setBackendReachable(true)
           setStartupNotice(
             context
@@ -153,10 +171,31 @@ function App() {
         setUser(result.profile)
         setBackendReachable(true)
         setStartupNotice(undefined)
+        let sync
+        if (result.profile.role === 'admin') {
+          setOperatorSession(undefined)
+          sync = await syncService.process({ forceRetry })
+        } else {
+          setState('validating-operator')
+          const validatedOperator = await operatorSessionService.validate(
+            result.profile.id,
+          )
+          if (!validatedOperator) {
+            setOperatorSession(undefined)
+            setState('awaiting-operator')
+            await refreshLocalState()
+            return
+          }
+          setOperatorSession(validatedOperator)
+          sync = await syncService.process({
+            forceRetry,
+            operatorAccountId: validatedOperator.account.id,
+          })
+        }
         setSyncError(
-          result.sync.failed > 0
-            ? result.sync.errors?.join(' · ') ||
-              `${result.sync.failed} cambio${result.sync.failed === 1 ? '' : 's'} no se pudo sincronizar.`
+          sync.failed > 0
+            ? sync.errors?.join(' · ') ||
+              `${sync.failed} cambio${sync.failed === 1 ? '' : 's'} no se pudo sincronizar.`
             : undefined,
         )
         await refreshLocalState()
@@ -234,14 +273,22 @@ function App() {
       if (!active) return
       setLocalContext(context)
       if (context?.accessState === 'enabled') {
-        setUser(profileFromLocalContext(context))
+        const profile = profileFromLocalContext(context)
+        const storedOperator = profile.role === 'admin'
+          ? undefined
+          : operatorSessionService.restoreOffline(profile.id)
+        setUser(profile)
+        setOperatorSession(storedOperator)
         setState(
           connectivityService.isNetworkAvailable()
             ? 'recovering-session'
-            : 'ready-offline',
+            : profile.role === 'admin' || storedOperator
+              ? 'ready-offline'
+              : 'awaiting-operator',
         )
       } else {
         setUser(undefined)
+        setOperatorSession(undefined)
         setState('requires-first-login')
       }
 
@@ -266,9 +313,14 @@ function App() {
 
       setBackendReachable(undefined)
       setSyncing(false)
-      setState(
-        userRef.current ? 'ready-offline' : 'requires-first-login',
-      )
+      const profile = userRef.current
+      const storedOperator = profile?.role === 'admin'
+        ? undefined
+        : profile
+          ? operatorSessionService.restoreOffline(profile.id)
+          : undefined
+      setOperatorSession(storedOperator)
+      setState(profile ? profile.role === 'admin' || storedOperator ? 'ready-offline' : 'awaiting-operator' : 'requires-first-login')
     })
   }, [runRemoteBootstrap])
 
@@ -278,9 +330,89 @@ function App() {
     await runRemoteBootstrap(profile)
   }
 
+  async function operatorSignedIn() {
+    if (!user) return
+    const validatedOperator = await operatorSessionService.validate(user.id)
+    if (!validatedOperator) {
+      setOperatorSession(undefined)
+      setState('awaiting-operator')
+      return
+    }
+    if (await operationsRepository.hasPendingWorkForAnotherOperator(validatedOperator.account.id)) {
+      await operatorSessionService.logout()
+      setOperatorSession(undefined)
+      setStartupNotice(
+        'Hay operaciones pendientes de otro usuario. Ese usuario debe iniciar sesión y sincronizarlas antes de cambiar.',
+      )
+      setState('awaiting-operator')
+      return
+    }
+    setOperatorSession(validatedOperator)
+    setState('ready-online')
+    await runRemoteBootstrap(user, true)
+  }
+
+  async function syncCurrentSession(forceRetry = false) {
+    if (!user) return
+    if (!connectivityService.isNetworkAvailable()) return
+    setSyncing(true)
+    try {
+      if (user.role !== 'admin') {
+        setState('validating-operator')
+        const validatedOperator = await operatorSessionService.validate(user.id)
+        if (!validatedOperator) {
+          setOperatorSession(undefined)
+          setState('awaiting-operator')
+          return
+        }
+        setOperatorSession(validatedOperator)
+        const sync = await syncService.process({
+          forceRetry,
+          operatorAccountId: validatedOperator.account.id,
+        })
+        setSyncError(sync.failed ? sync.errors?.join(' · ') : undefined)
+        await refreshLocalState()
+        setState('ready-online')
+        return
+      }
+      const sync = await syncService.process({ forceRetry })
+      setSyncError(sync.failed ? sync.errors?.join(' · ') : undefined)
+      await refreshLocalState()
+    } catch {
+      setSyncError('No fue posible sincronizar los cambios guardados.')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  async function switchOperator() {
+    if (!user || !operatorSession) return
+    if (!connectivityService.isNetworkAvailable()) {
+      setStartupNotice('Cambiar usuario requiere conexión.')
+      return
+    }
+    if (await operationsRepository.hasPendingWorkForOperator(operatorSession.account.id)) {
+      setStartupNotice(
+        'Hay operaciones pendientes de sincronizar. Sincronízalas antes de cambiar de usuario.',
+      )
+      return
+    }
+    await operatorSessionService.logout()
+    setOperatorSession(undefined)
+    setPage('home')
+    setState('awaiting-operator')
+  }
+
   async function signOut() {
+    if (
+      operatorSession &&
+      !window.confirm('Se cerrará la sesión del dispositivo. ¿Deseas continuar?')
+    ) {
+      return
+    }
     const remoteStopped = remoteBootstrapService.cancelForSignOut()
     setUser(undefined)
+    setOperatorSession(undefined)
     setPage('home')
     setAttendanceStoreFilter(ALL_STORES)
     setState('requires-first-login')
@@ -288,6 +420,7 @@ function App() {
       localContextService.setAccessState('signed-out'),
       authService.signOut(),
       remoteStopped,
+      operatorSessionService.logout(),
     ])
     await localContextService.setAccessState('signed-out')
     setLocalContext(await localContextService.load())
@@ -392,8 +525,28 @@ function App() {
     )
   }
 
+  if (user.role !== 'admin' && !operatorSession) {
+    if (state === 'recovering-session' || state === 'validating-operator') {
+      return (
+        <main className="flex min-h-dvh items-center justify-center bg-slate-50 px-6">
+          <p className="text-sm font-semibold text-slate-500">Validando sesión de operador…</p>
+        </main>
+      )
+    }
+    return (
+      <OperatorLoginPage
+        networkAvailable={networkAvailable}
+        notice={startupNotice}
+        store={stores.find((store) => store.id === user.storeId)}
+        technicalUserId={user.id}
+        onSignedIn={() => operatorSignedIn()}
+      />
+    )
+  }
+
   return (
     <AppShell
+      activeOperator={operatorSession?.account}
       backendReachable={backendReachable}
       currentPage={page}
       networkAvailable={networkAvailable}
@@ -403,7 +556,8 @@ function App() {
       user={user}
       onNavigate={navigate}
       onSignOut={() => void signOut()}
-      onSync={() => void runRemoteBootstrap(undefined, true)}
+      onSwitchOperator={operatorSession ? () => void switchOperator() : undefined}
+      onSync={() => void syncCurrentSession(true)}
     >
       {page === 'home' && (
         <DashboardPage pendingCount={pendingCount} revision={revision} stores={stores} user={user} onNavigate={navigate} />
@@ -411,21 +565,31 @@ function App() {
       {page === 'expenses' && (
         <ExpensesPage
           networkAvailable={networkAvailable}
+          operatorAccountId={operatorSession?.account.id ?? null}
           stores={stores}
           user={user}
           onDataChanged={() => void refreshLocalState()}
+          onSync={() => syncCurrentSession()}
         />
       )}
       {page === 'transfers' && (
-        <TransfersPage stores={stores} user={user} onDataChanged={() => void refreshLocalState()} />
+        <TransfersPage
+          operatorAccountId={operatorSession?.account.id ?? null}
+          stores={stores}
+          user={user}
+          onDataChanged={() => void refreshLocalState()}
+          onSync={() => syncCurrentSession()}
+        />
       )}
       {page === 'collaborators' && (
         <CollaboratorsPage
           attendanceStoreFilter={attendanceStoreFilter}
+          operatorAccountId={operatorSession?.account.id ?? null}
           stores={stores}
           user={user}
           onDataChanged={() => void refreshLocalState()}
           onAttendanceStoreFilterChange={setAttendanceStoreFilter}
+          onSync={() => syncCurrentSession()}
         />
       )}
       {page === 'purchases' && user.role === 'admin' && (

@@ -24,7 +24,6 @@ import type {
   Store,
   UserProfile,
 } from '../domain/models'
-import { syncService } from '../services/syncService'
 import { connectivityService } from '../services/connectivityService'
 import {
   filterTransfersByTicket,
@@ -54,7 +53,9 @@ const DETAIL_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
 type TransfersPageProps = {
   stores: Store[]
   user: UserProfile
+  operatorAccountId?: string | null
   onDataChanged: () => void
+  onSync?: () => Promise<void>
 }
 
 export function resolveTransferOriginStoreId(
@@ -92,7 +93,9 @@ function detailDate(value: string): string {
 export function TransfersPage({
   stores,
   user,
+  operatorAccountId,
   onDataChanged,
+  onSync,
 }: TransfersPageProps) {
   const today = getOperationalDate()
   const activeStores = useMemo(
@@ -274,6 +277,7 @@ export function TransfersPage({
           notes,
         },
         user.id,
+        operatorAccountId,
       )
       await load()
       setFeedback(
@@ -283,15 +287,9 @@ export function TransfersPage({
       )
       setFormOpen(false)
       onDataChanged()
-      void syncService
-        .process()
-        .then(async () => {
-          await load()
-          onDataChanged()
-        })
-        .catch((cause: unknown) => {
-          console.error('No fue posible sincronizar la transferencia', cause)
-        })
+      await onSync?.()
+      await load()
+      onDataChanged()
     } catch (cause: unknown) {
       if (cause instanceof TransferValidationError) {
         setErrors(cause.messages)

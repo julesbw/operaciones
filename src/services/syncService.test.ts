@@ -110,4 +110,37 @@ describe('SyncService manual retry', () => {
     })
     expect(mocks.purchaseSync).toHaveBeenCalledWith('purchase-id')
   })
+
+  it('does not synchronize an item attributed to a different operator', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockReturnValue(query)
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([
+      { ...pendingPurchase, id: 'purchase:operator-a', entityId: 'operator-a', operatorAccountId: 'operator-a' },
+      { ...pendingPurchase, id: 'purchase:operator-b', entityId: 'operator-b', operatorAccountId: 'operator-b' },
+    ])
+    mocks.countPendingQueue.mockResolvedValue(1)
+    mocks.purchaseSync.mockResolvedValue(undefined)
+    mocks.completeQueueItem.mockResolvedValue(undefined)
+    mocks.markEntitySyncStatus.mockResolvedValue(undefined)
+    mocks.saveRemoteAttendance.mockResolvedValue(undefined)
+    mocks.saveRemoteExpenses.mockResolvedValue(undefined)
+    mocks.saveRemoteMerchandiseTransfers.mockResolvedValue(undefined)
+
+    const service = new SyncService()
+
+    await service.process({ forceRetry: true, operatorAccountId: 'operator-a' })
+
+    expect(mocks.purchaseSync).toHaveBeenCalledWith('operator-a')
+    expect(mocks.purchaseSync).not.toHaveBeenCalledWith('operator-b')
+  })
 })

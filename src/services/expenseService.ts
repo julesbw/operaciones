@@ -187,7 +187,11 @@ function centralCashRpcArgs(
 }
 
 class ExpenseService {
-  async create(input: ExpenseInput, user: UserProfile): Promise<Expense> {
+  async create(
+    input: ExpenseInput,
+    user: UserProfile,
+    operatorAccountId?: string | null,
+  ): Promise<Expense> {
     const messages = validateExpense(input)
     if (messages.length > 0) throw new ExpenseValidationError(messages)
 
@@ -235,6 +239,7 @@ class ExpenseService {
       sourceStoreId: input.sourceStoreId,
       notes: input.notes?.trim() || undefined,
       createdBy: user.id,
+      operatorAccountId: operatorAccountId ?? null,
       createdAt: now,
       updatedAt: now,
       version: 0,
@@ -247,6 +252,7 @@ class ExpenseService {
       operation: 'insert',
       createdAt: now,
       attempts: 0,
+      operatorAccountId: operatorAccountId ?? null,
     }
 
     await operationsRepository.saveExpenseWithQueue(expense, queueItem)

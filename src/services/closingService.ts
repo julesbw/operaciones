@@ -609,6 +609,7 @@ class ClosingService {
     businessDate: string,
     userId: string,
     closingReconciliationMode: ClosingReconciliationMode = 'normal',
+    operatorAccountId?: string | null,
   ): CashClosingDraft {
     const now = new Date().toISOString()
     return {
@@ -645,6 +646,7 @@ class ClosingService {
       currentStep: 1,
       status: 'draft',
       createdBy: userId,
+      operatorAccountId: operatorAccountId ?? null,
       createdAt: now,
       updatedAt: now,
     }

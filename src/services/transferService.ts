@@ -76,6 +76,7 @@ class TransferService {
   async create(
     input: MerchandiseTransferInput,
     userId: string,
+    operatorAccountId?: string | null,
   ): Promise<MerchandiseTransfer> {
     const messages = validateMerchandiseTransfer(input)
     if (messages.length > 0) throw new TransferValidationError(messages)
@@ -88,6 +89,7 @@ class TransferService {
       amount: Math.round(input.amount * 100) / 100,
       notes: input.notes?.trim() || undefined,
       createdBy: userId,
+      operatorAccountId: operatorAccountId ?? null,
       createdAt: now,
       updatedAt: now,
       version: 0,
@@ -100,6 +102,7 @@ class TransferService {
       operation: 'insert',
       createdAt: now,
       attempts: 0,
+      operatorAccountId: operatorAccountId ?? null,
     }
 
     await operationsRepository.saveMerchandiseTransferWithQueue(

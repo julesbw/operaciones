@@ -137,6 +137,9 @@ export class OperationsDatabase extends Dexie {
     const schemaV16 = {
       ...schemaV15,
     }
+    const schemaV17 = {
+      ...schemaV16,
+    }
 
     this.version(1).stores(schemaV1)
     this.version(2)
@@ -272,6 +275,7 @@ export class OperationsDatabase extends Dexie {
             draft.closingReconciliationMode ??= 'normal'
           })
       })
+    this.version(17).stores(schemaV17)
   }
 }
 

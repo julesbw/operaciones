@@ -18,18 +18,22 @@ const TAB_OPTIONS: readonly FilterChipOption<CollaboratorsTab>[] = [
 
 type CollaboratorsPageProps = {
   attendanceStoreFilter: StoreScopeValue
+  operatorAccountId?: string | null
   stores: Store[]
   user: UserProfile
   onDataChanged: () => void
   onAttendanceStoreFilterChange: (value: StoreScopeValue) => void
+  onSync?: () => Promise<void>
 }
 
 export function CollaboratorsPage({
   attendanceStoreFilter,
+  operatorAccountId,
   stores,
   user,
   onDataChanged,
   onAttendanceStoreFilterChange,
+  onSync,
 }: CollaboratorsPageProps) {
   const [tab, setTab] = useState<CollaboratorsTab>('attendance')
 
@@ -58,8 +62,10 @@ export function CollaboratorsPage({
             stores={stores}
             storeFilter={attendanceStoreFilter}
             user={user}
+            operatorAccountId={operatorAccountId}
             onDataChanged={onDataChanged}
             onStoreFilterChange={onAttendanceStoreFilterChange}
+            onSync={onSync}
           />
         )}
         {tab === 'payments' && user.role === 'admin' && (

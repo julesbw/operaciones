@@ -294,6 +294,7 @@ class PurchaseService {
   async create(
     input: CreatePurchaseInput,
     user: UserProfile,
+    operatorAccountId?: string | null,
   ): Promise<PaidPurchase> {
     if (user.role !== 'admin') {
       throw new PurchaseDomainError('PURCHASE_REQUIRES_ADMIN')
@@ -354,6 +355,7 @@ class PurchaseService {
       amount,
       notes: input.notes?.trim() || undefined,
       createdBy: user.id,
+      operatorAccountId: operatorAccountId ?? null,
       createdAt: now,
       updatedAt: now,
       syncStatus: 'pending',
@@ -379,6 +381,7 @@ class PurchaseService {
       operation: 'insert',
       createdAt: now,
       attempts: 0,
+      operatorAccountId: operatorAccountId ?? null,
     }
     await operationsRepository.savePaidPurchaseWithQueue(
       purchase,

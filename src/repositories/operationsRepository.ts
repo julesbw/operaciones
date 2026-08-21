@@ -597,6 +597,34 @@ export class OperationsRepository {
     return this.database.syncQueue.count()
   }
 
+  async hasPendingWorkForOperator(operatorAccountId: string): Promise<boolean> {
+    const [queued, drafts] = await Promise.all([
+      this.database.syncQueue
+        .filter((item) => item.operatorAccountId === operatorAccountId)
+        .count(),
+      this.database.closingDrafts
+        .filter((draft) => draft.operatorAccountId === operatorAccountId)
+        .count(),
+    ])
+    return queued > 0 || drafts > 0
+  }
+
+  async hasPendingWorkForAnotherOperator(operatorAccountId: string): Promise<boolean> {
+    const [queued, drafts] = await Promise.all([
+      this.database.syncQueue
+        .filter(
+          (item) => Boolean(item.operatorAccountId) && item.operatorAccountId !== operatorAccountId,
+        )
+        .count(),
+      this.database.closingDrafts
+        .filter(
+          (draft) => Boolean(draft.operatorAccountId) && draft.operatorAccountId !== operatorAccountId,
+        )
+        .count(),
+    ])
+    return queued > 0 || drafts > 0
+  }
+
   async countPendingSelectedClosingMovements(
     expenseIds: readonly string[],
     transferIds: readonly string[],

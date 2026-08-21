@@ -7,7 +7,7 @@ import {
   type ReactNode,
   type SVGProps,
 } from 'react'
-import type { UserProfile } from '../domain/models'
+import type { OperatorSession, UserProfile } from '../domain/models'
 import {
   ArrowIcon,
   CashIcon,
@@ -104,6 +104,7 @@ export function navigationItemsForRole(
 }
 
 type AppShellProps = {
+  activeOperator?: OperatorSession['account']
   backendReachable?: boolean
   children: ReactNode
   currentPage: PageId
@@ -114,6 +115,7 @@ type AppShellProps = {
   user: UserProfile
   onNavigate: (page: PageId) => void
   onSignOut: () => void
+  onSwitchOperator?: () => void
   onSync: () => void
 }
 
@@ -127,6 +129,7 @@ function initials(name: string): string {
 }
 
 export function AppShell({
+  activeOperator,
   backendReachable,
   children,
   currentPage,
@@ -137,6 +140,7 @@ export function AppShell({
   user,
   onNavigate,
   onSignOut,
+  onSwitchOperator,
   onSync,
 }: AppShellProps) {
   const [profileOpen, setProfileOpen] = useState(false)
@@ -156,6 +160,7 @@ export function AppShell({
   const moreActive = moreMobileItems.some((item) => item.id === currentPage)
   const moreMenuState = moreMenuOpen ? 'open' : 'closed'
   const roleLabel = user.role === 'admin' ? 'Administrador' : 'Cashier'
+  const activeName = activeOperator?.displayName ?? user.fullName
 
   useEffect(() => {
     setMoreMenuOpen(false)
@@ -236,6 +241,12 @@ export function AppShell({
     restoreScrollRef.current = false
     closeProfile(false)
     onSignOut()
+  }
+
+  function switchOperatorFromProfile() {
+    restoreScrollRef.current = false
+    closeProfile(false)
+    onSwitchOperator?.()
   }
 
   function startSwipe(event: ReactPointerEvent<HTMLElement>) {
@@ -342,14 +353,14 @@ export function AppShell({
               aria-label="Abrir menú de perfil"
               className="avatar"
               ref={profileButtonRef}
-              title={user.fullName}
+              title={activeName}
               type="button"
               onClick={() => {
                 restoreScrollRef.current = true
                 setProfileOpen(true)
               }}
             >
-              {initials(user.fullName)}
+              {initials(activeName)}
             </button>
           </div>
         </header>
@@ -467,11 +478,13 @@ export function AppShell({
               </div>
 
               <header className="border-b border-slate-200 pb-6">
-                <span className="avatar size-14 text-sm">{initials(user.fullName)}</span>
+                <span className="avatar size-14 text-sm">{initials(activeName)}</span>
                 <h2 className="mt-4 text-xl font-black text-slate-950" id="profile-drawer-title">
-                  {user.fullName}
+                  {activeName}
                 </h2>
-                <p className="mt-1 text-sm font-semibold text-slate-500">{roleLabel}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-500">
+                  {activeOperator ? 'Operador activo' : roleLabel}
+                </p>
                 {user.storeName && (
                   <p className="mt-1 text-sm text-slate-500">{user.storeName}</p>
                 )}
@@ -490,13 +503,24 @@ export function AppShell({
               </nav>
 
               <footer className="mt-auto border-t border-slate-200 pt-5">
+                {onSwitchOperator && (
+                  <button
+                    className="profile-menu-item"
+                    disabled={!networkAvailable}
+                    type="button"
+                    onClick={switchOperatorFromProfile}
+                  >
+                    <ArrowIcon className="size-5" />
+                    <span>Cambiar usuario</span>
+                  </button>
+                )}
                 <button
                   className="profile-menu-item text-red-700 hover:bg-red-50"
                   type="button"
                   onClick={signOutFromProfile}
                 >
                   <LogoutIcon className="size-5" />
-                  <span>Cerrar sesión</span>
+                  <span>{activeOperator ? 'Cerrar sesión del dispositivo' : 'Cerrar sesión'}</span>
                 </button>
                 <p className="mt-6 text-xs font-semibold text-slate-400">
                   La Piedad Operaciones · v{import.meta.env.APP_VERSION}

@@ -42,7 +42,6 @@ import {
   expenseService,
   ExpenseValidationError,
 } from '../services/expenseService'
-import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import {
   currencyFormatter,
@@ -72,7 +71,9 @@ type ExpensesPageProps = {
   stores: Store[]
   user: UserProfile
   networkAvailable: boolean
+  operatorAccountId?: string | null
   onDataChanged: () => void
+  onSync?: () => Promise<void>
 }
 
 function capitalize(value: string): string {
@@ -101,7 +102,9 @@ export function ExpensesPage({
   stores,
   user,
   networkAvailable,
+  operatorAccountId,
   onDataChanged,
+  onSync,
 }: ExpensesPageProps) {
   const today = getLocalDate()
   const activeStores = useMemo(
@@ -328,6 +331,7 @@ export function ExpensesPage({
           notes,
         },
         user,
+        operatorAccountId,
       )
       await load()
       setFeedback(
@@ -338,15 +342,9 @@ export function ExpensesPage({
       setFormOpen(false)
       onDataChanged()
       if (fundingSource === 'store_cash') {
-        void syncService
-          .process()
-          .then(async () => {
-            await load()
-            onDataChanged()
-          })
-          .catch((cause: unknown) => {
-            console.error('No fue posible sincronizar el gasto', cause)
-          })
+        await onSync?.()
+        await load()
+        onDataChanged()
       }
     } catch (cause: unknown) {
       if (cause instanceof ExpenseValidationError) {
