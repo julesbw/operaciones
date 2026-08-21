@@ -135,4 +135,48 @@ describe('AttendanceService multi-store saves', () => {
       await database.delete()
     }
   })
+
+  it('does not attribute a legacy attendance record to the active operator', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const service = new AttendanceService(repository)
+    const existing: AttendanceRecord = {
+      id: 'legacy-attendance',
+      collaboratorId: 'collaborator-id',
+      storeId: 'store-id',
+      attendanceDate: '2026-08-10',
+      status: 'present',
+      recordedBy: 'technical-user',
+      operatorAccountId: null,
+      createdAt: '2026-08-10T12:00:00.000Z',
+      updatedAt: '2026-08-10T12:00:00.000Z',
+      version: 1,
+      syncStatus: 'synced',
+    }
+
+    try {
+      await database.attendanceRecords.put(existing)
+
+      await expect(
+        service.save(
+          [{
+            collaboratorId: existing.collaboratorId,
+            storeId: existing.storeId,
+            attendanceDate: existing.attendanceDate,
+            status: 'absent',
+          }],
+          existing.recordedBy,
+          existing.attendanceDate,
+          'active-operator',
+        ),
+      ).rejects.toThrow('sin identidad operativa')
+      await expect(database.syncQueue.count()).resolves.toBe(0)
+      await expect(database.attendanceRecords.get(existing.id)).resolves.toEqual(
+        existing,
+      )
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
 })

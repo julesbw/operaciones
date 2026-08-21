@@ -5,10 +5,13 @@ import type {
   Store,
   StoreStatus,
   Supplier,
+  UserProfile,
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import type { CollaboratorCompensationRow } from '../types/database'
+import { mapOperatorAuthorizationError } from './operatorAuthorization'
+import { operatorSessionService } from './operatorSessionService'
 
 type StoreRow = {
   id: string
@@ -60,10 +63,10 @@ class ReferenceDataService {
     return operationsRepository.listSuppliers(activeOnly)
   }
 
-  async refresh(): Promise<void> {
+  async refresh(profile: UserProfile): Promise<void> {
     if (!supabase) return
 
-    const [storesResult, collaboratorsResult, compensationResult, suppliersResult] = await Promise.all([
+    const [storesResult, collaboratorsResult, compensationResult] = await Promise.all([
       supabase
         .from('stores')
         .select('id, name, status, closing_reconciliation_mode, created_at, updated_at')
@@ -76,16 +79,11 @@ class ReferenceDataService {
         .from('collaborator_compensation')
         .select('collaborator_id, weekly_pay')
         .returns<CompensationRow[]>(),
-      supabase
-        .from('suppliers')
-        .select('id, name, is_active, created_by, created_at, updated_at')
-        .returns<SupplierRow[]>(),
     ])
 
     if (storesResult.error) throw storesResult.error
     if (collaboratorsResult.error) throw collaboratorsResult.error
     if (compensationResult.error) throw compensationResult.error
-    if (suppliersResult.error) throw suppliersResult.error
 
     const compensationByCollaborator = new Map(
       compensationResult.data.map((compensation) => [
@@ -94,8 +92,7 @@ class ReferenceDataService {
       ]),
     )
 
-    await Promise.all([
-      operationsRepository.replaceReferenceData(
+    await operationsRepository.replaceReferenceData(
         storesResult.data.map((store) => ({
         id: store.id,
         name: store.name,
@@ -116,18 +113,34 @@ class ReferenceDataService {
         createdAt: collaborator.created_at,
         updatedAt: collaborator.updated_at,
         })),
-      ),
-      operationsRepository.replaceSuppliers(
-        suppliersResult.data.map((supplier) => ({
-          id: supplier.id,
-          name: supplier.name,
-          isActive: supplier.is_active,
-          createdBy: supplier.created_by,
-          createdAt: supplier.created_at,
-          updatedAt: supplier.updated_at,
-        })),
-      ),
-    ])
+      )
+
+    if (profile.role === 'admin') await this.refreshPurchaseSuppliers(profile)
+  }
+
+  async refreshPurchaseSuppliers(profile: UserProfile): Promise<void> {
+    if (!supabase) return
+    const result = profile.role === 'admin'
+      ? await supabase
+          .from('suppliers')
+          .select('id, name, is_active, created_by, created_at, updated_at')
+          .returns<SupplierRow[]>()
+      : await supabase.rpc('list_purchase_suppliers', {
+          p_operator_token: operatorSessionService.getRequiredActiveToken(
+            profile.id,
+          ),
+        })
+    if (result.error) throw mapOperatorAuthorizationError(result.error)
+    await operationsRepository.replaceSuppliers(
+      result.data.map((supplier) => ({
+        id: supplier.id,
+        name: supplier.name,
+        isActive: supplier.is_active,
+        createdBy: supplier.created_by,
+        createdAt: supplier.created_at,
+        updatedAt: supplier.updated_at,
+      })),
+    )
   }
 }
 

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { ALL_STORES } from '../components/filters/StoreScopeSelector'
-import type { Store, UserProfile } from '../domain/models'
+import type { OperatorSession, Store, UserProfile } from '../domain/models'
 import {
   resolveTransferOriginStoreId,
   TransfersPage,
@@ -38,19 +38,31 @@ const cashier: UserProfile = {
   storeName: 'Antigua Casa Piedad',
 }
 
+const cashierSession: OperatorSession = {
+  token: 'operator-token',
+  expiresAt: '2999-01-01T00:00:00.000Z',
+  account: {
+    id: 'cashier-account',
+    username: 'cashier',
+    displayName: 'Cajera',
+    role: 'cashier',
+    storeId: 'origin-store',
+  },
+}
+
 describe('TransfersPage store scope', () => {
   it('lets admins query all stores or one selected origin', () => {
-    expect(resolveTransferOriginStoreId(admin, ALL_STORES)).toBeUndefined()
-    expect(resolveTransferOriginStoreId(admin, 'origin-store')).toBe(
+    expect(resolveTransferOriginStoreId({ kind: 'global' }, ALL_STORES)).toBeUndefined()
+    expect(resolveTransferOriginStoreId({ kind: 'global' }, 'origin-store')).toBe(
       'origin-store',
     )
   })
 
   it('always derives a cashier query from the assigned store', () => {
-    expect(resolveTransferOriginStoreId(cashier, ALL_STORES)).toBe(
+    expect(resolveTransferOriginStoreId({ kind: 'fixed', storeId: 'origin-store' }, ALL_STORES)).toBe(
       'origin-store',
     )
-    expect(resolveTransferOriginStoreId(cashier, 'destination-store')).toBe(
+    expect(resolveTransferOriginStoreId({ kind: 'fixed', storeId: 'origin-store' }, 'destination-store')).toBe(
       'origin-store',
     )
   })
@@ -75,6 +87,7 @@ describe('TransfersPage store scope', () => {
       <TransfersPage
         stores={stores}
         user={cashier}
+        operatorSession={cashierSession}
         onDataChanged={vi.fn()}
       />,
     )

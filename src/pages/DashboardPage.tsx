@@ -3,6 +3,7 @@ import type { OperatorSession, Store, UserProfile } from '../domain/models'
 import { getEffectiveDisplayName } from '../domain/runtimeIdentity'
 import { ArrowIcon, CashIcon, ReceiptIcon, UsersIcon } from '../components/icons'
 import type { PageId } from '../components/AppShell'
+import { hasCapability } from '../domain/capabilities'
 import { attendanceService } from '../services/attendanceService'
 import { expenseService } from '../services/expenseService'
 import { getLocalDate } from '../utils/date'
@@ -151,7 +152,10 @@ export function DashboardPage({
         </article>
       </div>
 
-      {user.role === 'admin' && (
+      {hasCapability(
+        { technicalUser: user, operatorSession },
+        'cashClosings',
+      ) && (
         <button
           className="mt-5 flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
           type="button"

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LocalAppContext, SyncQueueItem } from '../domain/models'
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   from: vi.fn(),
   isNetworkAvailable: vi.fn(),
+  getRequiredActiveSession: vi.fn(),
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -48,6 +49,12 @@ vi.mock('./purchaseService', () => ({
   purchaseService: { sync: mocks.purchaseSync },
 }))
 
+vi.mock('./operatorSessionService', () => ({
+  operatorSessionService: {
+    getRequiredActiveSession: mocks.getRequiredActiveSession,
+  },
+}))
+
 import { SyncService } from './syncService'
 
 const context: LocalAppContext = {
@@ -72,6 +79,10 @@ const pendingPurchase: SyncQueueItem = {
 }
 
 describe('SyncService manual retry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('bypasses backoff only when forceRetry is requested', async () => {
     const query = {
       select: vi.fn().mockReturnThis(),
@@ -108,7 +119,7 @@ describe('SyncService manual retry', () => {
       failed: 0,
       pending: 0,
     })
-    expect(mocks.purchaseSync).toHaveBeenCalledWith('purchase-id')
+    expect(mocks.purchaseSync).toHaveBeenCalledWith('purchase-id', null)
   })
 
   it('does not synchronize an item attributed to a different operator', async () => {
@@ -122,7 +133,22 @@ describe('SyncService manual retry', () => {
       data: { session: { user: { id: 'user-id' } } },
       error: null,
     })
-    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.getLocalAppContext.mockResolvedValue({
+      ...context,
+      role: 'cashier',
+      storeId: 'store-id',
+    })
+    mocks.getRequiredActiveSession.mockReturnValue({
+      token: 'operator-token',
+      expiresAt: '2999-01-01T00:00:00.000Z',
+      account: {
+        id: 'operator-a',
+        username: 'operator-a',
+        displayName: 'Operador A',
+        role: 'store_manager',
+        storeId: 'store-id',
+      },
+    })
     mocks.isNetworkAvailable.mockReturnValue(true)
     mocks.listPendingQueue.mockResolvedValue([
       { ...pendingPurchase, id: 'purchase:operator-a', entityId: 'operator-a', operatorAccountId: 'operator-a' },
@@ -140,7 +166,112 @@ describe('SyncService manual retry', () => {
 
     await service.process({ forceRetry: true, operatorAccountId: 'operator-a' })
 
-    expect(mocks.purchaseSync).toHaveBeenCalledWith('operator-a')
-    expect(mocks.purchaseSync).not.toHaveBeenCalledWith('operator-b')
+    expect(mocks.purchaseSync).toHaveBeenCalledWith('operator-a', 'operator-token')
+    expect(mocks.purchaseSync).not.toHaveBeenCalledWith('operator-b', 'operator-token')
+  })
+
+  it('keeps legacy unattributed work pending with an actionable error', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockReturnValue(query)
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue({
+      ...context,
+      role: 'cashier',
+      storeId: 'store-id',
+    })
+    mocks.getRequiredActiveSession.mockReturnValue({
+      token: 'operator-token',
+      expiresAt: '2999-01-01T00:00:00.000Z',
+      account: {
+        id: 'operator-a',
+        username: 'operator-a',
+        displayName: 'Operador A',
+        role: 'store_manager',
+        storeId: 'store-id',
+      },
+    })
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([
+      { ...pendingPurchase, operatorAccountId: null },
+    ])
+    mocks.countPendingQueue.mockResolvedValue(1)
+    mocks.saveRemoteAttendance.mockResolvedValue(undefined)
+    mocks.saveRemoteExpenses.mockResolvedValue(undefined)
+    mocks.saveRemoteMerchandiseTransfers.mockResolvedValue(undefined)
+
+    const service = new SyncService()
+    const result = await service.process({
+      forceRetry: true,
+      operatorAccountId: 'operator-a',
+    })
+
+    expect(result).toMatchObject({ synced: 0, failed: 1, pending: 1 })
+    expect(result.errors?.[0]).toContain('sin identidad operativa')
+    expect(mocks.failQueueItem).toHaveBeenCalledWith(
+      expect.objectContaining({ id: pendingPurchase.id }),
+      expect.stringContaining('sin identidad operativa'),
+    )
+    expect(mocks.purchaseSync).not.toHaveBeenCalled()
+  })
+
+  it('preserves a pending purchase after a server-side role downgrade', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockReturnValue(query)
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue({
+      ...context,
+      role: 'cashier',
+      storeId: 'store-id',
+    })
+    mocks.getRequiredActiveSession.mockReturnValue({
+      token: 'new-session-token',
+      expiresAt: '2999-01-01T00:00:00.000Z',
+      account: {
+        id: 'operator-a',
+        username: 'operator-a',
+        displayName: 'Operador A',
+        role: 'cashier',
+        storeId: 'store-id',
+      },
+    })
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([
+      { ...pendingPurchase, operatorAccountId: 'operator-a' },
+    ])
+    mocks.countPendingQueue.mockResolvedValue(1)
+    mocks.purchaseSync.mockRejectedValue(
+      new Error('OPERATOR_CAPABILITY_FORBIDDEN'),
+    )
+    mocks.saveRemoteAttendance.mockResolvedValue(undefined)
+    mocks.saveRemoteExpenses.mockResolvedValue(undefined)
+    mocks.saveRemoteMerchandiseTransfers.mockResolvedValue(undefined)
+
+    const service = new SyncService()
+    const result = await service.process({
+      forceRetry: true,
+      operatorAccountId: 'operator-a',
+    })
+
+    expect(result).toMatchObject({ synced: 0, failed: 1, pending: 1 })
+    expect(result.errors?.[0]).toContain('rol actual')
+    expect(mocks.completeQueueItem).not.toHaveBeenCalled()
+    expect(mocks.failQueueItem).toHaveBeenCalledWith(
+      expect.objectContaining({ id: pendingPurchase.id }),
+      expect.stringContaining('rol actual'),
+    )
   })
 })

@@ -22,6 +22,10 @@ import {
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
 import {
+  getRuntimeStoreScope,
+  hasCapability,
+} from '../domain/capabilities'
+import {
   EMPTY_CENTRAL_CASH_BILLS,
 } from '../domain/constants'
 import {
@@ -32,6 +36,7 @@ import {
   PAYMENT_METHODS,
   type CentralCashBills,
   type Expense,
+  type OperatorSession,
   type PaymentMethod,
   type PaymentFundingSource,
   type Store,
@@ -70,6 +75,7 @@ type PaymentFilter = PaymentMethod | 'all'
 type ExpensesPageProps = {
   stores: Store[]
   user: UserProfile
+  operatorSession?: OperatorSession
   networkAvailable: boolean
   operatorAccountId?: string | null
   onDataChanged: () => void
@@ -101,6 +107,7 @@ function compactDate(value: string): string {
 export function ExpensesPage({
   stores,
   user,
+  operatorSession,
   networkAvailable,
   operatorAccountId,
   onDataChanged,
@@ -112,7 +119,9 @@ export function ExpensesPage({
     [stores],
   )
   const isAdmin = user.role === 'admin'
-  const cashierStoreId = user.storeId ?? ''
+  const identity = { technicalUser: user, operatorSession }
+  const storeScope = getRuntimeStoreScope(identity)
+  const cashierStoreId = storeScope.kind === 'fixed' ? storeScope.storeId : ''
   const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(
     isAdmin ? ALL_STORES : cashierStoreId,
   )
@@ -360,6 +369,8 @@ export function ExpensesPage({
 
   const cannotCreate = isAdmin ? activeStores.length === 0 : !cashierStoreId
 
+  if (!hasCapability(identity, 'expenses')) return null
+
   return (
     <section>
       <div>
@@ -387,8 +398,7 @@ export function ExpensesPage({
             </p>
             <StoreScopeSelector
               ariaLabel="Filtrar gastos por tienda"
-              assignedStoreId={user.storeId}
-              role={user.role}
+              scope={storeScope}
               stores={stores}
               value={storeFilter}
               onChange={setStoreFilter}

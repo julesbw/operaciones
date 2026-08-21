@@ -1,10 +1,12 @@
 import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
+import { hasCapability } from '../domain/capabilities'
 import type {
   CreatePurchaseInput,
   PaidPurchase,
   Purchase,
   PurchasePayment,
   SyncQueueItem,
+  OperatorSession,
   UserProfile,
 } from '../domain/models'
 import {
@@ -21,6 +23,8 @@ import { getLocalDate } from '../utils/date'
 import { calculateBillsTotal } from '../utils/money'
 import { centralCashService } from './centralCashService'
 import { connectivityService } from './connectivityService'
+import { mapOperatorAuthorizationError } from './operatorAuthorization'
+import { operatorSessionService } from './operatorSessionService'
 
 export type PurchaseDomainErrorCode =
   | 'PURCHASE_REQUIRES_ADMIN'
@@ -38,7 +42,7 @@ export type PurchaseDomainErrorCode =
   | 'PURCHASE_REQUEST_ID_CONFLICT'
 
 const ERROR_MESSAGES: Record<PurchaseDomainErrorCode, string> = {
-  PURCHASE_REQUIRES_ADMIN: 'Sólo administración puede registrar Compras.',
+  PURCHASE_REQUIRES_ADMIN: 'Tu rol actual no permite registrar Compras.',
   PURCHASE_SUPPLIER_REQUIRED: 'Selecciona un proveedor activo.',
   PURCHASE_SUPPLIER_INACTIVE:
     'El proveedor ya no está activo. Actualiza el catálogo.',
@@ -114,6 +118,7 @@ function mapPurchase(row: PurchaseRow, synced = true): Purchase {
     amount: Number(row.amount),
     notes: row.notes ?? undefined,
     createdBy: row.created_by,
+    operatorAccountId: row.created_by_operator_account_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     syncStatus: synced ? 'synced' : 'pending',
@@ -265,8 +270,24 @@ class PurchaseService {
     return operationsRepository.listPaidPurchases(options)
   }
 
-  async refreshRemote(): Promise<void> {
+  async refreshRemote(user: UserProfile): Promise<void> {
     if (!supabase || !connectivityService.isNetworkAvailable()) return
+    if (user.role !== 'admin') {
+      const token = operatorSessionService.getRequiredActiveToken(user.id)
+      const { data, error } = await supabase.rpc('list_paid_purchases', {
+        p_operator_token: token,
+        p_store_id: null,
+        p_date_from: null,
+        p_date_to: null,
+      })
+      if (error) throw mapOperatorAuthorizationError(error)
+      const items = (data ?? []).map((item) => ({
+        purchase: mapPurchase(item.purchase),
+        payment: mapPurchasePayment(item.payment),
+      }))
+      await operationsRepository.saveRemotePaidPurchases(items)
+      return
+    }
     const [purchasesResult, paymentsResult] = await Promise.all([
       supabase.from('purchases').select('*').returns<PurchaseRow[]>(),
       supabase
@@ -294,10 +315,20 @@ class PurchaseService {
   async create(
     input: CreatePurchaseInput,
     user: UserProfile,
-    operatorAccountId?: string | null,
+    operatorSession?: OperatorSession | null,
   ): Promise<PaidPurchase> {
-    if (user.role !== 'admin') {
+    const identity = { technicalUser: user, operatorSession }
+    if (!hasCapability(identity, 'purchases')) {
       throw new PurchaseDomainError('PURCHASE_REQUIRES_ADMIN')
+    }
+    const operatorAccountId = operatorSession?.account.id ?? null
+    if (user.role !== 'admin') {
+      if (
+        input.fundingSource !== 'store_cash' ||
+        input.sourceStoreId !== operatorSession?.account.storeId
+      ) {
+        throw new PurchaseDomainError('PURCHASE_STORE_FORBIDDEN')
+      }
     }
     validatePurchaseInput(input)
 
@@ -332,7 +363,11 @@ class PurchaseService {
           'PURCHASE_CENTRAL_CASH_REQUIRES_ONLINE',
         )
       }
-      const result = await this.callCreateRpc(input, new Date().toISOString())
+      const result = await this.callCreateRpc(
+        input,
+        new Date().toISOString(),
+        null,
+      )
       await operationsRepository.saveConfirmedPaidPurchase(
         result.purchase,
         result.payment,
@@ -391,7 +426,10 @@ class PurchaseService {
     return { purchase, payment }
   }
 
-  async sync(purchaseId: string): Promise<void> {
+  async sync(
+    purchaseId: string,
+    operatorToken: string | null = null,
+  ): Promise<void> {
     const purchase = await operationsRepository.getPurchase(purchaseId)
     const payment =
       await operationsRepository.getPurchasePaymentByPurchaseId(purchaseId)
@@ -414,6 +452,7 @@ class PurchaseService {
         coinsAmount: payment.coinsAmount,
       },
       purchase.createdAt,
+      operatorToken,
     )
     await operationsRepository.saveConfirmedPaidPurchase(
       { ...result.purchase, syncStatus: purchase.syncStatus },
@@ -424,15 +463,19 @@ class PurchaseService {
   private async callCreateRpc(
     input: CreatePurchaseInput,
     createdAt: string,
+    operatorToken: string | null,
   ): Promise<PaidPurchase> {
     if (!supabase) {
       throw new PurchaseDomainError('PURCHASE_CENTRAL_CASH_REQUIRES_ONLINE')
     }
     const { data, error } = await supabase.rpc(
       'create_paid_purchase',
-      purchaseToRpcArgs(input, createdAt),
+      {
+        ...purchaseToRpcArgs(input, createdAt),
+        p_operator_token: operatorToken,
+      },
     )
-    if (error) throw purchaseError(error)
+    if (error) throw purchaseError(mapOperatorAuthorizationError(error))
     if (!data?.purchase || !data.payment) {
       throw new Error('Supabase no confirmó la compra.')
     }

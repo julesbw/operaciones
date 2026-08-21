@@ -7,6 +7,7 @@ import type {
   MerchandiseTransfer,
   PaidPurchase,
   Payment,
+  UserProfile,
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
@@ -21,7 +22,11 @@ import type { ClosingAdjustment } from '../domain/models'
 import { calculateBillsTotal } from '../utils/money'
 import { connectivityService } from './connectivityService'
 import { syncService } from './syncService'
-import { closingAdjustmentService } from './closingAdjustmentService'
+import {
+  mapOperatorAuthorizationError,
+  OperatorAuthorizationError,
+} from './operatorAuthorization'
+import { operatorSessionService } from './operatorSessionService'
 
 export type ClosingExpenseTotals = {
   total: number
@@ -39,10 +44,15 @@ export type ClosingOperationalTotals = {
   cashOutflowsTotal: number
 }
 
+export type ClosingPaymentCandidate = Pick<
+  Payment,
+  'id' | 'collaboratorNameSnapshot' | 'paidAmount'
+>
+
 export type ClosingOperationalSummary = ClosingOperationalTotals & {
   expenses: Expense[]
   outgoingTransfers: MerchandiseTransfer[]
-  storeCashPayments: Payment[]
+  storeCashPayments: ClosingPaymentCandidate[]
   storeCashPurchases: PaidPurchase[]
 }
 
@@ -151,7 +161,7 @@ export function calculateExpenseTotals(
 export function calculateOperationalTotals(
   expenses: Expense[],
   outgoingTransfers: MerchandiseTransfer[],
-  storeCashPayments: Payment[] = [],
+  storeCashPayments: ClosingPaymentCandidate[] = [],
   storeCashPurchases: PaidPurchase[] = [],
 ): ClosingOperationalTotals {
   const expenseTotals = calculateExpenseTotals(expenses)
@@ -335,6 +345,7 @@ class ClosingService {
   async getEligibleMovements(
     storeId: string,
     businessDate: string,
+    user: UserProfile,
   ): Promise<ClosingOperationalSummary> {
     if (supabase && connectivityService.isNetworkAvailable()) {
       try {
@@ -343,6 +354,9 @@ class ClosingService {
           {
             p_store_id: storeId,
             p_business_date: businessDate,
+            p_operator_token: user.role === 'admin'
+              ? null
+              : operatorSessionService.getRequiredActiveToken(user.id),
           },
         )
         if (error) throw error
@@ -379,24 +393,11 @@ class ClosingService {
           version: transfer.version,
           syncStatus: 'synced',
         }))
-        const storeCashPayments: Payment[] = (data?.payments ?? []).map(
+        const storeCashPayments = (data?.payments ?? []).map(
           (payment) => ({
             id: payment.id,
-            collaboratorId: payment.collaborator_id,
             collaboratorNameSnapshot: payment.collaborator_name_snapshot,
-            collaboratorStoreIdSnapshot:
-              payment.collaborator_store_id_snapshot,
-            payCycleEndWeekdaySnapshot:
-              payment.pay_cycle_end_weekday_snapshot,
-            businessDate: payment.business_date,
-            paidAt: payment.paid_at,
-            paidBy: payment.paid_by,
-            suggestedAmount: Number(payment.suggested_amount),
             paidAmount: Number(payment.paid_amount),
-            fundingSource: payment.funding_source,
-            sourceStoreId: payment.source_store_id ?? undefined,
-            notes: payment.notes ?? undefined,
-            createdAt: payment.created_at,
           }),
         )
         const remoteStoreCashPurchases: PaidPurchase[] = (
@@ -450,10 +451,12 @@ class ClosingService {
           ),
         }
       } catch (cause: unknown) {
+        const mapped = mapOperatorAuthorizationError(cause)
         console.error(
           'No fue posible consultar candidatos remotos; se usarán los datos locales',
-          cause,
+          mapped,
         )
+        if (user.role !== 'admin') throw mapped
       }
     }
 
@@ -518,72 +521,63 @@ class ClosingService {
     storeId?: string,
     dateFrom?: string,
     dateTo = dateFrom,
+    user?: UserProfile,
   ): Promise<CashClosingRow[]> {
     if (!supabase || !connectivityService.isNetworkAvailable()) return []
 
-    let query = supabase.from('cash_closings').select('*').eq('status', 'closed')
-    if (storeId) query = query.eq('store_id', storeId)
-    if (dateFrom) query = query.gte('business_date', dateFrom)
-    if (dateTo) query = query.lte('business_date', dateTo)
-
     try {
-      const { data, error } = await query
-        .order('business_date', { ascending: false })
-        .order('closing_number', { ascending: false })
+      if (!user) throw new Error('No se pudo resolver la identidad actual.')
+      const { data, error } = await supabase.rpc('list_cash_closings', {
+        p_operator_token: user.role === 'admin'
+          ? null
+          : operatorSessionService.getRequiredActiveToken(user.id),
+        p_store_id: storeId ?? null,
+        p_date_from: dateFrom ?? null,
+        p_date_to: dateTo ?? null,
+      })
       if (error) throw error
       return data
     } catch (cause: unknown) {
+      const mapped = mapOperatorAuthorizationError(cause)
+      if (mapped instanceof OperatorAuthorizationError) throw mapped
       console.error(
         'No fue posible consultar cortes cerrados; se conservarán los borradores locales',
-        cause,
+        mapped,
       )
       return []
     }
   }
 
-  async getClosedDetail(id: string): Promise<CashClosingDetail> {
+  async getClosedDetail(
+    id: string,
+    user: UserProfile,
+  ): Promise<CashClosingDetail> {
     if (!supabase) throw new Error('Supabase no está configurado')
     connectivityService.requireOnline(
       'Se necesita conexión para consultar un corte cerrado.',
     )
 
-    const [closingResult, expensesResult, transfersResult, paymentsResult, purchasesResult, adjustments] = await Promise.all([
-      supabase.from('cash_closings').select('*').eq('id', id).single(),
-      supabase
-        .from('cash_closing_expense_items')
-        .select('*')
-        .eq('cash_closing_id', id)
-        .order('created_at'),
-      supabase
-        .from('cash_closing_transfer_items')
-        .select('*')
-        .eq('cash_closing_id', id)
-        .order('created_at'),
-      supabase
-        .from('cash_closing_payment_items')
-        .select('*')
-        .eq('cash_closing_id', id)
-        .order('created_at'),
-      supabase
-        .from('cash_closing_purchase_items')
-        .select('*')
-        .eq('cash_closing_id', id)
-        .order('created_at'),
-      closingAdjustmentService.list(id),
-    ])
-    if (closingResult.error) throw closingResult.error
-    if (expensesResult.error) throw expensesResult.error
-    if (transfersResult.error) throw transfersResult.error
-    if (paymentsResult.error) throw paymentsResult.error
-    if (purchasesResult.error) throw purchasesResult.error
-
+    const { data, error } = await supabase.rpc('get_cash_closing_detail', {
+      p_operator_token: user.role === 'admin'
+        ? null
+        : operatorSessionService.getRequiredActiveToken(user.id),
+      p_closing_id: id,
+    })
+    if (error) throw mapOperatorAuthorizationError(error)
     return {
-      closing: closingResult.data,
-      expenses: expensesResult.data,
-      transfers: transfersResult.data,
-      payments: paymentsResult.data,
-      purchases: purchasesResult.data,
-      adjustments,
+      ...data,
+      adjustments: data.adjustments.map((adjustment) => ({
+        id: adjustment.id,
+        cashClosingId: adjustment.cash_closing_id,
+        type: adjustment.type,
+        amount: Number(adjustment.amount),
+        concept: adjustment.concept,
+        notes: adjustment.notes ?? undefined,
+        bills: adjustment.bills,
+        coinsAmount: Number(adjustment.coins_amount),
+        createdBy: adjustment.created_by,
+        createdAt: adjustment.created_at,
+      })),
     }
   }
 
@@ -670,6 +664,7 @@ class ClosingService {
 
   async close(
     draft: CashClosingDraft,
+    user: UserProfile,
   ): Promise<CashClosingRow> {
     if (!supabase) throw new Error('Supabase no está configurado')
     connectivityService.requireOnline(
@@ -679,7 +674,9 @@ class ClosingService {
     try {
       await syncService.process()
     } catch (cause: unknown) {
-      console.error('No fue posible sincronizar antes del cierre', cause)
+      const mapped = mapOperatorAuthorizationError(cause)
+      if (mapped instanceof OperatorAuthorizationError) throw mapped
+      console.error('No fue posible sincronizar antes del cierre', mapped)
       throw new Error(
         'No fue posible sincronizar los movimientos del día. Intenta nuevamente.',
         { cause },
@@ -706,6 +703,7 @@ class ClosingService {
     const latestCandidates = await this.getEligibleMovements(
       draft.storeId,
       draft.businessDate,
+      user,
     )
     const latestExpenseIds = new Set(
       latestCandidates.expenses.map((expense) => expense.id),
@@ -771,6 +769,9 @@ class ClosingService {
       p_purchase_payment_ids: closedDraft.selectedPurchasePaymentIds,
       p_closing_reconciliation_mode:
         closedDraft.closingReconciliationMode ?? 'normal',
+      p_operator_token: user.role === 'admin'
+        ? null
+        : operatorSessionService.getRequiredActiveToken(user.id),
     })
     if (error) {
       const domainCode = [

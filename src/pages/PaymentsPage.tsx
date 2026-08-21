@@ -241,7 +241,7 @@ export function PaymentsPage({
         </p>
         <StoreScopeSelector
           ariaLabel="Filtrar pagos por tienda asignada"
-          role={user.role}
+          scope={{ kind: 'global' }}
           stores={stores}
           value={storeFilter}
           onChange={setStoreFilter}

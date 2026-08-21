@@ -7,6 +7,13 @@ import {
   type ReactNode,
   type SVGProps,
 } from 'react'
+import {
+  hasCapability,
+  roleHasCapability,
+  type AppCapability,
+  type EffectiveRole,
+  type PageId,
+} from '../domain/capabilities'
 import type { OperatorSession, UserProfile } from '../domain/models'
 import { getEffectiveDisplayName } from '../domain/runtimeIdentity'
 import {
@@ -27,16 +34,7 @@ import {
   XIcon,
 } from './icons'
 
-export type PageId =
-  | 'home'
-  | 'expenses'
-  | 'transfers'
-  | 'purchases'
-  | 'collaborators'
-  | 'closings'
-  | 'central-cash'
-  | 'exports'
-  | 'settings'
+export type { PageId } from '../domain/capabilities'
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement>>
 
@@ -44,64 +42,67 @@ type NavigationItem = {
   id: PageId
   label: string
   icon: IconComponent
-  adminOnly?: boolean
+  capability: AppCapability
   mobilePlacement: 'primary' | 'more'
 }
 
 const NAVIGATION: NavigationItem[] = [
-  { id: 'home', label: 'Inicio', icon: HomeIcon, mobilePlacement: 'primary' },
+  { id: 'home', label: 'Inicio', icon: HomeIcon, capability: 'home', mobilePlacement: 'primary' },
   {
     id: 'expenses',
     label: 'Gastos',
     icon: ReceiptIcon,
+    capability: 'expenses',
     mobilePlacement: 'primary',
   },
   {
     id: 'transfers',
     label: 'Transferencias',
     icon: TransferIcon,
+    capability: 'transfers',
     mobilePlacement: 'primary',
   },
   {
     id: 'collaborators',
     label: 'Colaboradores',
     icon: UsersIcon,
+    capability: 'attendance',
     mobilePlacement: 'more',
   },
   {
     id: 'purchases',
     label: 'Compras',
     icon: ReceiptIcon,
-    adminOnly: true,
+    capability: 'purchases',
     mobilePlacement: 'more',
   },
   {
     id: 'closings',
     label: 'Cortes',
     icon: CashIcon,
-    adminOnly: true,
+    capability: 'cashClosings',
     mobilePlacement: 'more',
   },
   {
     id: 'central-cash',
     label: 'Caja Central',
     icon: WalletIcon,
-    adminOnly: true,
+    capability: 'centralCash',
     mobilePlacement: 'more',
   },
   {
     id: 'exports',
     label: 'Exportación',
     icon: ExportIcon,
-    adminOnly: true,
+    capability: 'exports',
     mobilePlacement: 'more',
   },
 ]
 
 export function navigationItemsForRole(
-  role: UserProfile['role'],
+  role: EffectiveRole,
 ): NavigationItem[] {
-  return NAVIGATION.filter((item) => !item.adminOnly || role === 'admin')
+  return NAVIGATION.filter((item) => roleHasCapability(role, item.capability))
 }
 
 type AppShellProps = {
@@ -151,7 +152,10 @@ export function AppShell({
   const moreButtonRef = useRef<HTMLButtonElement>(null)
   const swipeStartRef = useRef<{ x: number; y: number } | undefined>(undefined)
   const restoreScrollRef = useRef(true)
-  const items = navigationItemsForRole(user.role)
+  const identity = { technicalUser: user, operatorSession }
+  const items = NAVIGATION.filter((item) =>
+    hasCapability(identity, item.capability),
+  )
   const primaryMobileItems = items.filter(
     (item) => item.mobilePlacement === 'primary',
   )
@@ -160,7 +164,14 @@ export function AppShell({
   )
   const moreActive = moreMobileItems.some((item) => item.id === currentPage)
   const moreMenuState = moreMenuOpen ? 'open' : 'closed'
-  const roleLabel = user.role === 'admin' ? 'Administrador' : 'Cashier'
+  const effectiveRole = user.role === 'admin'
+    ? 'admin'
+    : operatorSession?.account.role ?? 'cashier'
+  const roleLabel = effectiveRole === 'admin'
+    ? 'Administrador'
+    : effectiveRole === 'store_manager'
+      ? 'Encargado'
+      : 'Cajero'
   const activeName = getEffectiveDisplayName(user, operatorSession ?? null)
 
   useEffect(() => {

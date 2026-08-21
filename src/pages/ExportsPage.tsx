@@ -76,7 +76,6 @@ function upsertBatch(batches: ExportBatch[], updated: ExportBatch): ExportBatch[
 
 function Filters({
   stores,
-  user,
   storeFilter,
   dateFrom,
   dateTo,
@@ -85,7 +84,6 @@ function Filters({
   onDateToChange,
 }: {
   stores: Store[]
-  user: UserProfile
   storeFilter: StoreScopeValue
   dateFrom: string
   dateTo: string
@@ -102,7 +100,7 @@ function Filters({
         <StoreScopeSelector
           ariaLabel="Filtrar exportaciones por tienda"
           includeInactive
-          role={user.role}
+          scope={{ kind: 'global' }}
           stores={stores}
           value={storeFilter}
           onChange={onStoreChange}
@@ -545,7 +543,6 @@ export function ExportsPage({
           dateTo={dateTo}
           storeFilter={storeFilter}
           stores={stores}
-          user={user}
           onDateFromChange={changeDateFrom}
           onDateToChange={changeDateTo}
           onStoreChange={setStoreFilter}

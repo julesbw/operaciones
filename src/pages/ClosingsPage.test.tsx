@@ -4,6 +4,7 @@ import type {
   CashClosingDraft,
   Expense,
   MerchandiseTransfer,
+  OperatorSession,
   Payment,
   Store,
   UserProfile,
@@ -27,6 +28,18 @@ const user: UserProfile = {
   id: 'admin-id',
   fullName: 'Administración',
   role: 'admin',
+}
+
+const storeManagerSession: OperatorSession = {
+  token: 'operator-token',
+  expiresAt: '2999-01-01T00:00:00.000Z',
+  account: {
+    id: 'manager-id',
+    username: 'manager',
+    displayName: 'Encargada',
+    role: 'store_manager',
+    storeId: stores[0]!.id,
+  },
 }
 
 const draft: CashClosingDraft = {
@@ -154,6 +167,33 @@ describe('ClosingsPage entry view', () => {
     expect(markup).toContain('aria-label="Fecha inicial"')
     expect(markup).toContain('aria-label="Fecha final"')
     expect(markup).not.toContain('¿Cuánto vendió la tienda?')
+  })
+
+  it('shows only the assigned store to a store manager', () => {
+    const markup = renderToStaticMarkup(
+      <ClosingsPage
+        operatorSession={storeManagerSession}
+        stores={stores}
+        user={{ ...user, role: 'cashier', storeId: stores[0]!.id }}
+      />,
+    )
+
+    expect(markup).toContain('Cortes')
+    expect(markup).toContain('Filtrar cortes por tienda')
+    expect(markup).toContain('disabled=""')
+    expect(markup).not.toContain('>Todas<')
+    expect(markup).not.toContain('Agregar ajuste')
+  })
+
+  it('renders nothing for a cashier even if invoked directly', () => {
+    const markup = renderToStaticMarkup(
+      <ClosingsPage
+        stores={stores}
+        user={{ ...user, role: 'cashier', storeId: stores[0]!.id }}
+      />,
+    )
+
+    expect(markup).toBe('')
   })
 })
 

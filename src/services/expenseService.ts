@@ -157,6 +157,7 @@ export function mapExpenseRow(
     sourceStoreId: row.source_store_id ?? undefined,
     notes: row.notes ?? undefined,
     createdBy: row.created_by,
+    operatorAccountId: row.created_by_operator_account_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     version: row.version,

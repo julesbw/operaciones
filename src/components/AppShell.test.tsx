@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import type { UserProfile } from '../domain/models'
+import type { OperatorSession, UserProfile } from '../domain/models'
 import { AppShell, navigationItemsForRole, type PageId } from './AppShell'
 
 const user: UserProfile = {
@@ -8,6 +8,18 @@ const user: UserProfile = {
   fullName: 'Usuario Local',
   role: 'cashier',
   storeId: 'store-id',
+}
+
+const operatorSession: OperatorSession = {
+  token: 'operator-token',
+  expiresAt: '2999-01-01T00:00:00.000Z',
+  account: {
+    id: 'operator-id',
+    username: 'operator',
+    displayName: 'Operador Local',
+    role: 'cashier',
+    storeId: 'store-id',
+  },
 }
 
 function renderStatus(
@@ -27,6 +39,7 @@ function renderStatus(
       pendingCount={0}
       syncing={false}
       user={user}
+      operatorSession={operatorSession}
       onNavigate={vi.fn()}
       onSignOut={vi.fn()}
       onSync={vi.fn()}
@@ -106,6 +119,14 @@ describe('AppShell mobile navigation', () => {
         .filter((item) => item.mobilePlacement === 'more')
         .map((item) => item.label),
     ).toEqual(['Colaboradores'])
+  })
+
+  it('adds purchases and closings for store managers without admin modules', () => {
+    const labels = navigationItemsForRole('store_manager').map((item) => item.label)
+    expect(labels).toContain('Compras')
+    expect(labels).toContain('Cortes')
+    expect(labels).not.toContain('Caja Central')
+    expect(labels).not.toContain('Exportación')
   })
 
   it('renders four mobile controls and exposes the Más menu state', () => {

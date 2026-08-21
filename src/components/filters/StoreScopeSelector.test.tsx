@@ -25,7 +25,7 @@ describe('StoreScopeSelector', () => {
     const markup = renderToStaticMarkup(
       <StoreScopeSelector
         ariaLabel="Filtrar por tienda"
-        role="admin"
+        scope={{ kind: 'global' }}
         stores={stores}
         value={ALL_STORES}
         onChange={() => undefined}
@@ -41,7 +41,7 @@ describe('StoreScopeSelector', () => {
     const onChange = vi.fn()
     const selector = StoreScopeSelector({
       ariaLabel: 'Filtrar por tienda',
-      role: 'admin',
+      scope: { kind: 'global' },
       stores,
       value: ALL_STORES,
       onChange,
@@ -59,8 +59,7 @@ describe('StoreScopeSelector', () => {
     expect(
       StoreScopeSelector({
         ariaLabel: 'Tienda asignada',
-        assignedStoreId: 'store-active',
-        role: 'cashier',
+        scope: { kind: 'fixed', storeId: 'store-active' },
         stores,
         value: 'store-active',
         onChange: vi.fn(),
@@ -72,9 +71,8 @@ describe('StoreScopeSelector', () => {
     const markup = renderToStaticMarkup(
       <StoreScopeSelector
         ariaLabel="Tienda asignada"
-        assignedStoreId="store-active"
-        cashierPresentation="locked"
-        role="cashier"
+        fixedPresentation="locked"
+        scope={{ kind: 'fixed', storeId: 'store-active' }}
         stores={stores}
         value="store-inactive"
         onChange={vi.fn()}

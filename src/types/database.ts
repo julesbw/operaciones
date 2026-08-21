@@ -85,6 +85,7 @@ export type AttendanceRow = {
   attendance_date: string
   status: AttendanceStatus
   recorded_by: string
+  recorded_by_operator_account_id: string | null
   created_at: string
   updated_at: string
   version: number
@@ -131,6 +132,7 @@ export type ExpenseRow = {
   notes: string | null
   weekly_payment_id: string | null
   created_by: string
+  created_by_operator_account_id: string | null
   created_at: string
   updated_at: string
   version: number
@@ -145,6 +147,7 @@ export type MerchandiseTransferRow = {
   business_date: string
   notes: string | null
   created_by: string
+  created_by_operator_account_id: string | null
   created_at: string
   updated_at: string
   version: number
@@ -182,6 +185,7 @@ export type CashClosingRow = {
   status: 'closed' | 'reopened'
   closed_at: string
   closed_by: string
+  closed_by_operator_account_id: string | null
   created_by: string
   created_at: string
   updated_at: string
@@ -293,6 +297,7 @@ export type PurchaseRow = {
   amount: number
   notes: string | null
   created_by: string
+  created_by_operator_account_id: string | null
   created_at: string
   updated_at: string
 }
@@ -666,6 +671,7 @@ export type Database = {
           p_created_at: string
           p_updated_at: string
           p_created_by: string
+          p_operator_token: string | null
         }
         Returns: ExpenseRow
       }
@@ -701,6 +707,7 @@ export type Database = {
           p_created_at: string
           p_updated_at: string
           p_recorded_by: string
+          p_operator_token: string | null
         }
         Returns: AttendanceRow
       }
@@ -717,6 +724,7 @@ export type Database = {
           p_created_at: string
           p_updated_at: string
           p_created_by: string
+          p_operator_token: string | null
         }
         Returns: MerchandiseTransferRow
       }
@@ -734,6 +742,7 @@ export type Database = {
           p_payment_ids: string[]
           p_purchase_payment_ids: string[]
           p_closing_reconciliation_mode: ClosingReconciliationMode
+          p_operator_token: string | null
         }
         Returns: CashClosingRow
       }
@@ -741,6 +750,7 @@ export type Database = {
         Args: {
           p_store_id: string
           p_business_date: string
+          p_operator_token: string | null
         }
         Returns: CashClosingCandidatesResult
       }
@@ -750,6 +760,7 @@ export type Database = {
           p_payment_id: string
           p_supplier_id: string
           p_business_date: string
+          p_operator_token: string | null
           p_folio: string | null
           p_amount: number
           p_notes: string | null
@@ -765,6 +776,39 @@ export type Database = {
           payment: PurchasePaymentRow
           movement: CentralCashMovementRow | null
           coin_compensation: CentralCashMovementRow | null
+        }
+      }
+      list_purchase_suppliers: {
+        Args: { p_operator_token: string | null }
+        Returns: SupplierRow[]
+      }
+      list_paid_purchases: {
+        Args: {
+          p_operator_token: string | null
+          p_store_id: string | null
+          p_date_from: string | null
+          p_date_to: string | null
+        }
+        Returns: Array<{ purchase: PurchaseRow; payment: PurchasePaymentRow }>
+      }
+      list_cash_closings: {
+        Args: {
+          p_operator_token: string | null
+          p_store_id: string | null
+          p_date_from: string | null
+          p_date_to: string | null
+        }
+        Returns: CashClosingRow[]
+      }
+      get_cash_closing_detail: {
+        Args: { p_operator_token: string | null; p_closing_id: string }
+        Returns: {
+          closing: CashClosingRow
+          expenses: CashClosingExpenseItemRow[]
+          transfers: CashClosingTransferItemRow[]
+          payments: CashClosingPaymentItemRow[]
+          purchases: CashClosingPurchaseItemRow[]
+          adjustments: CashClosingAdjustmentRow[]
         }
       }
       get_central_cash_summary: {

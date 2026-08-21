@@ -10,6 +10,11 @@ import { operationsRepository } from '../repositories/operationsRepository'
 import { connectivityService } from './connectivityService'
 import { mapExpenseRow } from './expenseService'
 import { purchaseService } from './purchaseService'
+import { operatorSessionService } from './operatorSessionService'
+import {
+  mapOperatorAuthorizationError,
+  OperatorAuthorizationError,
+} from './operatorAuthorization'
 
 export type SyncResult = {
   synced: number
@@ -32,6 +37,7 @@ type AttendanceRow = {
   attendance_date: string
   status: AttendanceRecord['status']
   recorded_by: string
+  recorded_by_operator_account_id: string | null
   created_at: string
   updated_at: string
   version: number
@@ -46,6 +52,7 @@ type MerchandiseTransferRow = {
   business_date: string
   notes: string | null
   created_by: string
+  created_by_operator_account_id: string | null
   created_at: string
   updated_at: string
   version: number
@@ -150,28 +157,64 @@ export class SyncService {
       : items.filter(
           (item) => !item.nextAttemptAt || item.nextAttemptAt <= now,
         )
-    const operatorItems = typeof operatorAccountId === 'string'
-      ? dueItems.filter(
-          (item) => !item.operatorAccountId || item.operatorAccountId === operatorAccountId,
+    let operatorToken: string | null = null
+    let operatorItems: SyncQueueItem[]
+    const preflightErrors: string[] = []
+    let preflightFailed = 0
+    if (context.role === 'admin') {
+      operatorItems = dueItems.filter((item) => !item.operatorAccountId)
+    } else {
+      const activeOperator = operatorSessionService.getRequiredActiveSession(
+        context.userId,
+      )
+      if (
+        typeof operatorAccountId === 'string' &&
+        operatorAccountId !== activeOperator.account.id
+      ) {
+        throw new SyncAuthenticationError(
+          'La identidad operativa activa cambió antes de sincronizar.',
         )
-      : dueItems
+      }
+      operatorToken = activeOperator.token
+      operatorItems = dueItems.filter(
+        (item) => item.operatorAccountId === activeOperator.account.id,
+      )
+      const legacyItems = dueItems.filter((item) => !item.operatorAccountId)
+      if (legacyItems.length > 0) {
+        const legacyError = new OperatorAuthorizationError(
+          'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
+        ).message
+        await Promise.all(
+          legacyItems.map((item) =>
+            operationsRepository.failQueueItem(item, legacyError),
+          ),
+        )
+        preflightFailed = legacyItems.length
+        preflightErrors.push(legacyError)
+      }
+    }
     const results = await Promise.all(
-      operatorItems.map((item) => this.processItem(item)),
+      operatorItems.map((item) => this.processItem(item, operatorToken)),
     )
     await this.pullRecent()
 
     return {
       synced: results.filter((result) => result.success).length,
-      failed: results.filter((result) => !result.success).length,
+      failed:
+        preflightFailed + results.filter((result) => !result.success).length,
       pending: await operationsRepository.countPendingQueue(),
-      errors: results.flatMap((result) =>
-        result.success || !result.error ? [] : [result.error],
-      ),
+      errors: [
+        ...preflightErrors,
+        ...results.flatMap((result) =>
+          result.success || !result.error ? [] : [result.error],
+        ),
+      ],
     }
   }
 
   private async processItem(
     item: SyncQueueItem,
+    operatorToken: string | null,
   ): Promise<{ success: boolean; error?: string }> {
     try {
       await operationsRepository.markEntitySyncStatus(
@@ -179,12 +222,12 @@ export class SyncService {
         item.entityId,
         'syncing',
       )
-      const remoteVersion = await this.pushItem(item)
+      const remoteVersion = await this.pushItem(item, operatorToken)
       await operationsRepository.completeQueueItem(item, remoteVersion)
       return { success: true }
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : 'Error de sincronización'
+      const mapped = mapOperatorAuthorizationError(error)
+      const message = mapped.message || 'Error de sincronización'
       await operationsRepository.failQueueItem(item, message)
       return { success: false, error: message }
     }
@@ -200,21 +243,21 @@ export class SyncService {
       supabase
         .from('expenses')
         .select(
-          'id, store_id, business_date, amount, concept, payment_method, funding_source, source_store_id, notes, weekly_payment_id, created_by, created_at, updated_at, version',
+          'id, store_id, business_date, amount, concept, payment_method, funding_source, source_store_id, notes, weekly_payment_id, created_by, created_by_operator_account_id, created_at, updated_at, version',
         )
         .gte('business_date', sinceDate)
         .returns<ExpenseRow[]>(),
       supabase
         .from('attendance_records')
         .select(
-          'id, collaborator_id, store_id, attendance_date, status, recorded_by, created_at, updated_at, version',
+          'id, collaborator_id, store_id, attendance_date, status, recorded_by, recorded_by_operator_account_id, created_at, updated_at, version',
         )
         .gte('attendance_date', sinceDate)
         .returns<AttendanceRow[]>(),
       supabase
         .from('merchandise_transfers')
         .select(
-          'id, origin_store_id, destination_store_id, ticket_number, amount, business_date, notes, created_by, created_at, updated_at, version',
+          'id, origin_store_id, destination_store_id, ticket_number, amount, business_date, notes, created_by, created_by_operator_account_id, created_at, updated_at, version',
         )
         .gte('business_date', sinceDate)
         .returns<MerchandiseTransferRow[]>(),
@@ -235,6 +278,7 @@ export class SyncService {
           attendanceDate: record.attendance_date,
           status: record.status,
           recordedBy: record.recorded_by,
+          operatorAccountId: record.recorded_by_operator_account_id,
           createdAt: record.created_at,
           updatedAt: record.updated_at,
           version: record.version,
@@ -251,6 +295,7 @@ export class SyncService {
           businessDate: transfer.business_date,
           notes: transfer.notes ?? undefined,
           createdBy: transfer.created_by,
+          operatorAccountId: transfer.created_by_operator_account_id,
           createdAt: transfer.created_at,
           updatedAt: transfer.updated_at,
           version: transfer.version,
@@ -260,7 +305,10 @@ export class SyncService {
     ])
   }
 
-  private async pushItem(item: SyncQueueItem): Promise<number> {
+  private async pushItem(
+    item: SyncQueueItem,
+    operatorToken: string | null,
+  ): Promise<number> {
     if (!supabase) throw new Error('Supabase no está configurado')
 
     if (item.operation === 'delete') {
@@ -270,7 +318,10 @@ export class SyncService {
     if (item.entityType === 'expense') {
       const expense = await operationsRepository.getExpense(item.entityId)
       if (!expense) throw new Error('El gasto local ya no existe')
-      const result = await supabase.rpc('sync_expense', expenseToRpcArgs(expense))
+      const result = await supabase.rpc('sync_expense', {
+        ...expenseToRpcArgs(expense),
+        p_operator_token: operatorToken,
+      })
       if (result.error) throw result.error
       return result.data.version
     }
@@ -280,14 +331,17 @@ export class SyncService {
       if (!attendance) throw new Error('La asistencia local ya no existe')
       const { data, error } = await supabase.rpc(
         'sync_attendance',
-        attendanceToRpcArgs(attendance),
+        {
+          ...attendanceToRpcArgs(attendance),
+          p_operator_token: operatorToken,
+        },
       )
       if (error) throw error
       return data.version
     }
 
     if (item.entityType === 'purchase') {
-      await purchaseService.sync(item.entityId)
+      await purchaseService.sync(item.entityId, operatorToken)
       return 0
     }
 
@@ -297,7 +351,10 @@ export class SyncService {
     if (!transfer) throw new Error('La transferencia local ya no existe')
     const { data, error } = await supabase.rpc(
       'sync_merchandise_transfer',
-      merchandiseTransferToRpcArgs(transfer),
+      {
+        ...merchandiseTransferToRpcArgs(transfer),
+        p_operator_token: operatorToken,
+      },
     )
     if (error) throw error
     return data.version

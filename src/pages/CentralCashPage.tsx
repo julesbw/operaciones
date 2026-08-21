@@ -523,7 +523,7 @@ export function CentralCashPage({
             <StoreScopeSelector
               ariaLabel="Filtrar Caja Central por tienda"
               includeInactive
-              role={user.role}
+              scope={{ kind: 'global' }}
               stores={stores}
               value={storeFilter}
               onChange={setStoreFilter}

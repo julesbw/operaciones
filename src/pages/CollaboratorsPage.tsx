@@ -5,7 +5,7 @@ import {
 } from '../components/filters/FilterChipGroup'
 import type { StoreScopeValue } from '../components/filters/StoreScopeSelector'
 import { UsersIcon } from '../components/icons'
-import type { Store, UserProfile } from '../domain/models'
+import type { OperatorSession, Store, UserProfile } from '../domain/models'
 import { AttendancePage } from './AttendancePage'
 import { PaymentsPage } from './PaymentsPage'
 
@@ -19,6 +19,7 @@ const TAB_OPTIONS: readonly FilterChipOption<CollaboratorsTab>[] = [
 type CollaboratorsPageProps = {
   attendanceStoreFilter: StoreScopeValue
   operatorAccountId?: string | null
+  operatorSession?: OperatorSession
   stores: Store[]
   user: UserProfile
   onDataChanged: () => void
@@ -29,6 +30,7 @@ type CollaboratorsPageProps = {
 export function CollaboratorsPage({
   attendanceStoreFilter,
   operatorAccountId,
+  operatorSession,
   stores,
   user,
   onDataChanged,
@@ -62,6 +64,7 @@ export function CollaboratorsPage({
             stores={stores}
             storeFilter={attendanceStoreFilter}
             user={user}
+            operatorSession={operatorSession}
             operatorAccountId={operatorAccountId}
             onDataChanged={onDataChanged}
             onStoreFilterChange={onAttendanceStoreFilterChange}

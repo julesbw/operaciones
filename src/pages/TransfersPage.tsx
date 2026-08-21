@@ -14,6 +14,11 @@ import {
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
 import {
+  getRuntimeStoreScope,
+  hasCapability,
+  type RuntimeStoreScope,
+} from '../domain/capabilities'
+import {
   CheckIcon,
   PlusIcon,
   SyncIcon,
@@ -21,6 +26,7 @@ import {
 } from '../components/icons'
 import type {
   MerchandiseTransfer,
+  OperatorSession,
   Store,
   UserProfile,
 } from '../domain/models'
@@ -53,16 +59,18 @@ const DETAIL_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
 type TransfersPageProps = {
   stores: Store[]
   user: UserProfile
+  operatorSession?: OperatorSession
   operatorAccountId?: string | null
   onDataChanged: () => void
   onSync?: () => Promise<void>
 }
 
 export function resolveTransferOriginStoreId(
-  user: Pick<UserProfile, 'role' | 'storeId'>,
+  scope: RuntimeStoreScope,
   storeFilter: StoreScopeValue,
 ): string | undefined {
-  if (user.role === 'cashier') return user.storeId || undefined
+  if (scope.kind === 'fixed') return scope.storeId
+  if (scope.kind === 'unavailable') return undefined
   return storeFilter === ALL_STORES ? undefined : storeFilter
 }
 
@@ -93,6 +101,7 @@ function detailDate(value: string): string {
 export function TransfersPage({
   stores,
   user,
+  operatorSession,
   operatorAccountId,
   onDataChanged,
   onSync,
@@ -103,7 +112,9 @@ export function TransfersPage({
     [stores],
   )
   const isAdmin = user.role === 'admin'
-  const cashierStoreId = user.storeId ?? ''
+  const identity = { technicalUser: user, operatorSession }
+  const storeScope = getRuntimeStoreScope(identity)
+  const cashierStoreId = storeScope.kind === 'fixed' ? storeScope.storeId : ''
   const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(
     isAdmin ? ALL_STORES : cashierStoreId,
   )
@@ -131,7 +142,7 @@ export function TransfersPage({
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const ticketInputRef = useRef<HTMLInputElement>(null)
 
-  const queryOriginStoreId = resolveTransferOriginStoreId(user, storeFilter)
+  const queryOriginStoreId = resolveTransferOriginStoreId(storeScope, storeFilter)
 
   const load = useCallback(async () => {
     if (!isAdmin && !cashierStoreId) {
@@ -310,6 +321,8 @@ export function TransfersPage({
     activeStores.length > 1
   const cannotCreate = isAdmin ? activeStores.length < 2 : !cashierCanCreate
 
+  if (!hasCapability(identity, 'transfers')) return null
+
   return (
     <section>
       <h1 className="page-title">Transferencias</h1>
@@ -336,8 +349,7 @@ export function TransfersPage({
             </p>
             <StoreScopeSelector
               ariaLabel="Filtrar transferencias por tienda de origen"
-              assignedStoreId={user.storeId}
-              role={user.role}
+              scope={storeScope}
               stores={stores}
               value={storeFilter}
               onChange={setStoreFilter}

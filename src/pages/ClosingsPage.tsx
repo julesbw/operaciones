@@ -22,12 +22,17 @@ import {
   WalletIcon,
 } from '../components/icons'
 import { BILL_DENOMINATIONS } from '../domain/constants'
+import {
+  getRuntimeStoreScope,
+  hasCapability,
+} from '../domain/capabilities'
 import type {
   Bills,
   CashClosingDraft,
   CashClosingStep,
   CentralCashBills,
   ClosingAdjustment,
+  OperatorSession,
   Store,
   UserProfile,
 } from '../domain/models'
@@ -62,6 +67,7 @@ import {
 type ClosingsPageProps = {
   stores: Store[]
   user: UserProfile
+  operatorSession?: OperatorSession
 }
 
 type DraftSaveState = 'idle' | 'saving' | 'saved'
@@ -375,19 +381,24 @@ function ClosingDetailView({
     setShowPurchaseDetails(false)
     setLockState(undefined)
     void closingService
-      .getClosedDetail(closingId)
+      .getClosedDetail(closingId, user)
       .then((result) => {
         if (active) setDetail(result)
       })
-    void closingAdjustmentService.lockState(closingId).then(setLockState).catch(() => setLockState(undefined))
       .catch((cause: unknown) => {
         console.error('No fue posible consultar el corte', cause)
         if (active) setError('No fue posible consultar el detalle del corte.')
       })
+    if (user.role === 'admin') {
+      void closingAdjustmentService
+        .lockState(closingId)
+        .then(setLockState)
+        .catch(() => setLockState(undefined))
+    }
     return () => {
       active = false
     }
-  }, [closingId])
+  }, [closingId, user])
 
   if (error) {
     return (
@@ -635,11 +646,20 @@ function ClosingDetailView({
   )
 }
 
-export function ClosingsPage({ stores, user }: ClosingsPageProps) {
+export function ClosingsPage({ stores, user, operatorSession }: ClosingsPageProps) {
   const today = getLocalDate()
-  const activeStores = stores.filter((store) => store.status === 'active')
+  const identity = { technicalUser: user, operatorSession }
+  const storeScope = getRuntimeStoreScope(identity)
+  const assignedStoreId = storeScope.kind === 'fixed' ? storeScope.storeId : ''
+  const isAdmin = user.role === 'admin'
+  const activeStores = stores.filter(
+    (store) => store.status === 'active' &&
+      (isAdmin || store.id === assignedStoreId),
+  )
   const [view, setView] = useState<ClosingView>({ kind: 'history' })
-  const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(ALL_STORES)
+  const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(
+    isAdmin ? ALL_STORES : assignedStoreId,
+  )
   const [dateFrom, setDateFrom] = useState(`${today.slice(0, 8)}01`)
   const [dateTo, setDateTo] = useState(today)
   const [statusFilter, setStatusFilter] =
@@ -655,7 +675,9 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
   const [existingDraft, setExistingDraft] = useState<CashClosingDraft>()
   const addButtonRef = useRef<HTMLButtonElement>(null)
 
-  const queryStoreId = storeFilter === ALL_STORES ? undefined : storeFilter
+  const queryStoreId = isAdmin
+    ? storeFilter === ALL_STORES ? undefined : storeFilter
+    : assignedStoreId || undefined
 
   function changeDateFrom(value: string) {
     setDateFrom(value)
@@ -677,9 +699,16 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
           : closingService.listDrafts(queryStoreId, dateFrom, dateTo),
         statusFilter === 'draft'
           ? Promise.resolve([])
-          : closingService.listClosed(queryStoreId, dateFrom, dateTo),
+          : closingService.listClosed(queryStoreId, dateFrom, dateTo, user),
       ])
-      setDrafts(localDrafts)
+      setDrafts(
+        isAdmin
+          ? localDrafts
+          : localDrafts.filter(
+              (draft) =>
+                draft.operatorAccountId === operatorSession?.account.id,
+            ),
+      )
       setClosedClosings(remoteClosings)
     } catch (cause: unknown) {
       console.error('No fue posible consultar el historial de cortes', cause)
@@ -714,8 +743,9 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
   }, [closedClosings, drafts])
 
   function openCreate() {
-    const preferredStore =
-      storeFilter !== ALL_STORES && activeStores.some((store) => store.id === storeFilter)
+    const preferredStore = !isAdmin
+      ? assignedStoreId
+      : storeFilter !== ALL_STORES && activeStores.some((store) => store.id === storeFilter)
         ? storeFilter
         : activeStores[0]?.id ?? ''
     setCreateStoreId(preferredStore)
@@ -730,15 +760,31 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
     try {
       const saved = await closingService.load(createStoreId, createDate, user.id)
       if (saved) {
+        if (
+          !isAdmin &&
+          saved.operatorAccountId !== operatorSession?.account.id
+        ) {
+          throw new Error(
+            'El borrador pertenece a otro operador o no tiene atribución operativa.',
+          )
+        }
         setExistingDraft(saved)
         return
       }
       setCreateOpen(false)
       setView({ kind: 'flow', storeId: createStoreId, businessDate: createDate })
+    } catch (cause: unknown) {
+      setLoadError(
+        cause instanceof Error
+          ? cause.message
+          : 'No fue posible validar el borrador del corte.',
+      )
     } finally {
       setCheckingDraft(false)
     }
   }
+
+  if (!hasCapability(identity, 'cashClosings')) return null
 
   if (view.kind === 'flow') {
     return (
@@ -747,6 +793,7 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
         storeId={view.storeId}
         stores={stores}
         user={user}
+        operatorSession={operatorSession}
         onBack={() => setView({ kind: 'history' })}
         onClosed={(closing) => setView({ kind: 'detail', closingId: closing.id })}
       />
@@ -774,8 +821,9 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
           <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">Tienda</p>
           <StoreScopeSelector
             ariaLabel="Filtrar cortes por tienda"
+            fixedPresentation="locked"
             includeInactive
-            role={user.role}
+            scope={storeScope}
             stores={stores}
             value={storeFilter}
             onChange={setStoreFilter}
@@ -874,11 +922,11 @@ export function ClosingsPage({ stores, user }: ClosingsPageProps) {
 
       <AppModal closeDisabled={checkingDraft} closeLabel="Cerrar nuevo corte" open={createOpen} returnFocusRef={addButtonRef} title="Nuevo corte" onClose={() => setCreateOpen(false)}>
         <div className="mt-6 space-y-5">
-          <label className="field-label">Tienda
+          {isAdmin ? <label className="field-label">Tienda
             <select className="field" value={createStoreId} onChange={(event) => { setCreateStoreId(event.target.value); setExistingDraft(undefined) }}>
               {activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
             </select>
-          </label>
+          </label> : <p className="field-label">Tienda<span className="field block">{activeStores[0]?.name ?? 'Tienda asignada'}</span></p>}
           <label className="field-label">Fecha operativa
             <input className="field" max={today} type="date" value={createDate} onChange={(event) => { setCreateDate(event.target.value); setExistingDraft(undefined) }} />
           </label>
@@ -910,6 +958,7 @@ type ClosingFlowProps = ClosingsPageProps & {
 function ClosingFlow({
   stores,
   user,
+  operatorSession,
   storeId: initialStoreId,
   businessDate: initialBusinessDate,
   onBack,
@@ -990,10 +1039,19 @@ function ClosingFlow({
 
     void Promise.all([
       closingService.load(storeId, date, user.id),
-      closingService.getEligibleMovements(storeId, date),
+      closingService.getEligibleMovements(storeId, date, user),
     ])
       .then(([savedDraft, eligibleMovements]) => {
         if (!active) return
+        if (
+          user.role !== 'admin' &&
+          savedDraft &&
+          savedDraft.operatorAccountId !== operatorSession?.account.id
+        ) {
+          throw new Error(
+            'El borrador pertenece a otro operador o no tiene atribución operativa.',
+          )
+        }
         setCandidates(eligibleMovements)
         const baseDraft =
           savedDraft ?? closingService.create(
@@ -1001,6 +1059,7 @@ function ClosingFlow({
             date,
             user.id,
             selectedStore?.closingReconciliationMode ?? 'normal',
+            operatorSession?.account.id ?? null,
           )
         const reconciled = reconcileDraftSelection(
           baseDraft,
@@ -1084,7 +1143,7 @@ function ClosingFlow({
           await syncService.process()
         }
         const latestCandidates =
-          await closingService.getEligibleMovements(storeId, date)
+          await closingService.getEligibleMovements(storeId, date, user)
         const reconciled = reconcileDraftSelection(current, latestCandidates)
         const latestOperational = closingService.getOperationalSummary(
           latestCandidates,
@@ -1119,6 +1178,7 @@ function ClosingFlow({
       const latestCandidates = await closingService.getEligibleMovements(
         storeId,
         date,
+        user,
       )
       const reconciled = reconcileDraftSelection(current, latestCandidates)
       const latestOperational = closingService.getOperationalSummary(
@@ -1149,7 +1209,7 @@ function ClosingFlow({
         current,
         operational,
       )
-      const confirmedClosing = await closingService.close(latestDraft)
+      const confirmedClosing = await closingService.close(latestDraft, user)
       saveSequence.current += 1
       setCurrentDraft(undefined)
       onClosed(confirmedClosing)

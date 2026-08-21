@@ -93,7 +93,7 @@ export class RemoteBootstrapService {
     if (profile.demo) {
       await bootstrapService.seedDemoReferenceData()
     } else {
-      await referenceDataService.refresh()
+      await referenceDataService.refresh(profile)
     }
 
     ensureActive()
@@ -111,7 +111,7 @@ export class RemoteBootstrapService {
     if (profile.role === 'admin' && !profile.demo) {
       await Promise.all([
         paymentService.refreshRemote(),
-        purchaseService.refreshRemote(),
+        purchaseService.refreshRemote(profile),
       ])
       ensureActive()
     } else if (profile.role !== 'admin') {

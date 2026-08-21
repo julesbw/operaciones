@@ -5,6 +5,10 @@ import type {
 } from '../types/database'
 import { supabase } from '../lib/supabase'
 import { connectivityService } from './connectivityService'
+import {
+  mapOperatorAuthorizationError,
+  OperatorAuthorizationError,
+} from './operatorAuthorization'
 
 const STORAGE_KEY = 'operaciones.operator_session'
 
@@ -100,6 +104,22 @@ class OperatorSessionService {
     return stored?.technicalUserId === technicalUserId ? stored : undefined
   }
 
+  getRequiredActiveSession(technicalUserId: string): OperatorSession {
+    const stored = readStoredSession()
+    if (!stored || stored.technicalUserId !== technicalUserId) {
+      throw new OperatorAuthorizationError('OPERATOR_SESSION_REQUIRED')
+    }
+    if (isExpired(stored)) {
+      clearSession()
+      throw new OperatorAuthorizationError('OPERATOR_SESSION_EXPIRED')
+    }
+    return stored
+  }
+
+  getRequiredActiveToken(technicalUserId: string): string {
+    return this.getRequiredActiveSession(technicalUserId).token
+  }
+
   restoreOffline(technicalUserId: string): OperatorSession | undefined {
     const stored = readStoredSession()
     if (!stored || stored.technicalUserId !== technicalUserId || isExpired(stored)) {
@@ -130,9 +150,15 @@ class OperatorSessionService {
       }
       saveSession({ ...session, technicalUserId })
       return session
-    } catch {
-      clearSession()
-      return undefined
+    } catch (cause: unknown) {
+      const mapped = mapOperatorAuthorizationError(cause)
+      if (
+        mapped instanceof OperatorAuthorizationError &&
+        mapped.requiresLogin
+      ) {
+        clearSession()
+      }
+      throw mapped
     }
   }
 

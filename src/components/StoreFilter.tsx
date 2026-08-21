@@ -24,7 +24,7 @@ export function StoreFilter({
   return (
     <StoreScopeSelector
       ariaLabel={ariaLabel}
-      role="admin"
+      scope={{ kind: 'global' }}
       stores={stores}
       value={value}
       onChange={onChange}

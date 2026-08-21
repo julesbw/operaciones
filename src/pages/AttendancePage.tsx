@@ -5,6 +5,10 @@ import {
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
 import {
+  getRuntimeStoreScope,
+  hasCapability,
+} from '../domain/capabilities'
+import {
   CheckIcon,
   MoonIcon,
   StoreIcon,
@@ -14,6 +18,7 @@ import {
 import type {
   AttendanceStatus,
   Collaborator,
+  OperatorSession,
   Store,
   UserProfile,
 } from '../domain/models'
@@ -26,6 +31,7 @@ type AttendancePageProps = {
   stores: Store[]
   storeFilter: StoreScopeValue
   user: UserProfile
+  operatorSession?: OperatorSession
   operatorAccountId?: string | null
   onDataChanged: () => void
   onStoreFilterChange: (value: StoreScopeValue) => void
@@ -55,6 +61,7 @@ export function AttendancePage({
   stores,
   storeFilter,
   user,
+  operatorSession,
   operatorAccountId,
   onDataChanged,
   onStoreFilterChange,
@@ -73,11 +80,14 @@ export function AttendancePage({
     () => stores.filter((store) => store.status === 'active'),
     [stores],
   )
-  const assignedStore = stores.find((store) => store.id === user.storeId)
+  const identity = { technicalUser: user, operatorSession }
+  const storeScope = getRuntimeStoreScope(identity)
+  const assignedStoreId = storeScope.kind === 'fixed' ? storeScope.storeId : undefined
+  const assignedStore = stores.find((store) => store.id === assignedStoreId)
   const isGlobalView = user.role === 'admin' && storeFilter === ALL_STORES
   const effectiveStoreId =
-    user.role === 'cashier'
-      ? user.storeId
+    storeScope.kind === 'fixed'
+      ? storeScope.storeId
       : storeFilter === ALL_STORES
         ? undefined
         : storeFilter
@@ -95,7 +105,7 @@ export function AttendancePage({
   }, [onStoreFilterChange, storeFilter, stores, user.role])
 
   useEffect(() => {
-    if (user.role === 'cashier' && !effectiveStoreId) {
+    if (storeScope.kind === 'unavailable' && !effectiveStoreId) {
       setCollaborators([])
       setStatuses({})
       setError('Tu perfil no tiene una tienda asignada.')
@@ -116,9 +126,9 @@ export function AttendancePage({
         if (!active) return
 
         const allowedStoreIds = new Set(
-          user.role === 'cashier'
-            ? user.storeId
-              ? [user.storeId]
+          storeScope.kind === 'fixed'
+            ? assignedStoreId
+              ? [assignedStoreId]
               : []
             : activeStores.map((store) => store.id),
         )
@@ -151,7 +161,7 @@ export function AttendancePage({
     return () => {
       active = false
     }
-  }, [activeStores, date, effectiveStoreId, user.role, user.storeId])
+  }, [activeStores, assignedStoreId, date, effectiveStoreId, storeScope.kind])
 
   const presentCount = useMemo(
     () => Object.values(statuses).filter((status) => status === 'present').length,
@@ -209,12 +219,14 @@ export function AttendancePage({
     }
   }
 
+  if (!hasCapability(identity, 'attendance')) return null
+
   return (
     <section className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
           {!embedded && <h1 className="page-title">Asistencias</h1>}
-          {user.role === 'cashier' && (
+          {user.role !== 'admin' && (
             <p className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-800">
               <StoreIcon className="size-4 shrink-0" />
               {assignedStore?.name ?? user.storeName ?? 'Tienda sin asignar'}
@@ -241,8 +253,8 @@ export function AttendancePage({
             </p>
             <StoreScopeSelector
               ariaLabel="Filtrar asistencia por tienda"
-              assignedStoreId={user.storeId}
-              role={user.role}
+              fixedPresentation="locked"
+              scope={storeScope}
               stores={stores}
               value={storeFilter}
               onChange={onStoreFilterChange}

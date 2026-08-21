@@ -1,4 +1,5 @@
-import type { AppRole, Store } from '../../domain/models'
+import type { RuntimeStoreScope } from '../../domain/capabilities'
+import type { Store } from '../../domain/models'
 import {
   FilterChipGroup,
   type FilterChipOption,
@@ -10,33 +11,33 @@ export type StoreScopeValue = typeof ALL_STORES | Store['id']
 type StoreScopeSelectorProps = {
   ariaLabel: string
   stores: readonly Store[]
-  role: AppRole
-  assignedStoreId?: string
+  scope: RuntimeStoreScope
   value: StoreScopeValue
   onChange: (value: StoreScopeValue) => void
-  cashierPresentation?: 'hidden' | 'locked'
+  fixedPresentation?: 'hidden' | 'locked'
   includeInactive?: boolean
 }
 
 export function StoreScopeSelector({
   ariaLabel,
   stores,
-  role,
-  assignedStoreId,
+  scope,
   value,
   onChange,
-  cashierPresentation = 'hidden',
+  fixedPresentation = 'hidden',
   includeInactive = false,
 }: StoreScopeSelectorProps) {
   const availableStores = stores.filter(
     (store) => includeInactive || store.status === 'active',
   )
 
-  if (role === 'cashier') {
-    if (cashierPresentation === 'hidden') return null
+  if (scope.kind === 'unavailable') return null
+
+  if (scope.kind === 'fixed') {
+    if (fixedPresentation === 'hidden') return null
 
     const assignedStore = availableStores.find(
-      (store) => store.id === assignedStoreId,
+      (store) => store.id === scope.storeId,
     )
     if (!assignedStore) return null
 

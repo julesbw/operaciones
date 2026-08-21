@@ -4,6 +4,7 @@ import type {
   SyncQueueItem,
 } from '../domain/models'
 import { operationsRepository } from '../repositories/operationsRepository'
+import { OperatorAuthorizationError } from './operatorAuthorization'
 import { getOperationalDate } from '../utils/date'
 
 export class AttendanceService {
@@ -42,6 +43,24 @@ export class AttendanceService {
     const existingByCollaborator = new Map(
       existingRecords.map((record) => [record.collaboratorId, record]),
     )
+    if (operatorAccountId) {
+      for (const input of inputs) {
+        const existing = existingByCollaborator.get(input.collaboratorId)
+        if (existing && !existing.operatorAccountId) {
+          throw new OperatorAuthorizationError(
+            'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
+          )
+        }
+        if (
+          existing?.operatorAccountId &&
+          existing.operatorAccountId !== operatorAccountId
+        ) {
+          throw new OperatorAuthorizationError(
+            'OPERATOR_CAPABILITY_FORBIDDEN',
+          )
+        }
+      }
+    }
 
     const records = inputs.map<AttendanceRecord>((input) => {
       const existing = existingByCollaborator.get(input.collaboratorId)

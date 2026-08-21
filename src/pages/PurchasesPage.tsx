@@ -18,6 +18,10 @@ import {
 import { CheckIcon, PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
 import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
 import {
+  getRuntimeStoreScope,
+  hasCapability,
+} from '../domain/capabilities'
+import {
   cashBreakdownOpenAfterFundingSourceChange,
   cashBreakdownMatchesAmount,
   hasCapturedCashBreakdown,
@@ -31,6 +35,7 @@ import {
   type PaymentMethod,
   type Store,
   type Supplier,
+  type OperatorSession,
   type UserProfile,
 } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -58,6 +63,7 @@ type OriginFilter = PaymentFundingSource | 'all'
 type PurchasesPageProps = {
   stores: Store[]
   user: UserProfile
+  operatorSession?: OperatorSession
   networkAvailable: boolean
   onDataChanged: () => void
 }
@@ -73,6 +79,7 @@ function formatFilterDate(value: string): string {
 export function PurchasesPage({
   stores,
   user,
+  operatorSession,
   networkAvailable,
   onDataChanged,
 }: PurchasesPageProps) {
@@ -85,8 +92,16 @@ export function PurchasesPage({
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [purchases, setPurchases] = useState<PaidPurchase[]>([])
   const [supplierFilter, setSupplierFilter] = useState('all')
-  const [originFilter, setOriginFilter] = useState<OriginFilter>('all')
-  const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(ALL_STORES)
+  const identity = { technicalUser: user, operatorSession }
+  const storeScope = getRuntimeStoreScope(identity)
+  const assignedStoreId = storeScope.kind === 'fixed' ? storeScope.storeId : ''
+  const isAdmin = user.role === 'admin'
+  const [originFilter, setOriginFilter] = useState<OriginFilter>(
+    isAdmin ? 'all' : 'store_cash',
+  )
+  const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(
+    isAdmin ? ALL_STORES : assignedStoreId,
+  )
   const [dateFrom, setDateFrom] = useState(monthStart)
   const [dateTo, setDateTo] = useState(today)
   const [loading, setLoading] = useState(true)
@@ -185,7 +200,7 @@ export function PurchasesPage({
     (cashBreakdownOpen || fundingSource === 'central_cash')
 
   const initialSupplierId = activeSuppliers[0]?.id ?? ''
-  const initialStoreId = activeStores[0]?.id ?? ''
+  const initialStoreId = isAdmin ? activeStores[0]?.id ?? '' : assignedStoreId
   const formDirty =
     supplierId !== initialSupplierId ||
     amount.length > 0 ||
@@ -282,6 +297,7 @@ export function PurchasesPage({
           coinsAmount: financialBreakdownCaptured ? coinsAmount : 0,
         },
         user,
+        operatorSession,
       )
       setFormOpen(false)
       setConfirming(false)
@@ -317,9 +333,9 @@ export function PurchasesPage({
   const selectedSupplier = suppliers.find((supplier) => supplier.id === supplierId)
   const selectedStore = stores.find((store) => store.id === sourceStoreId)
   const centralAvailable =
-    networkAvailable && isSupabaseConfigured && !user.demo
+    isAdmin && networkAvailable && isSupabaseConfigured && !user.demo
 
-  if (user.role !== 'admin') return null
+  if (!hasCapability(identity, 'purchases')) return null
 
   return (
     <section>
@@ -329,14 +345,16 @@ export function PurchasesPage({
       {error && <p className="alert-error mt-5">{error}</p>}
       {!loading && activeSuppliers.length === 0 && (
         <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          No hay proveedores disponibles. Agrega uno desde Ajustes → Proveedores.
+          {isAdmin
+            ? 'No hay proveedores disponibles. Agrega uno desde Ajustes → Proveedores.'
+            : 'No hay proveedores disponibles. Solicita a administración que registre uno.'}
         </p>
       )}
 
       <div className="mt-5 space-y-4">
         <div>
           <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">Origen</p>
-          <FilterChipGroup
+          {isAdmin && <FilterChipGroup
             ariaLabel="Filtrar Compras por origen"
             options={[
               { value: 'all', label: 'Todos' },
@@ -345,13 +363,14 @@ export function PurchasesPage({
             ]}
             value={originFilter}
             onChange={setOriginFilter}
-          />
+          />}
         </div>
 
         {originFilter !== 'central_cash' && (
           <StoreScopeSelector
             ariaLabel="Filtrar Compras por tienda"
-            role={user.role}
+            fixedPresentation="locked"
+            scope={storeScope}
             stores={stores}
             value={storeFilter}
             onChange={setStoreFilter}
@@ -486,14 +505,14 @@ export function PurchasesPage({
                     ariaLabel="Origen del pago"
                     options={[
                       { value: 'store_cash', label: 'Caja de tienda' },
-                      { value: 'central_cash', label: 'Caja Central', disabled: !centralAvailable },
+                      ...(isAdmin ? [{ value: 'central_cash' as const, label: 'Caja Central', disabled: !centralAvailable }] : []),
                     ]}
                     value={fundingSource}
                     onChange={handleFundingSourceChange}
                   />
                   {!centralAvailable && <p className="mt-2 text-xs text-slate-500">Caja Central requiere conexión y una sesión Supabase.</p>}
                 </div>
-                {fundingSource === 'store_cash' && <label className="field-label">Tienda<select className="field" required value={sourceStoreId} onChange={(event) => setSourceStoreId(event.target.value)}>{activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label>}
+                {fundingSource === 'store_cash' && (isAdmin ? <label className="field-label">Tienda<select className="field" required value={sourceStoreId} onChange={(event) => setSourceStoreId(event.target.value)}>{activeStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}</select></label> : <p className="field-label">Tienda<span className="field block">{storeNames.get(assignedStoreId) ?? 'Tienda asignada'}</span></p>)}
                 <label className="field-label">Forma de pago<select className="field" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}>{PAYMENT_METHODS.map((method) => <option key={method} value={method}>{PAYMENT_LABELS[method]}</option>)}</select></label>
                 <CashBreakdownControl
                   amount={amount}
