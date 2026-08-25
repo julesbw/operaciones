@@ -670,7 +670,12 @@ function App() {
         />
       )}
       {page === 'settings' && (
-        <SettingsPage stores={stores} user={user} onStoresChanged={() => void refreshLocalState()} />
+        <SettingsPage
+          operatorSession={operatorSession}
+          stores={stores}
+          user={user}
+          onStoresChanged={() => void refreshLocalState()}
+        />
       )}
     </AppShell>
   )

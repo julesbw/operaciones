@@ -14,6 +14,7 @@ export type AppCapability =
   | 'exports'
   | 'settingsLocal'
   | 'settingsAdmin'
+  | 'supplierCreation'
   | 'closingAdjustments'
 
 export type PageId =
@@ -41,14 +42,14 @@ const CAPABILITIES: Record<EffectiveRole, ReadonlySet<AppCapability>> = {
   admin: new Set([
     'home', 'expenses', 'attendance', 'transfers', 'purchases',
     'cashClosings', 'payments', 'centralCash', 'exports', 'settingsLocal',
-    'settingsAdmin', 'closingAdjustments',
+    'settingsAdmin', 'supplierCreation', 'closingAdjustments',
   ]),
   cashier: new Set([
     'home', 'expenses', 'attendance', 'transfers', 'settingsLocal',
   ]),
   store_manager: new Set([
     'home', 'expenses', 'attendance', 'transfers', 'purchases',
-    'cashClosings', 'settingsLocal',
+    'cashClosings', 'settingsLocal', 'supplierCreation',
   ]),
 }
 

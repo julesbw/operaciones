@@ -7,7 +7,15 @@ import {
   StoreFilter,
   type StoreFilterValue,
 } from '../components/StoreFilter'
-import type { ClosingReconciliationMode, Collaborator, Store, Supplier, UserProfile } from '../domain/models'
+import { hasCapability } from '../domain/capabilities'
+import type {
+  ClosingReconciliationMode,
+  Collaborator,
+  OperatorSession,
+  Store,
+  Supplier,
+  UserProfile,
+} from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
 import { collaboratorService } from '../services/collaboratorService'
 import { connectivityService } from '../services/connectivityService'
@@ -21,6 +29,7 @@ import { currencyFormatter } from '../utils/money'
 type SettingsTab = 'stores' | 'suppliers' | 'team' | 'users' | 'system'
 
 type SettingsPageProps = {
+  operatorSession?: OperatorSession
   stores: Store[]
   user: UserProfile
   onStoresChanged: () => void
@@ -34,9 +43,20 @@ const buildTimeLabel = Number.isNaN(buildTime.getTime())
       timeStyle: 'long',
     }).format(buildTime)
 
-export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProps) {
+export function SettingsPage({
+  operatorSession,
+  stores,
+  user,
+  onStoresChanged,
+}: SettingsPageProps) {
   const isAdmin = user.role === 'admin'
-  const [tab, setTab] = useState<SettingsTab>(isAdmin ? 'stores' : 'system')
+  const canCreateSuppliers = hasCapability(
+    { technicalUser: user, operatorSession },
+    'supplierCreation',
+  )
+  const [tab, setTab] = useState<SettingsTab>(
+    isAdmin ? 'stores' : canCreateSuppliers ? 'suppliers' : 'system',
+  )
   const [storeModalOpen, setStoreModalOpen] = useState(false)
   const [collaboratorModalOpen, setCollaboratorModalOpen] = useState(false)
   const [supplierModalOpen, setSupplierModalOpen] = useState(false)
@@ -75,8 +95,12 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   const storeNameInputRef = useRef<HTMLInputElement>(null)
   const collaboratorNameInputRef = useRef<HTMLInputElement>(null)
   const supplierNameInputRef = useRef<HTMLInputElement>(null)
-  const canMutate =
+  const canMutateAdmin =
     isAdmin &&
+    (user.demo ||
+      (isSupabaseConfigured && connectivityService.isNetworkAvailable()))
+  const canCreateSupplier =
+    canCreateSuppliers &&
     (user.demo ||
       (isSupabaseConfigured && connectivityService.isNetworkAvailable()))
   const activeStores = stores.filter((store) => store.status === 'active')
@@ -108,18 +132,25 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
   }, [message])
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!canCreateSuppliers) {
       setSuppliers([])
       return
     }
     void supplierService
-      .list()
+      .list(!isAdmin)
       .then(setSuppliers)
       .catch((cause: unknown) => {
         console.error('No fue posible cargar proveedores', cause)
         setError('No fue posible cargar los proveedores.')
       })
-  }, [isAdmin])
+  }, [canCreateSuppliers, isAdmin])
+
+  useEffect(() => {
+    if (tab === 'suppliers' && !canCreateSuppliers) setTab('system')
+    if (tab !== 'suppliers' && tab !== 'system' && !isAdmin) {
+      setTab(canCreateSuppliers ? 'suppliers' : 'system')
+    }
+  }, [canCreateSuppliers, isAdmin, tab])
 
   useEffect(() => {
     if (!isAdmin) {
@@ -236,7 +267,11 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
     setSaving(true)
     setCreationError(undefined)
     try {
-      const supplier = await supplierService.create(newSupplierName, user.id)
+      const supplier = await supplierService.create(
+        newSupplierName,
+        user.id,
+        operatorSession?.token ?? null,
+      )
       setSuppliers((current) => [...current, supplier])
       setNewSupplierName('')
       setSupplierModalOpen(false)
@@ -457,13 +492,17 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
 
       <div className="mt-4 flex max-w-full gap-2 overflow-x-auto overscroll-x-contain border-b border-slate-200">
         {isAdmin && (
+          <button className={tab === 'stores' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('stores')}>
+            <StoreIcon className="size-4" /> Tiendas
+          </button>
+        )}
+        {canCreateSuppliers && (
+          <button className={tab === 'suppliers' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('suppliers')}>
+            <ReceiptIcon className="size-4" /> Proveedores
+          </button>
+        )}
+        {isAdmin && (
           <>
-            <button className={tab === 'stores' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('stores')}>
-              <StoreIcon className="size-4" /> Tiendas
-            </button>
-            <button className={tab === 'suppliers' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('suppliers')}>
-              <ReceiptIcon className="size-4" /> Proveedores
-            </button>
             <button className={tab === 'team' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('team')}>
               <UsersIcon className="size-4" /> Colaboradores
             </button>
@@ -477,9 +516,12 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         </button>
       </div>
 
-      {isAdmin && tab !== 'system' && error && <p className="alert-error mt-6">{error}</p>}
-      {isAdmin && tab !== 'system' && message && <p className="alert-success mt-6">{message}</p>}
-      {isAdmin && tab !== 'system' && !canMutate && (
+      {tab !== 'system' && error && <p className="alert-error mt-6">{error}</p>}
+      {tab !== 'system' && message && <p className="alert-success mt-6">{message}</p>}
+      {tab !== 'system' && (
+        (tab === 'suppliers' && !canCreateSupplier) ||
+        (tab !== 'suppliers' && isAdmin && !canMutateAdmin)
+      ) && (
         <p className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           Los cambios administrativos requieren conexión.
         </p>
@@ -499,7 +541,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                   <p className="mt-3 font-bold text-slate-700">No hay tiendas configuradas</p>
                   <button
                     className="button-secondary mt-5"
-                    disabled={!canMutate}
+                    disabled={!canMutateAdmin}
                     type="button"
                     onClick={openStoreModal}
                   >
@@ -525,7 +567,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                             Modo de conciliación del corte
                             <select
                               className="field mt-1"
-                              disabled={!canMutate || saving}
+                              disabled={!canMutateAdmin || saving}
                               value={store.closingReconciliationMode ?? 'normal'}
                               onChange={(event) => void updateClosingReconciliationMode(
                                 store,
@@ -547,8 +589,8 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                         </>
                       ) : (
                         <>
-                          <button className="small-button" disabled={!canMutate || saving} type="button" onClick={() => { setEditingId(store.id); setEditingName(store.name) }}>Editar</button>
-                          <button className="small-button" disabled={!canMutate || saving} type="button" onClick={() => void toggleStore(store)}>{store.status === 'active' ? 'Desactivar' : 'Activar'}</button>
+                          <button className="small-button" disabled={!canMutateAdmin || saving} type="button" onClick={() => { setEditingId(store.id); setEditingName(store.name) }}>Editar</button>
+                          <button className="small-button" disabled={!canMutateAdmin || saving} type="button" onClick={() => void toggleStore(store)}>{store.status === 'active' ? 'Desactivar' : 'Activar'}</button>
                         </>
                       )}
                     </div>
@@ -612,7 +654,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                 {!collaboratorSearch.trim() && (
                   <button
                     className="button-secondary mt-5"
-                    disabled={!canMutate}
+                    disabled={!canMutateAdmin}
                     type="button"
                     onClick={openCollaboratorModal}
                   >
@@ -662,7 +704,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                       </button>
                       <button
                         className="small-button"
-                        disabled={!canMutate || saving}
+                        disabled={!canMutateAdmin || saving}
                         type="button"
                         onClick={() => requestCollaboratorStatusChange(collaborator)}
                       >
@@ -679,13 +721,13 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
 
       {isAdmin && tab === 'users' && (
         <AppAccountsSection
-          canMutate={canMutate && isSupabaseConfigured}
+          canMutate={canMutateAdmin && isSupabaseConfigured}
           collaborators={collaborators}
           stores={stores}
         />
       )}
 
-      {isAdmin && tab === 'suppliers' && (
+      {canCreateSuppliers && tab === 'suppliers' && (
         <div className="mt-6">
           <article className="panel p-0">
             <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
@@ -703,7 +745,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                   </p>
                   <button
                     className="button-secondary mt-5"
-                    disabled={!canMutate}
+                    disabled={!canCreateSupplier}
                     type="button"
                     onClick={openSupplierModal}
                   >
@@ -733,7 +775,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                         </>
                       )}
                     </div>
-                    <div className="flex gap-2">
+                    {isAdmin && <div className="flex gap-2">
                       {editingSupplierId === supplier.id ? (
                         <>
                           <button aria-label="Guardar nombre" className="icon-button text-teal-700" disabled={saving} type="button" onClick={() => void saveSupplierName(supplier)}><CheckIcon className="size-4" /></button>
@@ -741,11 +783,11 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
                         </>
                       ) : (
                         <>
-                          <button className="small-button" disabled={!canMutate || saving} type="button" onClick={() => { setEditingSupplierId(supplier.id); setEditingSupplierName(supplier.name) }}>Editar</button>
-                          <button className="small-button" disabled={!canMutate || saving} type="button" onClick={() => void toggleSupplier(supplier)}>{supplier.isActive ? 'Desactivar' : 'Activar'}</button>
+                          <button className="small-button" disabled={!canMutateAdmin || saving} type="button" onClick={() => { setEditingSupplierId(supplier.id); setEditingSupplierName(supplier.name) }}>Editar</button>
+                          <button className="small-button" disabled={!canMutateAdmin || saving} type="button" onClick={() => void toggleSupplier(supplier)}>{supplier.isActive ? 'Desactivar' : 'Activar'}</button>
                         </>
                       )}
-                    </div>
+                    </div>}
                   </div>
                 ))
               )}
@@ -788,7 +830,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         <button
           aria-label="Crear una tienda"
           className="app-fab"
-          disabled={!canMutate || saving}
+          disabled={!canMutateAdmin || saving}
           ref={storeFabRef}
           title="Nueva tienda"
           type="button"
@@ -802,7 +844,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         <button
           aria-label="Crear un colaborador"
           className="app-fab"
-          disabled={!canMutate || saving || activeStores.length === 0}
+          disabled={!canMutateAdmin || saving || activeStores.length === 0}
           ref={collaboratorFabRef}
           title="Nuevo colaborador"
           type="button"
@@ -812,11 +854,11 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
         </button>
       )}
 
-      {isAdmin && tab === 'suppliers' && (
+      {canCreateSuppliers && tab === 'suppliers' && (
         <button
           aria-label="Crear un proveedor"
           className="app-fab"
-          disabled={!canMutate || saving}
+          disabled={!canCreateSupplier || saving}
           ref={supplierFabRef}
           title="Nuevo proveedor"
           type="button"
@@ -903,7 +945,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
             </button>
             <button
               className="button-primary w-full"
-              disabled={!canMutate || saving}
+              disabled={!canMutateAdmin || saving}
               type="submit"
             >
               {saving ? 'Guardando…' : 'Guardar'}
@@ -1018,7 +1060,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
             </button>
             <button
               className="button-primary w-full"
-              disabled={!canMutate || saving || activeStores.length === 0}
+              disabled={!canMutateAdmin || saving || activeStores.length === 0}
               type="submit"
             >
               {saving ? 'Guardando…' : 'Guardar'}
@@ -1082,7 +1124,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
               </button>
               <button
                 className="button-primary w-full"
-                disabled={!canMutate}
+                disabled={!canMutateAdmin}
                 type="button"
                 onClick={() => editCollaborator(selectedCollaborator)}
               >
@@ -1090,7 +1132,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
               </button>
               <button
                 className="button-secondary col-span-2 w-full"
-                disabled={!canMutate || saving}
+                disabled={!canMutateAdmin || saving}
                 type="button"
                 onClick={() => requestCollaboratorStatusChange(selectedCollaborator)}
               >
@@ -1126,7 +1168,7 @@ export function SettingsPage({ stores, user, onStoresChanged }: SettingsPageProp
               </button>
               <button
                 className="button-primary"
-                disabled={!canMutate || saving}
+                disabled={!canMutateAdmin || saving}
                 type="button"
                 onClick={() => void changeCollaboratorStatus(statusChangeCollaborator)}
               >

@@ -38,6 +38,12 @@ describe('runtime capability matrix', () => {
     expect(roleHasCapability('admin', 'cashClosings')).toBe(true)
   })
 
+  it('allows supplier creation to store managers and admins, but not cashiers', () => {
+    expect(roleHasCapability('cashier', 'supplierCreation')).toBe(false)
+    expect(roleHasCapability('store_manager', 'supplierCreation')).toBe(true)
+    expect(roleHasCapability('admin', 'supplierCreation')).toBe(true)
+  })
+
   it('does not grant admin-only capabilities to a store manager', () => {
     for (const capability of [
       'payments',

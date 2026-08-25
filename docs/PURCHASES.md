@@ -22,8 +22,13 @@ se incluyen artículos, inventario, impuestos detallados, OCR ni datos fiscales.
 ## Proveedores
 
 `suppliers` requiere únicamente un nombre y conserva auditoría, estado activo y
-fechas. La aplicación permite crear, renombrar, activar y desactivar desde
-`Ajustes → Proveedores`; nunca elimina históricos al desactivar.
+fechas. Administración puede crear, renombrar, activar y desactivar desde
+`Ajustes → Proveedores`; `store_manager` puede crear proveedores mediante una
+RPC protegida por su AppSession, pero no puede modificar los existentes. Nunca
+se eliminan históricos al desactivar.
+
+El alta es efectiva inmediatamente. Una aprobación posterior por roles
+superiores queda fuera de este cambio y todavía no existe estado de aprobación.
 
 La unicidad normaliza espacios y mayúsculas, de modo que `Bimbo`, `BIMBO` y
 ` bimbo ` se consideran el mismo nombre. Las Compras guardan tanto

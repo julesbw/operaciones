@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import type { SupplierRow } from '../types/database'
 import { connectivityService } from './connectivityService'
+import { mapOperatorAuthorizationError } from './operatorAuthorization'
 
 export function normalizedSupplierName(value: string): string {
   return value
@@ -50,7 +51,11 @@ class SupplierService {
     return operationsRepository.listSuppliers(activeOnly)
   }
 
-  async create(nameValue: string, userId: string): Promise<Supplier> {
+  async create(
+    nameValue: string,
+    userId: string,
+    operatorToken: string | null = null,
+  ): Promise<Supplier> {
     const name = validateName(nameValue)
     if (!supabase) {
       await this.assertUniqueName(name)
@@ -70,13 +75,13 @@ class SupplierService {
     connectivityService.requireOnline(
       'Se necesita conexión para crear un proveedor.',
     )
-    const id = crypto.randomUUID()
-    const { data, error } = await supabase
-      .from('suppliers')
-      .insert({ id, name })
-      .select('id, name, is_active, created_by, created_at, updated_at')
-      .single()
-    if (error) throw duplicateError(error)
+    const { data, error } = await supabase.rpc('create_supplier', {
+      p_id: crypto.randomUUID(),
+      p_name: name,
+      p_operator_token: operatorToken,
+    })
+    if (error?.code === '23505') throw duplicateError(error)
+    if (error) throw mapOperatorAuthorizationError(error)
     const supplier = mapSupplier(data)
     await operationsRepository.saveSupplier(supplier)
     return supplier

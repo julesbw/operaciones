@@ -1,6 +1,6 @@
 # Rollout de capacidades de `store_manager`
 
-Este cambio debe desplegarse como una unidad: primero preparar los datos, después aplicar manualmente la migración `202608210001_store_manager_capabilities.sql` y enseguida publicar el frontend compatible. La migración no se aplica automáticamente desde este repositorio.
+Este cambio debe desplegarse como una unidad: primero preparar los datos, después aplicar manualmente las migraciones `202608210001_store_manager_capabilities.sql` y `202608250001_store_manager_supplier_creation.sql`, en ese orden, y enseguida publicar el frontend compatible. Las migraciones no se aplican automáticamente desde este repositorio.
 
 ## Antes de la migración
 
@@ -15,15 +15,17 @@ Si queda un elemento residual sin atribución, el cliente nuevo lo conserva pend
 ## Despliegue
 
 1. Aplicar manualmente `supabase/migrations/202608210001_store_manager_capabilities.sql` en el entorno objetivo.
-2. Publicar inmediatamente el frontend de la misma versión.
-3. No ampliar las políticas RLS de Compras, Cortes ni Proveedores. Sus accesos operativos pasan exclusivamente por RPCs `SECURITY DEFINER` con validación server-side.
-4. Reactivar las terminales y obligar a validar de nuevo la AppSession operativa.
+2. Aplicar manualmente `supabase/migrations/202608250001_store_manager_supplier_creation.sql`.
+3. Publicar inmediatamente el frontend de la misma versión.
+4. No ampliar las políticas RLS de Compras, Cortes ni Proveedores. Sus accesos operativos pasan exclusivamente por RPCs `SECURITY DEFINER` con validación server-side.
+5. Reactivar las terminales y obligar a validar de nuevo la AppSession operativa.
 
 ## Verificación mínima
 
 - `cashier`: Gastos de Caja de Tienda, Asistencia y Transferencias de su tienda; sin Compras ni Cortes.
-- `store_manager`: lo anterior más Compras pagadas desde Caja de Tienda y Cortes únicamente de su tienda.
-- `store_manager`: sin Caja Central, Pagos a colaboradores, Exportaciones, configuración administrativa ni ajustes posteriores del Corte.
+- `store_manager`: lo anterior más Compras pagadas desde Caja de Tienda, Cortes únicamente de su tienda y alta inmediata de Proveedores.
+- `store_manager`: no puede renombrar, activar ni desactivar Proveedores y no tiene Caja Central, Pagos a colaboradores, Exportaciones, configuración administrativa ni ajustes posteriores del Corte.
+- El alta de Proveedores no tiene flujo ni estado de aprobación en esta versión.
 - `admin`: conserva los flujos globales existentes.
 - Una AppSession revocada/expirada, una cuenta desactivada o un cambio de tienda bloquea la operación en backend y conserva el pendiente local.
 - Reintentar una Compra o Corte con otra AppSession del mismo AppAccount es idempotente; hacerlo con otro AppAccount produce conflicto.

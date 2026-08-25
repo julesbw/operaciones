@@ -782,6 +782,14 @@ export type Database = {
         Args: { p_operator_token: string | null }
         Returns: SupplierRow[]
       }
+      create_supplier: {
+        Args: {
+          p_id: string
+          p_name: string
+          p_operator_token: string | null
+        }
+        Returns: SupplierRow
+      }
       list_paid_purchases: {
         Args: {
           p_operator_token: string | null
