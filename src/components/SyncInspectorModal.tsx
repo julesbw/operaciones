@@ -8,6 +8,10 @@ import {
 } from '../services/syncInspectorService'
 import { formatLongDate } from '../utils/date'
 import type { RefObject } from 'react'
+import {
+  sanitizeSyncDiagnostic,
+  sanitizeSyncErrorCode,
+} from '../utils/syncError'
 
 type SyncInspectorModalProps = {
   error?: string
@@ -152,6 +156,8 @@ export function SyncInspectorModal({
           {snapshot.items.map((item) => {
             const status = STATUS_META[item.status]
             const safeError = toUserFacingSyncError(item.lastError)
+            const safeErrorCode = sanitizeSyncErrorCode(item.errorCode)
+            const safeDiagnosticError = sanitizeSyncDiagnostic(item.diagnosticError)
             return (
               <li
                 className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
@@ -228,10 +234,16 @@ export function SyncInspectorModal({
                         <dt className="text-slate-500">lastAttemptAt</dt>
                         <dd className="mt-1 break-words font-bold">{item.lastAttemptAt ?? 'No disponible'}</dd>
                       </div>
-                      {item.errorCode && (
+                      {safeErrorCode && (
                         <div className="col-span-2">
                           <dt className="text-slate-500">errorCode</dt>
-                          <dd className="mt-1 break-words font-bold">{item.errorCode}</dd>
+                          <dd className="mt-1 break-words font-bold">{safeErrorCode}</dd>
+                        </div>
+                      )}
+                      {safeDiagnosticError && (
+                        <div className="col-span-2">
+                          <dt className="text-slate-500">diagnosticError</dt>
+                          <dd className="mt-1 break-words font-bold">{safeDiagnosticError}</dd>
                         </div>
                       )}
                     </dl>

@@ -650,6 +650,45 @@ describe('OperationsRepository central cash cache', () => {
   })
 })
 
+describe('OperationsRepository sync failures', () => {
+  it('persists sanitized Supabase diagnostics with the queue failure', async () => {
+    const database = new OperationsDatabase(
+      `operations-test-${crypto.randomUUID()}`,
+    )
+    const repository = new OperationsRepository(database)
+    const record = attendance('attendance-diagnostic')
+    const queued = queueItem(record.id)
+    const lastAttemptAt = '2026-08-28T18:00:00.000Z'
+
+    try {
+      await repository.saveAttendanceWithQueue([record], [queued])
+      await repository.failQueueItem(
+        queued,
+        'No se pudo sincronizar esta operación',
+        {
+          errorCode: 'P0001',
+          diagnosticError:
+            'Attendance already belongs to a confirmed payment · PIN=123456',
+          lastAttemptAt,
+        },
+      )
+
+      await expect(database.syncQueue.get(queued.id)).resolves.toMatchObject({
+        errorCode: 'P0001',
+        diagnosticError: expect.stringContaining(
+          'Attendance already belongs to a confirmed payment',
+        ),
+        lastAttemptAt,
+      })
+      const saved = await database.syncQueue.get(queued.id)
+      expect(saved?.diagnosticError).not.toContain('123456')
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})
+
 describe('OperationsRepository purchase cache protection', () => {
   it('keeps queued store purchases when administrative cache is cleared', async () => {
     const database = new OperationsDatabase(

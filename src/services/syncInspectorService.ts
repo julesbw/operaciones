@@ -12,6 +12,15 @@ import type {
 } from '../domain/models'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { currencyFormatter } from '../utils/money'
+import {
+  getSyncErrorCode,
+  sanitizeSyncDiagnostic,
+  sanitizeSyncErrorCode,
+  toUserFacingSyncError,
+} from '../utils/syncError'
+
+export { getSyncErrorCode, toUserFacingSyncError } from '../utils/syncError'
+export type { SyncErrorCode } from '../utils/syncError'
 
 export type SyncInspectorStatus = Extract<SyncStatus, 'pending' | 'syncing' | 'error'>
 
@@ -32,7 +41,8 @@ export type SyncInspectorItem = {
   retryCount: number
   lastAttemptAt?: string
   lastError?: string
-  errorCode?: SyncErrorCode
+  errorCode?: string
+  diagnosticError?: string
 }
 
 export type SyncInspectorSummary = {
@@ -46,16 +56,6 @@ export type SyncInspectorSnapshot = {
   items: SyncInspectorItem[]
   summary: SyncInspectorSummary
 }
-
-export type SyncErrorCode =
-  | 'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED'
-  | 'OPERATOR_STORE_FORBIDDEN'
-  | 'OPERATOR_PERMISSION_REQUIRED'
-  | 'OPERATOR_SESSION_EXPIRED'
-  | 'SERVER_UNREACHABLE'
-  | 'LOCAL_RECORD_MISSING'
-  | 'REMOTE_DELETE_UNAVAILABLE'
-  | 'SYNC_FAILED'
 
 export type SyncInspectorRepository = Pick<
   OperationsRepository,
@@ -84,130 +84,6 @@ const ATTENDANCE_LABELS: Record<AttendanceRecord['status'], string> = {
   present: 'Presente',
   absent: 'Ausente',
   rest_day: 'Descanso',
-}
-
-function includesAny(value: string, candidates: readonly string[]): boolean {
-  return candidates.some((candidate) => value.includes(candidate))
-}
-
-function normalizedError(value: string): string {
-  return value.trim().toLocaleLowerCase('es-MX')
-}
-
-export function getSyncErrorCode(value?: string): SyncErrorCode | undefined {
-  if (!value?.trim()) return undefined
-  const text = normalizedError(value)
-
-  if (
-    includesAny(text, [
-      'legacy_operator_attribution_required',
-      'sin identidad operativa',
-      'registro legacy',
-    ])
-  ) {
-    return 'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED'
-  }
-  if (
-    includesAny(text, [
-      'operator_store_forbidden',
-      'expense_store_forbidden',
-      'purchase_store_forbidden',
-      'otra tienda',
-      'tienda que ya no tienes asignada',
-    ])
-  ) {
-    return 'OPERATOR_STORE_FORBIDDEN'
-  }
-  if (
-    includesAny(text, [
-      'operator_account_inactive',
-      'operator_capability_forbidden',
-      'no tiene permiso',
-      'no permite realizar esta operación',
-      'rol actual no permite',
-      'cuenta del operador está desactivada',
-    ])
-  ) {
-    return 'OPERATOR_PERMISSION_REQUIRED'
-  }
-  if (
-    includesAny(text, [
-      'operator_session_required',
-      'operator_session_invalid',
-      'operator_session_expired',
-      'sesión del operador expiró',
-      'sesión operativa expirada',
-      'sesión expiró',
-      'refresh token',
-      'invalid session',
-      'jwt',
-      '401',
-    ])
-  ) {
-    return 'OPERATOR_SESSION_EXPIRED'
-  }
-  if (
-    includesAny(text, [
-      'failed to fetch',
-      'fetch failed',
-      'networkerror',
-      'network error',
-      'sin conexión',
-      'no respondió',
-      'no fue posible contactar',
-      'timeout',
-      '502',
-      '503',
-      '504',
-    ])
-  ) {
-    return 'SERVER_UNREACHABLE'
-  }
-  if (
-    includesAny(text, [
-      'local ya no existe',
-      'local no existe',
-      'local record missing',
-      'registro local no existe',
-    ])
-  ) {
-    return 'LOCAL_RECORD_MISSING'
-  }
-  if (
-    includesAny(text, [
-      'eliminación remota no está habilitada',
-      'remote delete',
-    ])
-  ) {
-    return 'REMOTE_DELETE_UNAVAILABLE'
-  }
-  return 'SYNC_FAILED'
-}
-
-export function toUserFacingSyncError(value?: string): string | undefined {
-  const code = getSyncErrorCode(value)
-  if (!code) return undefined
-
-  if (value?.trim() === 'Supabase no respondió') return value
-
-  switch (code) {
-    case 'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED':
-      return 'Registro legacy sin identidad operativa'
-    case 'OPERATOR_STORE_FORBIDDEN':
-      return 'La operación pertenece a otra tienda'
-    case 'OPERATOR_PERMISSION_REQUIRED':
-      return 'El operador ya no tiene permiso'
-    case 'OPERATOR_SESSION_EXPIRED':
-      return 'Sesión operativa expirada'
-    case 'SERVER_UNREACHABLE':
-      return 'Sin conexión con el servidor'
-    case 'LOCAL_RECORD_MISSING':
-      return 'El registro local ya no está disponible'
-    case 'REMOTE_DELETE_UNAVAILABLE':
-      return 'La eliminación remota no está habilitada'
-    case 'SYNC_FAILED':
-      return 'No se pudo sincronizar esta operación'
-  }
 }
 
 function storeName(
@@ -349,7 +225,14 @@ function statusFor(
   entityStatus: SyncStatus | undefined,
 ): SyncInspectorStatus {
   if (entityStatus === 'syncing') return 'syncing'
-  if (entityStatus === 'error' || queueItem.lastError) return 'error'
+  if (
+    entityStatus === 'error' ||
+    queueItem.lastError ||
+    queueItem.errorCode ||
+    queueItem.diagnosticError
+  ) {
+    return 'error'
+  }
   return 'pending'
 }
 
@@ -384,13 +267,23 @@ export class SyncInspectorService {
           this.repository,
           storesById,
         )
-        const hasError = Boolean(queueItem.lastError) || related.syncStatus === 'error'
+        const hasError =
+          Boolean(
+            queueItem.lastError ||
+              queueItem.errorCode ||
+              queueItem.diagnosticError,
+          ) || related.syncStatus === 'error'
         const errorCode = hasError
-          ? getSyncErrorCode(queueItem.lastError) ?? 'SYNC_FAILED'
+          ? sanitizeSyncErrorCode(queueItem.errorCode) ??
+            getSyncErrorCode(queueItem.lastError) ??
+            'SYNC_FAILED'
           : undefined
         const lastError = hasError
           ? toUserFacingSyncError(queueItem.lastError) ??
             'No se pudo sincronizar esta operación'
+          : undefined
+        const diagnosticError = hasError
+          ? sanitizeSyncDiagnostic(queueItem.diagnosticError)
           : undefined
 
         return {
@@ -413,6 +306,7 @@ export class SyncInspectorService {
           lastAttemptAt: queueItem.lastAttemptAt,
           lastError,
           errorCode,
+          diagnosticError,
         }
       }),
     )

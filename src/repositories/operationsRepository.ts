@@ -23,6 +23,15 @@ import type {
   SyncQueueItem,
   SyncStatus,
 } from '../domain/models'
+import {
+  sanitizeSyncDiagnostic,
+  sanitizeSyncErrorCode,
+} from '../utils/syncError'
+
+type SyncQueueFailureDetails = Pick<
+  SyncQueueItem,
+  'errorCode' | 'diagnosticError' | 'lastAttemptAt'
+>
 
 export class OperationsRepository {
   constructor(private readonly database: OperationsDatabase = db) {}
@@ -705,7 +714,11 @@ export class OperationsRepository {
     )
   }
 
-  async failQueueItem(item: SyncQueueItem, message: string): Promise<void> {
+  async failQueueItem(
+    item: SyncQueueItem,
+    message: string,
+    details: SyncQueueFailureDetails = {},
+  ): Promise<void> {
     await this.database.transaction(
       'rw',
       this.database.expenses,
@@ -722,10 +735,15 @@ export class OperationsRepository {
         const nextAttemptAt = new Date(
           Date.now() + delaySeconds * 1_000,
         ).toISOString()
+        const lastError =
+          sanitizeSyncDiagnostic(message) ?? 'Error de sincronización'
+        const diagnosticError = sanitizeSyncDiagnostic(details.diagnosticError)
         await this.database.syncQueue.update(item.id, {
           attempts,
-          lastError: message,
-          lastAttemptAt: new Date().toISOString(),
+          lastError,
+          errorCode: sanitizeSyncErrorCode(details.errorCode) ?? 'SYNC_FAILED',
+          diagnosticError,
+          lastAttemptAt: details.lastAttemptAt ?? new Date().toISOString(),
           nextAttemptAt,
         })
         await this.markEntitySyncStatus(

@@ -15,6 +15,11 @@ import {
   mapOperatorAuthorizationError,
   OperatorAuthorizationError,
 } from './operatorAuthorization'
+import {
+  buildSyncDiagnostic,
+  getSafeSyncErrorCode,
+  toFriendlySyncMessage,
+} from '../utils/syncError'
 
 export type SyncResult = {
   synced: number
@@ -184,9 +189,14 @@ export class SyncService {
         const legacyError = new OperatorAuthorizationError(
           'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
         ).message
+        const lastAttemptAt = new Date().toISOString()
         await Promise.all(
           legacyItems.map((item) =>
-            operationsRepository.failQueueItem(item, legacyError),
+            operationsRepository.failQueueItem(item, legacyError, {
+              errorCode: 'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
+              diagnosticError: 'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
+              lastAttemptAt,
+            }),
           ),
         )
         preflightFailed = legacyItems.length
@@ -226,9 +236,20 @@ export class SyncService {
       await operationsRepository.completeQueueItem(item, remoteVersion)
       return { success: true }
     } catch (error: unknown) {
+      const diagnosticError =
+        error instanceof Error
+          ? error.message
+          : String(error)
       const mapped = mapOperatorAuthorizationError(error)
-      const message = mapped.message || 'Error de sincronización'
-      await operationsRepository.failQueueItem(item, message)
+      const message =
+        mapped instanceof OperatorAuthorizationError
+          ? mapped.message
+          : toFriendlySyncMessage(mapped)
+      await operationsRepository.failQueueItem(item, message, {
+        errorCode: getSafeSyncErrorCode(error),
+        diagnosticError: buildSyncDiagnostic(error, diagnosticError),
+        lastAttemptAt: new Date().toISOString(),
+      })
       return { success: false, error: message }
     }
   }

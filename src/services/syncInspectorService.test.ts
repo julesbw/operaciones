@@ -14,6 +14,10 @@ import {
   getSyncErrorCode,
   toUserFacingSyncError,
 } from './syncInspectorService'
+import {
+  getSafeSyncErrorCode,
+  sanitizeSyncDiagnostic,
+} from '../utils/syncError'
 
 const stores: Store[] = [
   {
@@ -123,6 +127,8 @@ const queueItems: SyncQueueItem[] = [
     attempts: 3,
     operatorAccountId: null,
     lastError: 'Failed to fetch PIN=123456 token=do-not-render',
+    errorCode: 'P0001',
+    diagnosticError: 'Attendance already belongs to a confirmed payment',
     lastAttemptAt: '2026-08-28T16:30:00.000Z',
   },
   {
@@ -190,7 +196,8 @@ describe('SyncInspectorService', () => {
       retryCount: 3,
       lastAttemptAt: '2026-08-28T16:30:00.000Z',
       lastError: 'Sin conexión con el servidor',
-      errorCode: 'SERVER_UNREACHABLE',
+      errorCode: 'P0001',
+      diagnosticError: 'Attendance already belongs to a confirmed payment',
       status: 'error',
     })
     expect(snapshot.items[2]).toMatchObject({
@@ -223,5 +230,23 @@ describe('SyncInspectorService', () => {
     expect(
       toUserFacingSyncError('Unexpected error PIN=123456 token_hash=secret'),
     ).toBe('No se pudo sincronizar esta operación')
+  })
+
+  it('keeps technical codes while removing secrets from diagnostics', () => {
+    expect(
+      getSafeSyncErrorCode({
+        code: 'P0001',
+        message: 'Attendance already belongs to a confirmed payment',
+      }),
+    ).toBe('P0001')
+
+    const diagnostic = sanitizeSyncDiagnostic(
+      'PIN=123456 · OperatorSession token=operator-secret · JWT eyJhbGci.eyJzdWIi.sig · Authorization header: Bearer auth-secret · token_hash=hash-secret · Inspector',
+    )
+
+    expect(diagnostic).toBeDefined()
+    expect(diagnostic).not.toMatch(
+      /PIN|OperatorSession|JWT|Authorization|token_hash|Inspector|123456|operator-secret|auth-secret|hash-secret/i,
+    )
   })
 })

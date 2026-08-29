@@ -101,6 +101,8 @@ describe('SyncInspectorModal', () => {
       retryCount: 2,
       lastError: 'Unexpected error PIN=123456 token_hash=secret',
       errorCode: 'SYNC_FAILED',
+      diagnosticError:
+        'PIN=123456 · OperatorSession token=operator-secret · token_hash=secret',
     }
     const markup = renderInspector({
       snapshot: {
@@ -123,11 +125,23 @@ describe('SyncInspectorModal', () => {
     expect(markup).not.toContain('Diagnóstico')
     expect(markup).not.toContain('PIN=123456')
     expect(markup).not.toContain('token_hash=secret')
+    expect(markup).not.toContain('operator-secret')
   })
 
   it('shows technical diagnostics only to administrators', () => {
     const markup = renderInspector({
       user: { ...user, role: 'admin', storeId: undefined },
+      snapshot: {
+        items: [
+          {
+            ...item,
+            status: 'error',
+            errorCode: 'P0001',
+            diagnosticError: 'Attendance already belongs to a confirmed payment',
+          },
+        ],
+        summary: { total: 1, pending: 0, syncing: 0, error: 1 },
+      },
     })
 
     expect(markup).toContain('Diagnóstico')
@@ -135,5 +149,7 @@ describe('SyncInspectorModal', () => {
     expect(markup).toContain('entityId')
     expect(markup).toContain('retryCount')
     expect(markup).toContain('lastAttemptAt')
+    expect(markup).toContain('P0001')
+    expect(markup).toContain('Attendance already belongs to a confirmed payment')
   })
 })

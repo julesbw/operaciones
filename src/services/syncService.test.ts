@@ -217,6 +217,11 @@ describe('SyncService manual retry', () => {
     expect(mocks.failQueueItem).toHaveBeenCalledWith(
       expect.objectContaining({ id: pendingPurchase.id }),
       expect.stringContaining('sin identidad operativa'),
+      expect.objectContaining({
+        errorCode: 'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
+        diagnosticError: 'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
+        lastAttemptAt: expect.any(String),
+      }),
     )
     expect(mocks.purchaseSync).not.toHaveBeenCalled()
   })
@@ -272,6 +277,54 @@ describe('SyncService manual retry', () => {
     expect(mocks.failQueueItem).toHaveBeenCalledWith(
       expect.objectContaining({ id: pendingPurchase.id }),
       expect.stringContaining('rol actual'),
+      expect.objectContaining({
+        errorCode: 'SYNC_FAILED',
+        diagnosticError: 'OPERATOR_CAPABILITY_FORBIDDEN',
+        lastAttemptAt: expect.any(String),
+      }),
+    )
+  })
+
+  it('persists a safe Supabase code and diagnostic details', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockReturnValue(query)
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([
+      { ...pendingPurchase, nextAttemptAt: undefined },
+    ])
+    mocks.countPendingQueue.mockResolvedValue(1)
+    mocks.purchaseSync.mockRejectedValue({
+      code: 'P0001',
+      message: 'Attendance already belongs to a confirmed payment',
+      details: 'The attendance record cannot be changed',
+      hint: 'Review the payment',
+    })
+    mocks.saveRemoteAttendance.mockResolvedValue(undefined)
+    mocks.saveRemoteExpenses.mockResolvedValue(undefined)
+    mocks.saveRemoteMerchandiseTransfers.mockResolvedValue(undefined)
+
+    const service = new SyncService()
+    const result = await service.process({ forceRetry: true })
+
+    expect(result).toMatchObject({ synced: 0, failed: 1, pending: 1 })
+    expect(mocks.failQueueItem).toHaveBeenCalledWith(
+      expect.objectContaining({ id: pendingPurchase.id }),
+      'No se pudo sincronizar esta operación',
+      expect.objectContaining({
+        errorCode: 'P0001',
+        diagnosticError:
+          'Attendance already belongs to a confirmed payment · The attendance record cannot be changed · Review the payment',
+        lastAttemptAt: expect.any(String),
+      }),
     )
   })
 })
