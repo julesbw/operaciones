@@ -9,6 +9,9 @@ import {
 import { formatLongDate } from '../utils/date'
 import type { RefObject } from 'react'
 import {
+  isPaidAttendanceImmutableError,
+  PAID_ATTENDANCE_FRIENDLY_DETAIL,
+  PAID_ATTENDANCE_FRIENDLY_TITLE,
   sanitizeSyncDiagnostic,
   sanitizeSyncErrorCode,
 } from '../utils/syncError'
@@ -158,6 +161,7 @@ export function SyncInspectorModal({
             const safeError = toUserFacingSyncError(item.lastError)
             const safeErrorCode = sanitizeSyncErrorCode(item.errorCode)
             const safeDiagnosticError = sanitizeSyncDiagnostic(item.diagnosticError)
+            const paidAttendanceError = isPaidAttendanceImmutableError(item)
             return (
               <li
                 className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
@@ -208,11 +212,16 @@ export function SyncInspectorModal({
                   </div>
                 </dl>
 
-                {safeError && (
+                {paidAttendanceError ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-950">
+                    <p className="font-black">{PAID_ATTENDANCE_FRIENDLY_TITLE}</p>
+                    <p className="mt-1">{PAID_ATTENDANCE_FRIENDLY_DETAIL}</p>
+                  </div>
+                ) : safeError ? (
                   <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-800">
                     Último error: {safeError}
                   </p>
-                )}
+                ) : null}
 
                 {user.role === 'admin' && (
                   <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">

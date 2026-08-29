@@ -18,6 +18,9 @@ import {
 import {
   buildSyncDiagnostic,
   getSafeSyncErrorCode,
+  isPaidAttendanceImmutableError,
+  sanitizeSyncDiagnostic,
+  sanitizeSyncErrorCode,
   toFriendlySyncMessage,
 } from '../utils/syncError'
 
@@ -61,6 +64,29 @@ type MerchandiseTransferRow = {
   created_at: string
   updated_at: string
   version: number
+}
+
+function mapAttendanceRow(record: AttendanceRow): AttendanceRecord {
+  return {
+    id: record.id,
+    collaboratorId: record.collaborator_id,
+    storeId: record.store_id,
+    attendanceDate: record.attendance_date,
+    status: record.status,
+    recordedBy: record.recorded_by,
+    operatorAccountId: record.recorded_by_operator_account_id,
+    createdAt: record.created_at,
+    updatedAt: record.updated_at,
+    version: record.version,
+    syncStatus: 'synced',
+  }
+}
+
+function isPaidAttendanceQueueItem(item: SyncQueueItem): boolean {
+  return (
+    item.entityType === 'attendance' &&
+    isPaidAttendanceImmutableError(item)
+  )
 }
 
 function expenseToRpcArgs(expense: Expense) {
@@ -160,14 +186,19 @@ export class SyncService {
     const dueItems = forceRetry
       ? items
       : items.filter(
-          (item) => !item.nextAttemptAt || item.nextAttemptAt <= now,
+          (item) =>
+            isPaidAttendanceQueueItem(item) ||
+            !item.nextAttemptAt ||
+            item.nextAttemptAt <= now,
         )
     let operatorToken: string | null = null
     let operatorItems: SyncQueueItem[]
     const preflightErrors: string[] = []
     let preflightFailed = 0
     if (context.role === 'admin') {
-      operatorItems = dueItems.filter((item) => !item.operatorAccountId)
+      operatorItems = dueItems.filter(
+        (item) => !item.operatorAccountId || isPaidAttendanceQueueItem(item),
+      )
     } else {
       const activeOperator = operatorSessionService.getRequiredActiveSession(
         context.userId,
@@ -182,9 +213,14 @@ export class SyncService {
       }
       operatorToken = activeOperator.token
       operatorItems = dueItems.filter(
-        (item) => item.operatorAccountId === activeOperator.account.id,
+        (item) =>
+          isPaidAttendanceQueueItem(item) ||
+          item.operatorAccountId === activeOperator.account.id,
       )
-      const legacyItems = dueItems.filter((item) => !item.operatorAccountId)
+      const legacyItems = dueItems.filter(
+        (item) =>
+          !item.operatorAccountId && !isPaidAttendanceQueueItem(item),
+      )
       if (legacyItems.length > 0) {
         const legacyError = new OperatorAuthorizationError(
           'LEGACY_OPERATOR_ATTRIBUTION_REQUIRED',
@@ -226,6 +262,15 @@ export class SyncService {
     item: SyncQueueItem,
     operatorToken: string | null,
   ): Promise<{ success: boolean; error?: string }> {
+    if (isPaidAttendanceQueueItem(item)) {
+      try {
+        await this.reconcilePaidAttendance(item)
+        return { success: true }
+      } catch (error: unknown) {
+        return this.persistPaidReconciliationFailure(item, error)
+      }
+    }
+
     try {
       await operationsRepository.markEntitySyncStatus(
         item.entityType,
@@ -236,22 +281,98 @@ export class SyncService {
       await operationsRepository.completeQueueItem(item, remoteVersion)
       return { success: true }
     } catch (error: unknown) {
-      const diagnosticError =
-        error instanceof Error
-          ? error.message
-          : String(error)
-      const mapped = mapOperatorAuthorizationError(error)
-      const message =
-        mapped instanceof OperatorAuthorizationError
-          ? mapped.message
-          : toFriendlySyncMessage(mapped)
-      await operationsRepository.failQueueItem(item, message, {
-        errorCode: getSafeSyncErrorCode(error),
-        diagnosticError: buildSyncDiagnostic(error, diagnosticError),
-        lastAttemptAt: new Date().toISOString(),
-      })
-      return { success: false, error: message }
+      if (
+        item.entityType === 'attendance' &&
+        isPaidAttendanceImmutableError(error)
+      ) {
+        try {
+          await this.reconcilePaidAttendance(item)
+          return { success: true }
+        } catch (reconciliationError: unknown) {
+          return this.persistPaidReconciliationFailure(
+            item,
+            reconciliationError,
+            error,
+          )
+        }
+      }
+      return this.persistFailure(item, error)
     }
+  }
+
+  private async persistFailure(
+    item: SyncQueueItem,
+    error: unknown,
+  ): Promise<{ success: boolean; error: string }> {
+    const diagnosticError =
+      error instanceof Error
+        ? error.message
+        : String(error)
+    const mapped = mapOperatorAuthorizationError(error)
+    const message =
+      mapped instanceof OperatorAuthorizationError
+        ? mapped.message
+        : toFriendlySyncMessage(mapped)
+    await operationsRepository.failQueueItem(item, message, {
+      errorCode: getSafeSyncErrorCode(error),
+      diagnosticError: buildSyncDiagnostic(error, diagnosticError),
+      lastAttemptAt: new Date().toISOString(),
+    })
+    return { success: false, error: message }
+  }
+
+  private async persistPaidReconciliationFailure(
+    item: SyncQueueItem,
+    reconciliationError: unknown,
+    originalError?: unknown,
+  ): Promise<{ success: boolean; error: string }> {
+    const mapped = mapOperatorAuthorizationError(reconciliationError)
+    const message =
+      mapped instanceof OperatorAuthorizationError
+        ? mapped.message
+        : toFriendlySyncMessage(mapped)
+    const originalDiagnostic = originalError
+      ? buildSyncDiagnostic(originalError, 'PAID_ATTENDANCE_IMMUTABLE')
+      : sanitizeSyncDiagnostic(item.diagnosticError) ??
+        'PAID_ATTENDANCE_IMMUTABLE'
+    const recoveryDiagnostic = buildSyncDiagnostic(
+      reconciliationError,
+      reconciliationError instanceof Error
+        ? reconciliationError.message
+        : String(reconciliationError),
+    )
+    const errorCode =
+      sanitizeSyncErrorCode(item.errorCode) ??
+      (originalError ? getSafeSyncErrorCode(originalError) : '55000')
+    await operationsRepository.failQueueItem(item, message, {
+      errorCode,
+      diagnosticError: [originalDiagnostic, recoveryDiagnostic]
+        .filter((value): value is string => Boolean(value))
+        .join(' · '),
+      lastAttemptAt: new Date().toISOString(),
+    })
+    return { success: false, error: message }
+  }
+
+  private async reconcilePaidAttendance(item: SyncQueueItem): Promise<void> {
+    if (!supabase) throw new Error('Supabase no está configurado')
+
+    const { data, error } = await supabase
+      .from('attendance_records')
+      .select(
+        'id, collaborator_id, store_id, attendance_date, status, recorded_by, recorded_by_operator_account_id, created_at, updated_at, version',
+      )
+      .eq('id', item.entityId)
+      .maybeSingle<AttendanceRow>()
+    if (error) throw error
+    if (!data) {
+      throw new Error('La asistencia remota no existe para reconciliar el cambio')
+    }
+
+    await operationsRepository.reconcileAttendanceQueueItem(
+      item,
+      mapAttendanceRow(data),
+    )
   }
 
   private async pullRecent(): Promise<void> {
@@ -292,19 +413,7 @@ export class SyncService {
         expensesResult.data.map((expense) => mapExpenseRow(expense)),
       ),
       operationsRepository.saveRemoteAttendance(
-        attendanceResult.data.map((record) => ({
-          id: record.id,
-          collaboratorId: record.collaborator_id,
-          storeId: record.store_id,
-          attendanceDate: record.attendance_date,
-          status: record.status,
-          recordedBy: record.recorded_by,
-          operatorAccountId: record.recorded_by_operator_account_id,
-          createdAt: record.created_at,
-          updatedAt: record.updated_at,
-          version: record.version,
-          syncStatus: 'synced',
-        })),
+        attendanceResult.data.map(mapAttendanceRow),
       ),
       operationsRepository.saveRemoteMerchandiseTransfers(
         transfersResult.data.map((transfer) => ({

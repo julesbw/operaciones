@@ -714,6 +714,27 @@ export class OperationsRepository {
     )
   }
 
+  async reconcileAttendanceQueueItem(
+    item: SyncQueueItem,
+    remoteRecord: AttendanceRecord,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.attendanceRecords,
+      this.database.syncQueue,
+      async () => {
+        const current = await this.database.syncQueue.get(item.id)
+        if (current?.createdAt !== item.createdAt) return
+
+        await this.database.attendanceRecords.put({
+          ...remoteRecord,
+          syncStatus: 'synced',
+        })
+        await this.database.syncQueue.delete(item.id)
+      },
+    )
+  }
+
   async failQueueItem(
     item: SyncQueueItem,
     message: string,

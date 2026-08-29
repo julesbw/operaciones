@@ -152,4 +152,25 @@ describe('SyncInspectorModal', () => {
     expect(markup).toContain('P0001')
     expect(markup).toContain('Attendance already belongs to a confirmed payment')
   })
+
+  it('shows the paid-attendance reconciliation message without technical details to operators', () => {
+    const markup = renderInspector({
+      snapshot: {
+        items: [
+          {
+            ...item,
+            status: 'error',
+            errorCode: '55000',
+            diagnosticError: 'PAID_ATTENDANCE_IMMUTABLE',
+          },
+        ],
+        summary: { total: 1, pending: 0, syncing: 0, error: 1 },
+      },
+    })
+
+    expect(markup).toContain('Asistencia ya pagada')
+    expect(markup).toContain('Esta asistencia pertenece a un periodo pagado')
+    expect(markup).toContain('El cambio local fue descartado')
+    expect(markup).not.toContain('PAID_ATTENDANCE_IMMUTABLE')
+  })
 })

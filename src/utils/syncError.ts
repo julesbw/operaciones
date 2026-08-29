@@ -6,9 +6,13 @@ export type SyncErrorCode =
   | 'SERVER_UNREACHABLE'
   | 'LOCAL_RECORD_MISSING'
   | 'REMOTE_DELETE_UNAVAILABLE'
+  | 'PAID_ATTENDANCE_IMMUTABLE'
   | 'SYNC_FAILED'
 
 const DEFAULT_FRIENDLY_MESSAGE = 'No se pudo sincronizar esta operación'
+export const PAID_ATTENDANCE_FRIENDLY_TITLE = 'Asistencia ya pagada'
+export const PAID_ATTENDANCE_FRIENDLY_DETAIL =
+  'Esta asistencia pertenece a un periodo pagado y ya no puede modificarse. El cambio local fue descartado y se restauró el estado del servidor.'
 const REDACTED_VALUE = '[dato sensible omitido]'
 const MAX_DIAGNOSTIC_LENGTH = 1_000
 
@@ -43,6 +47,9 @@ export function getSyncErrorCode(value?: string): SyncErrorCode | undefined {
     ])
   ) {
     return 'OPERATOR_STORE_FORBIDDEN'
+  }
+  if (text.includes('paid_attendance_immutable')) {
+    return 'PAID_ATTENDANCE_IMMUTABLE'
   }
   if (
     includesAny(text, [
@@ -131,6 +138,8 @@ export function toUserFacingSyncError(value?: string): string | undefined {
       return 'El registro local ya no está disponible'
     case 'REMOTE_DELETE_UNAVAILABLE':
       return 'La eliminación remota no está habilitada'
+    case 'PAID_ATTENDANCE_IMMUTABLE':
+      return PAID_ATTENDANCE_FRIENDLY_TITLE
     case 'SYNC_FAILED':
       return DEFAULT_FRIENDLY_MESSAGE
   }
@@ -161,6 +170,28 @@ function diagnosticParts(error: unknown): string[] {
   return ['message', 'details', 'hint']
     .map((field) => stringField(error, field))
     .filter((value): value is string => Boolean(value))
+}
+
+function errorTexts(error: unknown): string[] {
+  if (typeof error === 'string') return [error]
+  if (!isErrorRecord(error)) return [String(error)]
+  return [
+    'code',
+    'message',
+    'details',
+    'hint',
+    'errorCode',
+    'diagnosticError',
+    'lastError',
+  ]
+    .map((field) => stringField(error, field))
+    .filter((value): value is string => Boolean(value))
+}
+
+export function isPaidAttendanceImmutableError(error: unknown): boolean {
+  return errorTexts(error).some((value) =>
+    normalizedError(value).includes('paid_attendance_immutable'),
+  )
 }
 
 function safeCode(value?: string): string | undefined {

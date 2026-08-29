@@ -230,6 +230,12 @@ describe('SyncInspectorService', () => {
     expect(
       toUserFacingSyncError('Unexpected error PIN=123456 token_hash=secret'),
     ).toBe('No se pudo sincronizar esta operación')
+    expect(getSyncErrorCode('PAID_ATTENDANCE_IMMUTABLE')).toBe(
+      'PAID_ATTENDANCE_IMMUTABLE',
+    )
+    expect(toUserFacingSyncError('PAID_ATTENDANCE_IMMUTABLE')).toBe(
+      'Asistencia ya pagada',
+    )
   })
 
   it('keeps technical codes while removing secrets from diagnostics', () => {

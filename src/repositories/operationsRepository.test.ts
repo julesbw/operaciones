@@ -651,6 +651,51 @@ describe('OperationsRepository central cash cache', () => {
 })
 
 describe('OperationsRepository sync failures', () => {
+  it('restores the remote attendance and removes only its queue item', async () => {
+    const database = new OperationsDatabase(
+      `operations-test-${crypto.randomUUID()}`,
+    )
+    const repository = new OperationsRepository(database)
+    const local = {
+      ...attendance('attendance-reconciliation'),
+      status: 'absent' as const,
+      syncStatus: 'error' as const,
+    }
+    const other = {
+      ...local,
+      id: 'attendance-other',
+      collaboratorId: 'collaborator-other',
+    }
+    const queued = queueItem(local.id)
+    const otherQueued = queueItem(other.id)
+    const remote = {
+      ...local,
+      status: 'present' as const,
+      updatedAt: '2026-08-28T18:00:00.000Z',
+      version: 4,
+      syncStatus: 'synced' as const,
+    }
+
+    try {
+      await repository.saveAttendanceWithQueue(
+        [local, other],
+        [queued, otherQueued],
+      )
+      await repository.reconcileAttendanceQueueItem(queued, remote)
+
+      await expect(database.syncQueue.get(queued.id)).resolves.toBeUndefined()
+      await expect(database.syncQueue.get(otherQueued.id)).resolves.toEqual(
+        otherQueued,
+      )
+      await expect(database.attendanceRecords.get(local.id)).resolves.toEqual(
+        remote,
+      )
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
   it('persists sanitized Supabase diagnostics with the queue failure', async () => {
     const database = new OperationsDatabase(
       `operations-test-${crypto.randomUUID()}`,

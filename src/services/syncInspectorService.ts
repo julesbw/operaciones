@@ -14,6 +14,8 @@ import { operationsRepository } from '../repositories/operationsRepository'
 import { currencyFormatter } from '../utils/money'
 import {
   getSyncErrorCode,
+  isPaidAttendanceImmutableError,
+  PAID_ATTENDANCE_FRIENDLY_TITLE,
   sanitizeSyncDiagnostic,
   sanitizeSyncErrorCode,
   toUserFacingSyncError,
@@ -273,13 +275,16 @@ export class SyncInspectorService {
               queueItem.errorCode ||
               queueItem.diagnosticError,
           ) || related.syncStatus === 'error'
+        const paidAttendanceError = isPaidAttendanceImmutableError(queueItem)
         const errorCode = hasError
           ? sanitizeSyncErrorCode(queueItem.errorCode) ??
             getSyncErrorCode(queueItem.lastError) ??
             'SYNC_FAILED'
           : undefined
         const lastError = hasError
-          ? toUserFacingSyncError(queueItem.lastError) ??
+          ? paidAttendanceError
+            ? PAID_ATTENDANCE_FRIENDLY_TITLE
+            : toUserFacingSyncError(queueItem.lastError) ??
             'No se pudo sincronizar esta operación'
           : undefined
         const diagnosticError = hasError

@@ -1,11 +1,181 @@
 import 'fake-indexeddb/auto'
 import { describe, expect, it } from 'vitest'
 import { OperationsDatabase } from '../db/database'
-import type { AttendanceRecord, Collaborator } from '../domain/models'
+import type {
+  AttendanceRecord,
+  Collaborator,
+  PaymentAttendanceItem,
+} from '../domain/models'
 import { OperationsRepository } from '../repositories/operationsRepository'
 import { AttendanceService } from './attendanceService'
 
 describe('AttendanceService multi-store saves', () => {
+  it('does not rewrite or enqueue records whose status did not change', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const service = new AttendanceService(repository)
+    const timestamp = '2026-08-09T12:00:00.000Z'
+    const existing: AttendanceRecord = {
+      id: 'unchanged-attendance',
+      collaboratorId: 'collaborator-id',
+      storeId: 'store-id',
+      attendanceDate: '2026-08-09',
+      status: 'present',
+      recordedBy: 'admin-id',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      version: 2,
+      syncStatus: 'synced',
+    }
+
+    try {
+      await database.attendanceRecords.put(existing)
+
+      await expect(
+        service.save(
+          [
+            {
+              collaboratorId: existing.collaboratorId,
+              storeId: existing.storeId,
+              attendanceDate: existing.attendanceDate,
+              status: existing.status,
+            },
+          ],
+          existing.recordedBy,
+          existing.attendanceDate,
+        ),
+      ).resolves.toEqual([])
+      await expect(database.syncQueue.count()).resolves.toBe(0)
+      await expect(database.attendanceRecords.get(existing.id)).resolves.toEqual(
+        existing,
+      )
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
+  it('writes and queues only the rows whose status changed', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const service = new AttendanceService(repository)
+    const timestamp = '2026-08-09T12:00:00.000Z'
+    const unchanged: AttendanceRecord = {
+      id: 'unchanged-attendance',
+      collaboratorId: 'collaborator-unchanged',
+      storeId: 'store-id',
+      attendanceDate: '2026-08-09',
+      status: 'present',
+      recordedBy: 'admin-id',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      version: 1,
+      syncStatus: 'synced',
+    }
+    const changed: AttendanceRecord = {
+      ...unchanged,
+      id: 'changed-attendance',
+      collaboratorId: 'collaborator-changed',
+      status: 'present',
+    }
+
+    try {
+      await database.attendanceRecords.bulkPut([unchanged, changed])
+
+      await expect(
+        service.save(
+          [
+            {
+              collaboratorId: unchanged.collaboratorId,
+              storeId: unchanged.storeId,
+              attendanceDate: unchanged.attendanceDate,
+              status: 'present',
+            },
+            {
+              collaboratorId: changed.collaboratorId,
+              storeId: changed.storeId,
+              attendanceDate: changed.attendanceDate,
+              status: 'absent',
+            },
+          ],
+          'admin-id',
+          changed.attendanceDate,
+        ),
+      ).resolves.toMatchObject([
+        { id: changed.id, collaboratorId: changed.collaboratorId, status: 'absent' },
+      ])
+
+      await expect(repository.listPendingQueue()).resolves.toMatchObject([
+        {
+          entityId: changed.id,
+          operation: 'update',
+        },
+      ])
+      await expect(repository.listPendingQueue()).resolves.not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ entityId: unchanged.id })]),
+      )
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
+  it('does not create a local update for a paid attendance', async () => {
+    const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
+    const repository = new OperationsRepository(database)
+    const service = new AttendanceService(repository)
+    const existing: AttendanceRecord = {
+      id: 'paid-attendance',
+      collaboratorId: 'paid-collaborator',
+      storeId: 'store-id',
+      attendanceDate: '2026-08-09',
+      status: 'absent',
+      recordedBy: 'admin-id',
+      createdAt: '2026-08-09T12:00:00.000Z',
+      updatedAt: '2026-08-09T12:00:00.000Z',
+      version: 2,
+      syncStatus: 'synced',
+    }
+    const paymentItem: PaymentAttendanceItem = {
+      paymentId: 'payment-id',
+      attendanceId: existing.id,
+      workDateSnapshot: existing.attendanceDate,
+      periodStart: '2026-08-03',
+      periodEnd: '2026-08-09',
+      weeklyPaySnapshot: 1_000,
+      dailyPaySnapshot: 166,
+      suggestedAllocation: 166,
+      createdAt: '2026-08-10T12:00:00.000Z',
+    }
+
+    try {
+      await database.attendanceRecords.put(existing)
+      await database.paymentAttendanceItems.put(paymentItem)
+
+      await expect(
+        service.save(
+          [
+            {
+              collaboratorId: existing.collaboratorId,
+              storeId: existing.storeId,
+              attendanceDate: existing.attendanceDate,
+              status: 'present',
+            },
+          ],
+          existing.recordedBy,
+          existing.attendanceDate,
+        ),
+      ).resolves.toEqual([])
+      await expect(database.syncQueue.count()).resolves.toBe(0)
+      await expect(database.attendanceRecords.get(existing.id)).resolves.toEqual(
+        existing,
+      )
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
   it('reuses existing records from every store in the global view', async () => {
     const database = new OperationsDatabase(`operations-test-${crypto.randomUUID()}`)
     const repository = new OperationsRepository(database)

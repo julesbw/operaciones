@@ -48,6 +48,41 @@ const STATUS_OPTIONS: Array<{
   { value: 'rest_day', label: 'Descanso', icon: MoonIcon },
 ]
 
+export function AttendanceStatusControls({
+  disabled = false,
+  onChange,
+  paid = false,
+  status,
+}: {
+  disabled?: boolean
+  onChange: (status: AttendanceStatus) => void
+  paid?: boolean
+  status: AttendanceStatus
+}) {
+  return (
+    <div className="mt-3 grid w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 xl:mt-0 xl:w-[348px] xl:shrink-0">
+      {STATUS_OPTIONS.map((option) => {
+        const Icon = option.icon
+        const active = status === option.value
+        return (
+          <button
+            aria-pressed={active}
+            aria-label={`${option.label}${paid ? ' · Pagado · No modificable' : ''}`}
+            className={`${active ? `attendance-${option.value}` : 'attendance-option'}${paid ? ' cursor-not-allowed opacity-60' : ''}`}
+            disabled={paid || disabled}
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+          >
+            <Icon className="size-4 shrink-0" />
+            <span className="hidden min-[420px]:inline">{option.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function initials(name: string): string {
   return name
     .split(' ')
@@ -71,9 +106,16 @@ export function AttendancePage({
   const [date, setDate] = useState(operationalDate)
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
+  const [originalStatuses, setOriginalStatuses] = useState<
+    Record<string, AttendanceStatus>
+  >({})
+  const [paidCollaboratorIds, setPaidCollaboratorIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  )
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [savedMessage, setSavedMessage] = useState<string>()
   const [error, setError] = useState<string>()
 
   const activeStores = useMemo(
@@ -108,6 +150,8 @@ export function AttendancePage({
     if (storeScope.kind === 'unavailable' && !effectiveStoreId) {
       setCollaborators([])
       setStatuses({})
+      setOriginalStatuses({})
+      setPaidCollaboratorIds(new Set())
       setError('Tu perfil no tiene una tienda asignada.')
       setLoading(false)
       return
@@ -116,13 +160,15 @@ export function AttendancePage({
     let active = true
     setLoading(true)
     setSaved(false)
+    setSavedMessage(undefined)
     setError(undefined)
 
     void Promise.all([
       referenceDataService.listCollaborators(effectiveStoreId),
       attendanceService.list(effectiveStoreId, date),
+      attendanceService.listPaidAttendanceIds(),
     ])
-      .then(([people, records]) => {
+      .then(([people, records, paidAttendanceIds]) => {
         if (!active) return
 
         const allowedStoreIds = new Set(
@@ -136,17 +182,30 @@ export function AttendancePage({
           allowedStoreIds.has(person.storeId) && person.status === 'active',
         )
         const existing = new Map(
-          records.map((record) => [record.collaboratorId, record.status]),
+          records.map((record) => [record.collaboratorId, record]),
         )
         const weekday = getWeekday(date)
+        const nextStatuses = Object.fromEntries(
+          visiblePeople.map((person) => [
+            person.id,
+            existing.get(person.id)?.status ??
+              (person.restDay === weekday ? 'rest_day' : 'present'),
+          ]),
+        ) as Record<string, AttendanceStatus>
+        const nextOriginalStatuses = Object.fromEntries(
+          visiblePeople.flatMap((person) => {
+            const record = existing.get(person.id)
+            return record ? [[person.id, record.status]] : []
+          }),
+        ) as Record<string, AttendanceStatus>
         setCollaborators(visiblePeople)
-        setStatuses(
-          Object.fromEntries(
-            visiblePeople.map((person) => [
-              person.id,
-              existing.get(person.id) ??
-                (person.restDay === weekday ? 'rest_day' : 'present'),
-            ]),
+        setStatuses(nextStatuses)
+        setOriginalStatuses(nextOriginalStatuses)
+        setPaidCollaboratorIds(
+          new Set(
+            records
+              .filter((record) => paidAttendanceIds.has(record.id))
+              .map((record) => record.collaboratorId),
           ),
         )
       })
@@ -187,19 +246,40 @@ export function AttendancePage({
   async function save() {
     setSaving(true)
     setError(undefined)
+    setSaved(false)
+    setSavedMessage(undefined)
     try {
-      await attendanceService.save(
-        collaborators.map((collaborator) => ({
+      const changedInputs = collaborators
+        .filter((collaborator) => !paidCollaboratorIds.has(collaborator.id))
+        .map((collaborator) => ({
           collaboratorId: collaborator.id,
           storeId: collaborator.storeId,
           attendanceDate: date,
           status: statuses[collaborator.id] ?? 'present',
-        })),
+        }))
+        .filter(
+          (input) => originalStatuses[input.collaboratorId] !== input.status,
+        )
+      const savedRecords = await attendanceService.save(
+        changedInputs,
         user.id,
         undefined,
         operatorAccountId,
       )
+      if (savedRecords.length === 0) {
+        setSaved(true)
+        setSavedMessage('No había cambios nuevos.')
+        return
+      }
+      setOriginalStatuses((current) => {
+        const next = { ...current }
+        for (const record of savedRecords) {
+          next[record.collaboratorId] = record.status
+        }
+        return next
+      })
       setSaved(true)
+      setSavedMessage('Guardado en este dispositivo.')
       onDataChanged()
       await onSync?.()
       onDataChanged()
@@ -325,30 +405,24 @@ export function AttendancePage({
                         )}
                       </div>
                     </div>
-                    <div className="mt-3 grid w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 xl:mt-0 xl:w-[348px] xl:shrink-0">
-                      {STATUS_OPTIONS.map((option) => {
-                        const Icon = option.icon
-                        const active = statuses[collaborator.id] === option.value
-                        return (
-                          <button
-                            aria-pressed={active}
-                            className={active ? `attendance-${option.value}` : 'attendance-option'}
-                            key={option.value}
-                            type="button"
-                            onClick={() => {
-                              setSaved(false)
-                              setStatuses((current) => ({
-                                ...current,
-                                [collaborator.id]: option.value,
-                              }))
-                            }}
-                          >
-                            <Icon className="size-4 shrink-0" />
-                            <span className="hidden min-[420px]:inline">{option.label}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
+                    {paidCollaboratorIds.has(collaborator.id) && (
+                      <p className="mt-2 text-xs font-extrabold text-slate-500 xl:mt-0">
+                        Pagado · No modificable
+                      </p>
+                    )}
+                    <AttendanceStatusControls
+                      disabled={saving}
+                      paid={paidCollaboratorIds.has(collaborator.id)}
+                      status={statuses[collaborator.id] ?? 'present'}
+                      onChange={(status) => {
+                        setSaved(false)
+                        setSavedMessage(undefined)
+                        setStatuses((current) => ({
+                          ...current,
+                          [collaborator.id]: status,
+                        }))
+                      }}
+                    />
                   </article>
                 ))}
               </div>
@@ -379,7 +453,9 @@ export function AttendancePage({
             {saving ? 'Guardando…' : saved ? 'Asistencia guardada' : 'Guardar asistencia'}
           </button>
           {saved && (
-            <p className="alert-success justify-center text-center">Guardado en este dispositivo.</p>
+            <p className="alert-success justify-center text-center">
+              {savedMessage ?? 'Guardado en este dispositivo.'}
+            </p>
           )}
         </aside>
       </div>

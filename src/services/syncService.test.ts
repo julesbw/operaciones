@@ -5,15 +5,18 @@ const mocks = vi.hoisted(() => ({
   completeQueueItem: vi.fn(),
   countPendingQueue: vi.fn(),
   failQueueItem: vi.fn(),
+  getAttendance: vi.fn(),
   getLocalAppContext: vi.fn(),
   listPendingQueue: vi.fn(),
   markEntitySyncStatus: vi.fn(),
+  reconcileAttendanceQueueItem: vi.fn(),
   saveRemoteAttendance: vi.fn(),
   saveRemoteExpenses: vi.fn(),
   saveRemoteMerchandiseTransfers: vi.fn(),
   purchaseSync: vi.fn(),
   getSession: vi.fn(),
   from: vi.fn(),
+  rpc: vi.fn(),
   isNetworkAvailable: vi.fn(),
   getRequiredActiveSession: vi.fn(),
 }))
@@ -22,6 +25,7 @@ vi.mock('../lib/supabase', () => ({
   supabase: {
     auth: { getSession: mocks.getSession },
     from: mocks.from,
+    rpc: mocks.rpc,
   },
 }))
 
@@ -30,9 +34,11 @@ vi.mock('../repositories/operationsRepository', () => ({
     completeQueueItem: mocks.completeQueueItem,
     countPendingQueue: mocks.countPendingQueue,
     failQueueItem: mocks.failQueueItem,
+    getAttendance: mocks.getAttendance,
     getLocalAppContext: mocks.getLocalAppContext,
     listPendingQueue: mocks.listPendingQueue,
     markEntitySyncStatus: mocks.markEntitySyncStatus,
+    reconcileAttendanceQueueItem: mocks.reconcileAttendanceQueueItem,
     saveRemoteAttendance: mocks.saveRemoteAttendance,
     saveRemoteExpenses: mocks.saveRemoteExpenses,
     saveRemoteMerchandiseTransfers: mocks.saveRemoteMerchandiseTransfers,
@@ -326,5 +332,252 @@ describe('SyncService manual retry', () => {
         lastAttemptAt: expect.any(String),
       }),
     )
+  })
+
+  it('reconciles a paid attendance instead of retrying the rejected update', async () => {
+    const remoteAttendance = {
+      id: 'attendance-id',
+      collaborator_id: 'collaborator-id',
+      store_id: 'store-id',
+      attendance_date: '2026-08-28',
+      status: 'present' as const,
+      recorded_by: 'user-id',
+      recorded_by_operator_account_id: null,
+      created_at: '2026-08-28T12:00:00.000Z',
+      updated_at: '2026-08-28T13:00:00.000Z',
+      version: 4,
+    }
+    const attendanceQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: remoteAttendance,
+        error: null,
+      }),
+      returns: vi.fn().mockResolvedValue({
+        data: [remoteAttendance],
+        error: null,
+      }),
+    }
+    const otherQuery = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockImplementation((table: string) =>
+      table === 'attendance_records' ? attendanceQuery : otherQuery,
+    )
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([
+      {
+        id: 'attendance:attendance-id',
+        entityType: 'attendance',
+        entityId: 'attendance-id',
+        operation: 'update',
+        createdAt: '2026-08-28T12:30:00.000Z',
+        attempts: 2,
+      },
+    ])
+    mocks.getAttendance.mockResolvedValue({
+      id: 'attendance-id',
+      collaboratorId: 'collaborator-id',
+      storeId: 'store-id',
+      attendanceDate: '2026-08-28',
+      status: 'absent',
+      recordedBy: 'user-id',
+      operatorAccountId: null,
+      createdAt: '2026-08-28T12:00:00.000Z',
+      updatedAt: '2026-08-28T12:30:00.000Z',
+      version: 3,
+      syncStatus: 'pending',
+    })
+    mocks.rpc.mockResolvedValue({
+      data: null,
+      error: {
+        code: '55000',
+        message: 'PAID_ATTENDANCE_IMMUTABLE',
+      },
+    })
+    mocks.countPendingQueue.mockResolvedValue(0)
+    mocks.reconcileAttendanceQueueItem.mockResolvedValue(undefined)
+    mocks.saveRemoteAttendance.mockResolvedValue(undefined)
+    mocks.saveRemoteExpenses.mockResolvedValue(undefined)
+    mocks.saveRemoteMerchandiseTransfers.mockResolvedValue(undefined)
+
+    const service = new SyncService()
+    const result = await service.process({ forceRetry: true })
+
+    expect(result).toMatchObject({ synced: 1, failed: 0, pending: 0 })
+    expect(mocks.rpc).toHaveBeenCalledWith(
+      'sync_attendance',
+      expect.objectContaining({ p_status: 'absent' }),
+    )
+    expect(mocks.reconcileAttendanceQueueItem).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'attendance-id' }),
+      expect.objectContaining({
+        id: 'attendance-id',
+        status: 'present',
+        version: 4,
+        syncStatus: 'synced',
+      }),
+    )
+    expect(mocks.failQueueItem).not.toHaveBeenCalled()
+  })
+
+  it('reconciles existing paid-attendance queue metadata without another RPC attempt', async () => {
+    const remoteAttendance = {
+      id: 'attendance-id',
+      collaborator_id: 'collaborator-id',
+      store_id: 'store-id',
+      attendance_date: '2026-08-28',
+      status: 'absent' as const,
+      recorded_by: 'user-id',
+      recorded_by_operator_account_id: null,
+      created_at: '2026-08-28T12:00:00.000Z',
+      updated_at: '2026-08-28T13:00:00.000Z',
+      version: 4,
+    }
+    const attendanceQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: remoteAttendance,
+        error: null,
+      }),
+      returns: vi.fn().mockResolvedValue({
+        data: [remoteAttendance],
+        error: null,
+      }),
+    }
+    const otherQuery = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockImplementation((table: string) =>
+      table === 'attendance_records' ? attendanceQuery : otherQuery,
+    )
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([
+      {
+        id: 'attendance:attendance-id',
+        entityType: 'attendance',
+        entityId: 'attendance-id',
+        operation: 'update',
+        createdAt: '2026-08-28T12:30:00.000Z',
+        attempts: 5,
+        nextAttemptAt: '2999-01-01T00:00:00.000Z',
+        operatorAccountId: 'operator-b',
+        errorCode: '55000',
+        diagnosticError: 'PAID_ATTENDANCE_IMMUTABLE',
+      },
+    ])
+    mocks.countPendingQueue.mockResolvedValue(0)
+    mocks.reconcileAttendanceQueueItem.mockResolvedValue(undefined)
+    mocks.saveRemoteAttendance.mockResolvedValue(undefined)
+    mocks.saveRemoteExpenses.mockResolvedValue(undefined)
+    mocks.saveRemoteMerchandiseTransfers.mockResolvedValue(undefined)
+
+    const service = new SyncService()
+    const result = await service.process()
+
+    expect(result).toMatchObject({ synced: 1, failed: 0, pending: 0 })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.reconcileAttendanceQueueItem).toHaveBeenCalledOnce()
+    expect(mocks.failQueueItem).not.toHaveBeenCalled()
+  })
+
+  it('keeps a paid attendance terminal while remote reconciliation is unavailable', async () => {
+    const remoteAttendance = {
+      id: 'attendance-id',
+      collaborator_id: 'collaborator-id',
+      store_id: 'store-id',
+      attendance_date: '2026-08-28',
+      status: 'present' as const,
+      recorded_by: 'user-id',
+      recorded_by_operator_account_id: null,
+      created_at: '2026-08-28T12:00:00.000Z',
+      updated_at: '2026-08-28T13:00:00.000Z',
+      version: 4,
+    }
+    const attendanceQuery = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      maybeSingle: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Failed to fetch'))
+        .mockResolvedValueOnce({ data: remoteAttendance, error: null }),
+      returns: vi.fn().mockResolvedValue({ data: [remoteAttendance], error: null }),
+    }
+    const otherQuery = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockImplementation((table: string) =>
+      table === 'attendance_records' ? attendanceQuery : otherQuery,
+    )
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([
+      {
+        id: 'attendance:attendance-id',
+        entityType: 'attendance',
+        entityId: 'attendance-id',
+        operation: 'update',
+        createdAt: '2026-08-28T12:30:00.000Z',
+        attempts: 2,
+        errorCode: '55000',
+        diagnosticError: 'PAID_ATTENDANCE_IMMUTABLE',
+      },
+    ])
+    mocks.countPendingQueue.mockResolvedValueOnce(1).mockResolvedValueOnce(0)
+    mocks.failQueueItem.mockResolvedValue(undefined)
+    mocks.reconcileAttendanceQueueItem.mockResolvedValue(undefined)
+    mocks.saveRemoteAttendance.mockResolvedValue(undefined)
+    mocks.saveRemoteExpenses.mockResolvedValue(undefined)
+    mocks.saveRemoteMerchandiseTransfers.mockResolvedValue(undefined)
+
+    const service = new SyncService()
+
+    await expect(service.process()).resolves.toMatchObject({
+      synced: 0,
+      failed: 1,
+      pending: 1,
+    })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.failQueueItem).toHaveBeenCalledWith(
+      expect.objectContaining({ entityId: 'attendance-id' }),
+      'Sin conexión con el servidor',
+      expect.objectContaining({
+        errorCode: '55000',
+        diagnosticError: expect.stringContaining('PAID_ATTENDANCE_IMMUTABLE'),
+      }),
+    )
+
+    await expect(service.process()).resolves.toMatchObject({
+      synced: 1,
+      failed: 0,
+      pending: 0,
+    })
+    expect(mocks.rpc).not.toHaveBeenCalled()
+    expect(mocks.reconcileAttendanceQueueItem).toHaveBeenCalledOnce()
   })
 })

@@ -6,12 +6,30 @@ import type {
 import { operationsRepository } from '../repositories/operationsRepository'
 import { OperatorAuthorizationError } from './operatorAuthorization'
 import { getOperationalDate } from '../utils/date'
+import { isPaidAttendanceImmutableError } from '../utils/syncError'
 
 export class AttendanceService {
   constructor(private readonly repository = operationsRepository) {}
 
   list(storeId: string | undefined, attendanceDate: string) {
     return this.repository.listAttendance(storeId, attendanceDate)
+  }
+
+  async listPaidAttendanceIds(): Promise<Set<string>> {
+    const [items, queueItems] = await Promise.all([
+      this.repository.listPaymentAttendanceItems(),
+      this.repository.listPendingQueue(),
+    ])
+    return new Set([
+      ...items.map((item) => item.attendanceId),
+      ...queueItems
+        .filter(
+          (item) =>
+            item.entityType === 'attendance' &&
+            isPaidAttendanceImmutableError(item),
+        )
+        .map((item) => item.entityId),
+    ])
   }
 
   async save(
@@ -30,12 +48,6 @@ export class AttendanceService {
     if (inputs.some((input) => input.attendanceDate !== attendanceDate)) {
       throw new Error('Todas las asistencias deben corresponder a la misma fecha')
     }
-    const collaborators = await Promise.all(
-      inputs.map((input) => this.repository.getCollaborator(input.collaboratorId)),
-    )
-    if (collaborators.some((collaborator) => collaborator && collaborator.status !== 'active')) {
-      throw new Error('COLLABORATOR_INACTIVE')
-    }
     const existingRecords = await this.repository.listAttendance(
       undefined,
       attendanceDate,
@@ -43,8 +55,33 @@ export class AttendanceService {
     const existingByCollaborator = new Map(
       existingRecords.map((record) => [record.collaboratorId, record]),
     )
+    const changedInputs = inputs.filter(
+      (input) =>
+        existingByCollaborator.get(input.collaboratorId)?.status !== input.status,
+    )
+    if (changedInputs.length === 0) return []
+
+    const paidAttendanceIds = await this.listPaidAttendanceIds()
+    const editableInputs = changedInputs.filter((input) => {
+      const existing = existingByCollaborator.get(input.collaboratorId)
+      return !existing?.id || !paidAttendanceIds.has(existing.id)
+    })
+    if (editableInputs.length === 0) return []
+
+    const collaborators = await Promise.all(
+      editableInputs.map((input) =>
+        this.repository.getCollaborator(input.collaboratorId),
+      ),
+    )
+    if (
+      collaborators.some(
+        (collaborator) => collaborator && collaborator.status !== 'active',
+      )
+    ) {
+      throw new Error('COLLABORATOR_INACTIVE')
+    }
     if (operatorAccountId) {
-      for (const input of inputs) {
+      for (const input of editableInputs) {
         const existing = existingByCollaborator.get(input.collaboratorId)
         if (existing && !existing.operatorAccountId) {
           throw new OperatorAuthorizationError(
@@ -62,11 +99,14 @@ export class AttendanceService {
       }
     }
 
-    const records = inputs.map<AttendanceRecord>((input) => {
+    const records = editableInputs.map<AttendanceRecord>((input) => {
       const existing = existingByCollaborator.get(input.collaboratorId)
       return {
-        ...input,
         id: existing?.id ?? crypto.randomUUID(),
+        collaboratorId: input.collaboratorId,
+        storeId: input.storeId,
+        attendanceDate: input.attendanceDate,
+        status: input.status,
         recordedBy: userId,
         operatorAccountId: operatorAccountId ?? existing?.operatorAccountId ?? null,
         createdAt: existing?.createdAt ?? now,
