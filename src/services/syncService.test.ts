@@ -61,7 +61,11 @@ vi.mock('./operatorSessionService', () => ({
   },
 }))
 
-import { SyncService } from './syncService'
+import {
+  isSyncAuthenticationFailure,
+  SyncAuthenticationError,
+  SyncService,
+} from './syncService'
 
 const context: LocalAppContext = {
   id: 'current',
@@ -579,5 +583,46 @@ describe('SyncService manual retry', () => {
     })
     expect(mocks.rpc).not.toHaveBeenCalled()
     expect(mocks.reconcileAttendanceQueueItem).toHaveBeenCalledOnce()
+  })
+
+  it('validates the technical session before reading SyncQueue', async () => {
+    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.getSession.mockResolvedValue({
+      data: { session: null },
+      error: null,
+    })
+
+    await expect(new SyncService().process()).rejects.toBeInstanceOf(
+      SyncAuthenticationError,
+    )
+    expect(mocks.listPendingQueue).not.toHaveBeenCalled()
+  })
+
+  it('stops processing when a queue request invalidates the operator session', async () => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      returns: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }
+    mocks.from.mockReturnValue(query)
+    mocks.getSession.mockResolvedValue({
+      data: { session: { user: { id: 'user-id' } } },
+      error: null,
+    })
+    mocks.getLocalAppContext.mockResolvedValue(context)
+    mocks.isNetworkAvailable.mockReturnValue(true)
+    mocks.listPendingQueue.mockResolvedValue([pendingPurchase])
+    mocks.purchaseSync.mockRejectedValue({
+      code: 'OPERATOR_SESSION_INVALID',
+      message: 'La sesión operativa ya no es válida.',
+    })
+
+    await expect(new SyncService().process({ forceRetry: true })).rejects.toMatchObject({
+      code: 'OPERATOR_SESSION_INVALID',
+    })
+    expect(isSyncAuthenticationFailure({ code: 'OPERATOR_SESSION_INVALID' })).toBe(false)
+    expect(mocks.failQueueItem).not.toHaveBeenCalled()
+    expect(mocks.from).not.toHaveBeenCalled()
   })
 })

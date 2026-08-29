@@ -78,6 +78,7 @@ type ExpensesPageProps = {
   operatorSession?: OperatorSession
   networkAvailable: boolean
   operatorAccountId?: string | null
+  dataRevision?: number
   onDataChanged: () => void
   onSync?: () => Promise<void>
 }
@@ -110,6 +111,7 @@ export function ExpensesPage({
   operatorSession,
   networkAvailable,
   operatorAccountId,
+  dataRevision = 0,
   onDataChanged,
   onSync,
 }: ExpensesPageProps) {
@@ -181,7 +183,7 @@ export function ExpensesPage({
     } finally {
       setLoading(false)
     }
-  }, [cashierStoreId, dateFrom, dateTo, isAdmin, queryStoreId])
+  }, [cashierStoreId, dataRevision, dateFrom, dateTo, isAdmin, queryStoreId])
 
   useEffect(() => {
     void load()

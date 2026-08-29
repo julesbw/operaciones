@@ -68,6 +68,7 @@ type ClosingsPageProps = {
   stores: Store[]
   user: UserProfile
   operatorSession?: OperatorSession
+  dataRevision?: number
 }
 
 type DraftSaveState = 'idle' | 'saving' | 'saved'
@@ -354,12 +355,14 @@ function ClosingDetailView({
   stores,
   user,
   networkAvailable,
+  dataRevision,
   onBack,
 }: {
   closingId: string
   stores: Store[]
   user: UserProfile
   networkAvailable: boolean
+  dataRevision: number
   onBack: () => void
 }) {
   const [detail, setDetail] = useState<CashClosingDetail>()
@@ -398,7 +401,7 @@ function ClosingDetailView({
     return () => {
       active = false
     }
-  }, [closingId, user])
+  }, [closingId, dataRevision, user])
 
   if (error) {
     return (
@@ -646,7 +649,12 @@ function ClosingDetailView({
   )
 }
 
-export function ClosingsPage({ stores, user, operatorSession }: ClosingsPageProps) {
+export function ClosingsPage({
+  stores,
+  user,
+  operatorSession,
+  dataRevision = 0,
+}: ClosingsPageProps) {
   const today = getLocalDate()
   const identity = { technicalUser: user, operatorSession }
   const storeScope = getRuntimeStoreScope(identity)
@@ -722,7 +730,7 @@ export function ClosingsPage({ stores, user, operatorSession }: ClosingsPageProp
     if (view.kind === 'history') void loadHistory()
     // loadHistory depends only on the filter snapshot used by this effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo, statusFilter, storeFilter, view.kind])
+  }, [dataRevision, dateFrom, dateTo, statusFilter, storeFilter, view.kind])
 
   const historyEntries = useMemo<ClosingHistoryEntry[]>(() => {
     const entries: ClosingHistoryEntry[] = [
@@ -794,6 +802,7 @@ export function ClosingsPage({ stores, user, operatorSession }: ClosingsPageProp
         stores={stores}
         user={user}
         operatorSession={operatorSession}
+        dataRevision={dataRevision}
         onBack={() => setView({ kind: 'history' })}
         onClosed={(closing) => setView({ kind: 'detail', closingId: closing.id })}
       />
@@ -804,6 +813,7 @@ export function ClosingsPage({ stores, user, operatorSession }: ClosingsPageProp
     return (
       <ClosingDetailView
         closingId={view.closingId}
+        dataRevision={dataRevision}
         stores={stores}
         user={user}
         networkAvailable={connectivityService.isNetworkAvailable()}
@@ -959,6 +969,7 @@ function ClosingFlow({
   stores,
   user,
   operatorSession,
+  dataRevision = 0,
   storeId: initialStoreId,
   businessDate: initialBusinessDate,
   onBack,
@@ -1090,7 +1101,7 @@ function ClosingFlow({
     return () => {
       active = false
     }
-  }, [date, storeId, user.id])
+  }, [dataRevision, date, storeId, user.id])
 
   function persistDraft(
     nextDraft: CashClosingDraft,

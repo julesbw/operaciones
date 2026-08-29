@@ -22,6 +22,7 @@ type CollaboratorsPageProps = {
   operatorSession?: OperatorSession
   stores: Store[]
   user: UserProfile
+  dataRevision?: number
   onDataChanged: () => void
   onAttendanceStoreFilterChange: (value: StoreScopeValue) => void
   onSync?: () => Promise<void>
@@ -33,6 +34,7 @@ export function CollaboratorsPage({
   operatorSession,
   stores,
   user,
+  dataRevision = 0,
   onDataChanged,
   onAttendanceStoreFilterChange,
   onSync,
@@ -66,13 +68,19 @@ export function CollaboratorsPage({
             user={user}
             operatorSession={operatorSession}
             operatorAccountId={operatorAccountId}
+            dataRevision={dataRevision}
             onDataChanged={onDataChanged}
             onStoreFilterChange={onAttendanceStoreFilterChange}
             onSync={onSync}
           />
         )}
         {tab === 'payments' && user.role === 'admin' && (
-          <PaymentsPage embedded stores={stores} user={user} />
+          <PaymentsPage
+            dataRevision={dataRevision}
+            embedded
+            stores={stores}
+            user={user}
+          />
         )}
       </div>
     </section>

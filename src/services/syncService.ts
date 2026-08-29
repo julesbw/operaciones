@@ -38,6 +38,40 @@ export class SyncAuthenticationError extends Error {
   }
 }
 
+export function isSyncAuthenticationFailure(cause: unknown): boolean {
+  if (cause instanceof SyncAuthenticationError) return true
+  if (!cause || typeof cause !== 'object') return false
+
+  const status = 'status' in cause ? cause.status : undefined
+  const message = [
+    'code' in cause ? cause.code : '',
+    'message' in cause ? cause.message : '',
+    'details' in cause ? cause.details : '',
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .toLocaleLowerCase('es-MX')
+
+  return (
+    status === 401 ||
+    message.includes('jwt') ||
+    message.includes('refresh token') ||
+    message.includes('refresh_token') ||
+    message.includes('invalid_refresh_token') ||
+    message.includes('invalid session') ||
+    message.includes('auth session') ||
+    message.includes('session missing')
+  )
+}
+
+function authenticationFailureToThrow(cause: unknown): unknown {
+  if (isSyncAuthenticationFailure(cause)) return cause
+  const mapped = mapOperatorAuthorizationError(cause)
+  return mapped instanceof OperatorAuthorizationError && mapped.requiresLogin
+    ? mapped
+    : undefined
+}
+
 type AttendanceRow = {
   id: string
   collaborator_id: string
@@ -160,11 +194,12 @@ export class SyncService {
     forceRetry: boolean,
     operatorAccountId?: string | null,
   ): Promise<SyncResult> {
-    const items = await operationsRepository.listPendingQueue()
     if (!supabase) {
+      const items = await operationsRepository.listPendingQueue()
       return { synced: 0, failed: 0, pending: items.length }
     }
     if (!connectivityService.isNetworkAvailable()) {
+      const items = await operationsRepository.listPendingQueue()
       return { synced: 0, failed: 0, pending: items.length }
     }
 
@@ -182,24 +217,11 @@ export class SyncService {
       )
     }
 
-    const now = new Date().toISOString()
-    const dueItems = forceRetry
-      ? items
-      : items.filter(
-          (item) =>
-            isPaidAttendanceQueueItem(item) ||
-            !item.nextAttemptAt ||
-            item.nextAttemptAt <= now,
-        )
     let operatorToken: string | null = null
-    let operatorItems: SyncQueueItem[]
+    let activeOperatorId: string | undefined
     const preflightErrors: string[] = []
     let preflightFailed = 0
-    if (context.role === 'admin') {
-      operatorItems = dueItems.filter(
-        (item) => !item.operatorAccountId || isPaidAttendanceQueueItem(item),
-      )
-    } else {
+    if (context.role !== 'admin') {
       const activeOperator = operatorSessionService.getRequiredActiveSession(
         context.userId,
       )
@@ -212,14 +234,32 @@ export class SyncService {
         )
       }
       operatorToken = activeOperator.token
-      operatorItems = dueItems.filter(
-        (item) =>
-          isPaidAttendanceQueueItem(item) ||
-          item.operatorAccountId === activeOperator.account.id,
-      )
+      activeOperatorId = activeOperator.account.id
+    }
+
+    const items = await operationsRepository.listPendingQueue()
+    const now = new Date().toISOString()
+    const dueItems = forceRetry
+      ? items
+      : items.filter(
+          (item) =>
+            isPaidAttendanceQueueItem(item) ||
+            !item.nextAttemptAt ||
+            item.nextAttemptAt <= now,
+        )
+    const operatorItems = context.role === 'admin'
+      ? dueItems.filter(
+          (item) => !item.operatorAccountId || isPaidAttendanceQueueItem(item),
+        )
+      : dueItems.filter(
+          (item) =>
+            isPaidAttendanceQueueItem(item) ||
+            item.operatorAccountId === activeOperatorId,
+        )
+
+    if (context.role !== 'admin') {
       const legacyItems = dueItems.filter(
-        (item) =>
-          !item.operatorAccountId && !isPaidAttendanceQueueItem(item),
+        (item) => !item.operatorAccountId && !isPaidAttendanceQueueItem(item),
       )
       if (legacyItems.length > 0) {
         const legacyError = new OperatorAuthorizationError(
@@ -239,9 +279,12 @@ export class SyncService {
         preflightErrors.push(legacyError)
       }
     }
-    const results = await Promise.all(
-      operatorItems.map((item) => this.processItem(item, operatorToken)),
-    )
+    const results: Array<{ success: boolean; error?: string }> = []
+    for (const item of operatorItems) {
+      // La secuencia debe detenerse si una respuesta invalida la sesión.
+      // oxlint-disable-next-line no-await-in-loop
+      results.push(await this.processItem(item, operatorToken))
+    }
     await this.pullRecent()
 
     return {
@@ -267,6 +310,8 @@ export class SyncService {
         await this.reconcilePaidAttendance(item)
         return { success: true }
       } catch (error: unknown) {
+        const authenticationFailure = authenticationFailureToThrow(error)
+        if (authenticationFailure) throw authenticationFailure
         return this.persistPaidReconciliationFailure(item, error)
       }
     }
@@ -281,6 +326,8 @@ export class SyncService {
       await operationsRepository.completeQueueItem(item, remoteVersion)
       return { success: true }
     } catch (error: unknown) {
+      const authenticationFailure = authenticationFailureToThrow(error)
+      if (authenticationFailure) throw authenticationFailure
       if (
         item.entityType === 'attendance' &&
         isPaidAttendanceImmutableError(error)
@@ -289,6 +336,12 @@ export class SyncService {
           await this.reconcilePaidAttendance(item)
           return { success: true }
         } catch (reconciliationError: unknown) {
+          const reconciliationAuthenticationFailure = authenticationFailureToThrow(
+            reconciliationError,
+          )
+          if (reconciliationAuthenticationFailure) {
+            throw reconciliationAuthenticationFailure
+          }
           return this.persistPaidReconciliationFailure(
             item,
             reconciliationError,

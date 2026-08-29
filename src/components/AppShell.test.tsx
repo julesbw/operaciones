@@ -2,7 +2,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { OperatorSession, UserProfile } from '../domain/models'
 import type { SyncInspectorSnapshot } from '../services/syncInspectorService'
-import { AppShell, navigationItemsForRole, type PageId } from './AppShell'
+import {
+  AppShell,
+  navigationItemsForRole,
+  shouldTriggerPullToSync,
+  type PageId,
+} from './AppShell'
 
 const user: UserProfile = {
   id: 'user-id',
@@ -28,6 +33,7 @@ function renderStatus(
     backendReachable: boolean
     networkAvailable: boolean
     pendingCount: number
+    sessionRequired: boolean
     syncError: string
     syncing: boolean
     currentPage: PageId
@@ -53,6 +59,19 @@ function renderStatus(
 }
 
 describe('AppShell sync indicator', () => {
+  it('only triggers pull-to-sync after the mobile threshold is released online', () => {
+    expect(shouldTriggerPullToSync(72, false, true)).toBe(true)
+    expect(shouldTriggerPullToSync(71, false, true)).toBe(false)
+    expect(shouldTriggerPullToSync(100, true, true)).toBe(false)
+    expect(shouldTriggerPullToSync(100, false, false)).toBe(false)
+  })
+
+  it('shows the explicit synchronization states', () => {
+    expect(renderStatus()).toContain('Sincronizado')
+    expect(renderStatus({ syncing: true })).toContain('Sincronizando…')
+    expect(renderStatus({ sessionRequired: true })).toContain('Sesión requerida')
+  })
+
   it('distinguishes an offline device from a reachable backend', () => {
     const markup = renderStatus({
       networkAvailable: false,

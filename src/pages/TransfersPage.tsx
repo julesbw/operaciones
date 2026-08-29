@@ -61,6 +61,7 @@ type TransfersPageProps = {
   user: UserProfile
   operatorSession?: OperatorSession
   operatorAccountId?: string | null
+  dataRevision?: number
   onDataChanged: () => void
   onSync?: () => Promise<void>
 }
@@ -103,6 +104,7 @@ export function TransfersPage({
   user,
   operatorSession,
   operatorAccountId,
+  dataRevision = 0,
   onDataChanged,
   onSync,
 }: TransfersPageProps) {
@@ -165,7 +167,7 @@ export function TransfersPage({
     } finally {
       setLoading(false)
     }
-  }, [cashierStoreId, dateFrom, dateTo, isAdmin, queryOriginStoreId])
+  }, [cashierStoreId, dataRevision, dateFrom, dateTo, isAdmin, queryOriginStoreId])
 
   useEffect(() => {
     void load()

@@ -1,8 +1,14 @@
-import type { LocalAppContext, UserProfile } from '../domain/models'
+import type {
+  LocalAppContext,
+  OperatorSession,
+  UserProfile,
+} from '../domain/models'
 import { authService } from './authService'
 import { bootstrapService } from './bootstrapService'
 import { localContextService } from './localContextService'
 import { offlineShellService } from './offlineShellService'
+import { OperatorAuthorizationError } from './operatorAuthorization'
+import { operatorSessionService } from './operatorSessionService'
 import { paymentService } from './paymentService'
 import { purchaseService } from './purchaseService'
 import { operationsRepository } from '../repositories/operationsRepository'
@@ -15,8 +21,14 @@ export type RemoteBootstrapResult =
       profile: UserProfile
       context: LocalAppContext
       sync: SyncResult
+      operatorSession?: OperatorSession
     }
   | { status: 'requires-login' }
+  | {
+      status: 'requires-operator-login'
+      profile: UserProfile
+      context: LocalAppContext
+    }
 
 type RemoteBootstrapOptions = {
   forceRetry?: boolean
@@ -47,15 +59,7 @@ export class RemoteBootstrapService {
   }
 
   process(options: RemoteBootstrapOptions = {}): Promise<RemoteBootstrapResult> {
-    if (this.running) {
-      if (options.profile) {
-        return this.running.then(
-          () => this.process(options),
-          () => this.process(options),
-        )
-      }
-      return this.running
-    }
+    if (this.running) return this.running
 
     this.running = this.processRemote(options).finally(() => {
       this.running = undefined
@@ -92,8 +96,6 @@ export class RemoteBootstrapService {
     ensureActive()
     if (profile.demo) {
       await bootstrapService.seedDemoReferenceData()
-    } else {
-      await referenceDataService.refresh(profile)
     }
 
     ensureActive()
@@ -104,25 +106,80 @@ export class RemoteBootstrapService {
       await localContextService.setAccessState('signed-out')
       throw new RemoteBootstrapCancelledError()
     }
+
+    let operatorSession: OperatorSession | undefined
+    if (profile.role !== 'admin') {
+      operatorSession = await operatorSessionService.validate(profile.id)
+      ensureActive()
+      if (!operatorSession) {
+        return {
+          status: 'requires-operator-login',
+          profile,
+          context,
+        }
+      }
+      if (
+        profile.storeId &&
+        operatorSession.account.storeId !== profile.storeId
+      ) {
+        throw new OperatorAuthorizationError('OPERATOR_STORE_FORBIDDEN')
+      }
+    }
+
     const sync = options.skipSync
       ? { synced: 0, failed: 0, pending: await syncService.countPending() }
-      : await syncService.process({ forceRetry: options.forceRetry })
+      : await this.synchronizeNow(
+          profile,
+          operatorSession,
+          options.forceRetry,
+          ensureActive,
+        )
     ensureActive()
+
+    return {
+      status: 'authenticated',
+      profile,
+      context,
+      sync,
+      operatorSession,
+    }
+  }
+
+  private async synchronizeNow(
+    profile: UserProfile,
+    operatorSession: OperatorSession | undefined,
+    forceRetry: boolean | undefined,
+    ensureActive: () => void,
+  ): Promise<SyncResult> {
+    const sync = await syncService.process({
+      forceRetry,
+      operatorAccountId: operatorSession?.account.id,
+    })
+    ensureActive()
+
+    await referenceDataService.refresh(profile)
+    ensureActive()
+
     if (profile.role === 'admin' && !profile.demo) {
       await Promise.all([
         paymentService.refreshRemote(),
         purchaseService.refreshRemote(profile),
       ])
-      ensureActive()
-    } else if (profile.role !== 'admin') {
+    } else if (operatorSession?.account.role === 'store_manager') {
+      await Promise.all([
+        referenceDataService.refreshPurchaseSuppliers(profile),
+        purchaseService.refreshRemote(profile),
+      ])
+    } else if (!profile.demo) {
       await operationsRepository.clearAdministrativePaymentData()
-      ensureActive()
     }
-    if (!options.skipSync && sync.failed === 0) {
+    ensureActive()
+
+    if (sync.failed === 0) {
       await localContextService.recordSuccessfulSync(profile.id)
     }
 
-    return { status: 'authenticated', profile, context, sync }
+    return sync
   }
 }
 

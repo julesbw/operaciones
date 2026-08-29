@@ -65,6 +65,7 @@ type PurchasesPageProps = {
   user: UserProfile
   operatorSession?: OperatorSession
   networkAvailable: boolean
+  dataRevision?: number
   onDataChanged: () => void
 }
 
@@ -81,6 +82,7 @@ export function PurchasesPage({
   user,
   operatorSession,
   networkAvailable,
+  dataRevision = 0,
   onDataChanged,
 }: PurchasesPageProps) {
   const today = getLocalDate()
@@ -167,7 +169,7 @@ export function PurchasesPage({
     } finally {
       setLoading(false)
     }
-  }, [dateFrom, dateTo, originFilter, storeFilter, supplierFilter])
+  }, [dataRevision, dateFrom, dateTo, originFilter, storeFilter, supplierFilter])
 
   useEffect(() => {
     void load()

@@ -48,6 +48,7 @@ type PaymentsPageProps = {
   embedded?: boolean
   stores: Store[]
   user: UserProfile
+  dataRevision?: number
 }
 
 const SHORT_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
@@ -76,6 +77,7 @@ export function PaymentsPage({
   embedded = false,
   stores,
   user,
+  dataRevision = 0,
 }: PaymentsPageProps) {
   const [tab, setTab] = useState<PaymentsTab>('pending')
   const [storeFilter, setStoreFilter] =
@@ -112,7 +114,7 @@ export function PaymentsPage({
     setHistoryItems(
       items.flatMap((detail) => detail?.items ?? []),
     )
-  }, [])
+  }, [dataRevision])
 
   const refresh = useCallback(async () => {
     setError(undefined)

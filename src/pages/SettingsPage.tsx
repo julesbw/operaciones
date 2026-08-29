@@ -32,6 +32,7 @@ type SettingsPageProps = {
   operatorSession?: OperatorSession
   stores: Store[]
   user: UserProfile
+  dataRevision?: number
   onStoresChanged: () => void
 }
 
@@ -47,6 +48,7 @@ export function SettingsPage({
   operatorSession,
   stores,
   user,
+  dataRevision = 0,
   onStoresChanged,
 }: SettingsPageProps) {
   const isAdmin = user.role === 'admin'
@@ -143,7 +145,7 @@ export function SettingsPage({
         console.error('No fue posible cargar proveedores', cause)
         setError('No fue posible cargar los proveedores.')
       })
-  }, [canCreateSuppliers, isAdmin])
+  }, [canCreateSuppliers, dataRevision, isAdmin])
 
   useEffect(() => {
     if (tab === 'suppliers' && !canCreateSuppliers) setTab('system')
@@ -175,7 +177,7 @@ export function SettingsPage({
         console.error('No fue posible cargar colaboradores', cause)
         setError('No fue posible cargar el equipo.')
       })
-  }, [isAdmin, stores, teamStoreFilter])
+  }, [dataRevision, isAdmin, stores, teamStoreFilter])
 
   const storeNames = useMemo(
     () => new Map(stores.map((store) => [store.id, store.name])),

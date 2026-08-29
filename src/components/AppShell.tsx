@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type SVGProps,
+  type TouchEvent as ReactTouchEvent,
 } from 'react'
 import {
   hasCapability,
@@ -117,6 +118,7 @@ type AppShellProps = {
   currentPage: PageId
   networkAvailable: boolean
   pendingCount: number
+  sessionRequired?: boolean
   syncError?: string
   syncing: boolean
   user: UserProfile
@@ -134,6 +136,40 @@ type AppShellProps = {
 const EMPTY_SYNC_INSPECTOR: SyncInspectorSnapshot = {
   items: [],
   summary: { total: 0, pending: 0, syncing: 0, error: 0 },
+}
+
+const PULL_TO_SYNC_THRESHOLD = 72
+const PULL_TO_SYNC_MAX = 112
+
+function isPwa(): boolean {
+  if (typeof window === 'undefined') return false
+  const isStandaloneDisplay =
+    typeof window.matchMedia === 'function' &&
+    (window.matchMedia('(display-mode: standalone)').matches ||
+      window.matchMedia('(display-mode: fullscreen)').matches ||
+      window.matchMedia('(display-mode: minimal-ui)').matches ||
+      window.matchMedia('(display-mode: window-controls-overlay)').matches)
+  const isIosStandalone =
+    (navigator as Navigator & { standalone?: boolean }).standalone === true
+  return isStandaloneDisplay || isIosStandalone
+}
+
+function isAtTop(): boolean {
+  return (
+    (document.scrollingElement?.scrollTop ?? window.scrollY) <= 0
+  )
+}
+
+export function shouldTriggerPullToSync(
+  distance: number,
+  syncing: boolean,
+  networkAvailable: boolean,
+): boolean {
+  return (
+    distance >= PULL_TO_SYNC_THRESHOLD &&
+    !syncing &&
+    networkAvailable
+  )
 }
 
 function syncIndicatorLabel(
@@ -164,6 +200,7 @@ export function AppShell({
   currentPage,
   networkAvailable,
   pendingCount,
+  sessionRequired = false,
   syncError,
   syncing,
   user,
@@ -185,7 +222,11 @@ export function AppShell({
   const moreButtonRef = useRef<HTMLButtonElement>(null)
   const syncButtonRef = useRef<HTMLButtonElement>(null)
   const swipeStartRef = useRef<{ x: number; y: number } | undefined>(undefined)
+  const pullStartRef = useRef<{ x: number; y: number } | undefined>(undefined)
+  const pullDistanceRef = useRef(0)
   const restoreScrollRef = useRef(true)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [pullReady, setPullReady] = useState(false)
   const identity = { technicalUser: user, operatorSession }
   const items = NAVIGATION.filter((item) =>
     hasCapability(identity, item.capability),
@@ -212,12 +253,14 @@ export function AppShell({
     !networkAvailable
       ? 'Sin conexión'
       : syncing
-        ? 'Sincronizando'
+        ? 'Sincronizando…'
+        : sessionRequired
+          ? 'Sesión requerida'
         : pendingCount > 0
           ? syncIndicatorLabel(pendingCount, syncInspector.summary.error, waitingSyncCount)
           : backendReachable === false || syncError
             ? 'Error de sincronización'
-            : 'Al día'
+            : 'Sincronizado'
   const syncTitle =
     toUserFacingSyncError(syncError) ?? syncLabel
 
@@ -325,6 +368,64 @@ export function AppShell({
     }
   }
 
+  function resetPull() {
+    pullStartRef.current = undefined
+    pullDistanceRef.current = 0
+    setPullDistance(0)
+    setPullReady(false)
+  }
+
+  function startPull(event: ReactTouchEvent<HTMLElement>) {
+    if (
+      !isPwa() ||
+      syncing ||
+      !networkAvailable ||
+      !isAtTop() ||
+      pullStartRef.current
+    ) {
+      return
+    }
+    const target = event.target
+    if (
+      target instanceof Element &&
+      target.closest('button, a, input, select, textarea, [role="button"]')
+    ) {
+      return
+    }
+    const touch = event.touches[0]
+    if (!touch) return
+    pullStartRef.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  function movePull(event: ReactTouchEvent<HTMLElement>) {
+    const start = pullStartRef.current
+    const touch = event.touches[0]
+    if (!start || !touch || !isAtTop()) return
+
+    const distanceY = touch.clientY - start.y
+    const distanceX = Math.abs(touch.clientX - start.x)
+    if (distanceY <= 0 || distanceX > distanceY) {
+      resetPull()
+      return
+    }
+
+    const distance = Math.min(PULL_TO_SYNC_MAX, distanceY)
+    pullDistanceRef.current = distance
+    setPullDistance(distance)
+    setPullReady(distance >= PULL_TO_SYNC_THRESHOLD)
+  }
+
+  function finishPull() {
+    const distance = pullDistanceRef.current
+    const shouldSync = shouldTriggerPullToSync(
+      distance,
+      syncing,
+      networkAvailable,
+    )
+    resetPull()
+    if (shouldSync) onSync()
+  }
+
   return (
     <div className="min-h-dvh w-full max-w-full overflow-x-hidden lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="sidebar hidden lg:flex">
@@ -384,6 +485,7 @@ export function AppShell({
               aria-label="Abrir detalle de sincronización"
               className={`sync-pill ${!networkAvailable || backendReachable === false ? 'sync-pill-offline' : ''}`}
               ref={syncButtonRef}
+              aria-busy={syncing}
               title={syncTitle}
               type="button"
               onClick={() => {
@@ -419,7 +521,29 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="mx-auto min-w-0 w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-10 lg:pb-12">
+        <main
+          className="mx-auto min-w-0 w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-10 lg:pb-12"
+          onTouchCancel={resetPull}
+          onTouchEnd={finishPull}
+          onTouchMove={movePull}
+          onTouchStart={startPull}
+        >
+          {(pullDistance > 0 || syncing) && (
+            <div
+              aria-live="polite"
+              className="pull-sync-indicator lg:hidden"
+              style={{ height: `${syncing ? 48 : pullDistance}px` }}
+            >
+              <SyncIcon className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
+              <span>
+                {syncing
+                  ? 'Sincronizando…'
+                  : pullReady
+                    ? 'Suelta para sincronizar'
+                    : 'Jala para sincronizar'}
+              </span>
+            </div>
+          )}
           {children}
         </main>
 

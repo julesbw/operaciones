@@ -94,7 +94,7 @@ function waitingCount(snapshot: SyncInspectorSnapshot): number {
 
 function summaryLabel(snapshot: SyncInspectorSnapshot): string {
   const { error, total } = snapshot.summary
-  if (total === 0) return 'Al día'
+  if (total === 0) return 'Sincronizado'
   const waiting = waitingCount(snapshot)
   const waitingLabel = `${waiting} pendiente${waiting === 1 ? '' : 's'}`
   return error > 0 ? `${waitingLabel} · ${error} con error` : waitingLabel

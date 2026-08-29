@@ -47,6 +47,7 @@ type CentralCashPageProps = {
   networkAvailable: boolean
   stores: Store[]
   user: UserProfile
+  dataRevision?: number
 }
 
 type AdjustmentForm = {
@@ -241,6 +242,7 @@ export function CentralCashPage({
   networkAvailable,
   stores,
   user,
+  dataRevision = 0,
 }: CentralCashPageProps) {
   const today = getOperationalDate()
   const [tab, setTab] = useState<CentralCashTab>('movements')
@@ -294,7 +296,7 @@ export function CentralCashPage({
     } finally {
       setLoading(false)
     }
-  }, [dateFrom, dateTo, queryStoreId])
+  }, [dataRevision, dateFrom, dateTo, queryStoreId])
 
   useEffect(() => {
     void load()

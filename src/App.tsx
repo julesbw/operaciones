@@ -33,13 +33,14 @@ import {
 import { referenceDataService } from './services/referenceDataService'
 import { operatorSessionService } from './services/operatorSessionService'
 import { OperatorAuthorizationError } from './services/operatorAuthorization'
-import { purchaseService } from './services/purchaseService'
 import { operationsRepository } from './repositories/operationsRepository'
 import {
   RemoteBootstrapCancelledError,
   remoteBootstrapService,
 } from './services/remoteBootstrapService'
-import { syncService } from './services/syncService'
+import {
+  isSyncAuthenticationFailure,
+} from './services/syncService'
 import {
   syncInspectorService,
   type SyncInspectorSnapshot,
@@ -64,19 +65,25 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Error desconocido'
 }
 
-function isAuthenticationFailure(cause: unknown): boolean {
-  if (!cause || typeof cause !== 'object') return false
-  const status = 'status' in cause ? cause.status : undefined
-  const message =
-    'message' in cause && typeof cause.message === 'string'
-      ? cause.message.toLocaleLowerCase('es-MX')
-      : ''
-  return (
-    status === 401 ||
-    message.includes('jwt') ||
-    message.includes('refresh token') ||
-    message.includes('invalid session')
-  )
+async function clearOperatorSession(): Promise<void> {
+  try {
+    await operatorSessionService.logout()
+  } catch (cause: unknown) {
+    console.error('No fue posible revocar la sesión operativa inválida', cause)
+  }
+}
+
+async function clearTechnicalSession(): Promise<void> {
+  const results = await Promise.allSettled([
+    clearOperatorSession(),
+    authService.signOut(),
+    localContextService.setAccessState('reauthentication-required'),
+  ])
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error('No fue posible limpiar el estado de sesión inválido', result.reason)
+    }
+  }
 }
 
 function App() {
@@ -180,7 +187,6 @@ function App() {
         const result = await remoteBootstrapService.process({
           forceRetry,
           profile,
-          skipSync: true,
           onIdentityResolved: (remoteUserId) => {
             setUser((current) =>
               remoteUserId && current?.id === remoteUserId
@@ -191,6 +197,7 @@ function App() {
         })
 
         if (result.status === 'requires-login') {
+          await clearOperatorSession()
           const context = await localContextService.load()
           setLocalContext(context)
           setUser(undefined)
@@ -201,41 +208,29 @@ function App() {
               ? 'Tu sesión necesita validarse nuevamente. Los cambios pendientes siguen guardados en este dispositivo.'
               : undefined,
           )
+          await refreshLocalState()
           setState('requires-first-login')
+          return
+        }
+
+        if (result.status === 'requires-operator-login') {
+          setLocalContext(result.context)
+          setUser(result.profile)
+          setOperatorSession(undefined)
+          setBackendReachable(true)
+          setStartupNotice('Inicia sesión como operador para sincronizar.')
+          setSyncError(undefined)
+          await refreshLocalState()
+          setState('awaiting-operator')
           return
         }
 
         setLocalContext(result.context)
         setUser(result.profile)
+        setOperatorSession(result.operatorSession)
         setBackendReachable(true)
         setStartupNotice(undefined)
-        let sync
-        if (result.profile.role === 'admin') {
-          setOperatorSession(undefined)
-          sync = await syncService.process({ forceRetry })
-        } else {
-          setState('validating-operator')
-          const validatedOperator = await operatorSessionService.validate(
-            result.profile.id,
-          )
-          if (!validatedOperator) {
-            setOperatorSession(undefined)
-            setState('awaiting-operator')
-            await refreshLocalState()
-            return
-          }
-          setOperatorSession(validatedOperator)
-          if (validatedOperator.account.role === 'store_manager') {
-            await Promise.all([
-              referenceDataService.refreshPurchaseSuppliers(result.profile),
-              purchaseService.refreshRemote(result.profile),
-            ])
-          }
-          sync = await syncService.process({
-            forceRetry,
-            operatorAccountId: validatedOperator.account.id,
-          })
-        }
+        const sync = result.sync
         setSyncError(
           sync.failed > 0
             ? sync.errors?.join(' · ') ||
@@ -270,6 +265,7 @@ function App() {
         }
 
         if (cause instanceof OperatorAuthorizationError) {
+          await clearOperatorSession()
           setOperatorSession(undefined)
           setBackendReachable(true)
           setStartupNotice(cause.message)
@@ -279,15 +275,17 @@ function App() {
           return
         }
 
-        if (isAuthenticationFailure(cause)) {
-          await localContextService.setAccessState(
-            'reauthentication-required',
-          )
+        if (isSyncAuthenticationFailure(cause)) {
+          await clearTechnicalSession()
+          const context = await localContextService.load()
+          setLocalContext(context)
           setUser(undefined)
+          setOperatorSession(undefined)
           setBackendReachable(true)
           setStartupNotice(
             'La sesión expiró. Inicia sesión nuevamente; tus cambios locales no se eliminaron.',
           )
+          await refreshLocalState()
           setState('requires-first-login')
           return
         }
@@ -300,6 +298,7 @@ function App() {
           'Supabase no respondió. Puedes reintentar cuando tengas conexión.',
         )
         await restoreLocalFallback()
+        await refreshLocalState()
       } finally {
         setSyncing(false)
       }
@@ -419,42 +418,8 @@ function App() {
   async function syncCurrentSession(forceRetry = false) {
     if (!user) return
     if (!connectivityService.isNetworkAvailable()) return
-    setSyncing(true)
-    try {
-      if (user.role !== 'admin') {
-        setState('validating-operator')
-        const validatedOperator = await operatorSessionService.validate(user.id)
-        if (!validatedOperator) {
-          setOperatorSession(undefined)
-          setState('awaiting-operator')
-          return
-        }
-
-        setOperatorSession(validatedOperator)
-        const sync = await syncService.process({
-          forceRetry,
-          operatorAccountId: validatedOperator.account.id,
-        })
-        setSyncError(sync.failed ? sync.errors?.join(' · ') : undefined)
-        await refreshLocalState()
-        setState('ready-online')
-        return
-      }
-      const sync = await syncService.process({ forceRetry })
-      setSyncError(sync.failed ? sync.errors?.join(' · ') : undefined)
-      await refreshLocalState()
-    } catch (cause: unknown) {
-      if (cause instanceof OperatorAuthorizationError) {
-        setOperatorSession(undefined)
-        setStartupNotice(cause.message)
-        setSyncError(cause.message)
-        setState('awaiting-operator')
-      } else {
-        setSyncError('No fue posible sincronizar los cambios guardados.')
-      }
-    } finally {
-      setSyncing(false)
-    }
+    if (syncing) return
+    await runRemoteBootstrap(user, forceRetry)
   }
 
   async function switchOperator() {
@@ -623,6 +588,7 @@ function App() {
       currentPage={page}
       networkAvailable={networkAvailable}
       pendingCount={pendingCount}
+      sessionRequired={state === 'awaiting-operator'}
       syncError={syncError}
       syncInspector={syncInspector}
       syncInspectorError={syncInspectorLoadError}
@@ -648,6 +614,7 @@ function App() {
       )}
       {page === 'expenses' && (
         <ExpensesPage
+          dataRevision={revision}
           networkAvailable={networkAvailable}
           operatorAccountId={operatorSession?.account.id ?? null}
           operatorSession={operatorSession}
@@ -659,6 +626,7 @@ function App() {
       )}
       {page === 'transfers' && (
         <TransfersPage
+          dataRevision={revision}
           operatorAccountId={operatorSession?.account.id ?? null}
           operatorSession={operatorSession}
           stores={stores}
@@ -670,6 +638,7 @@ function App() {
       {page === 'collaborators' && (
         <CollaboratorsPage
           attendanceStoreFilter={attendanceStoreFilter}
+          dataRevision={revision}
           operatorAccountId={operatorSession?.account.id ?? null}
           operatorSession={operatorSession}
           stores={stores}
@@ -684,6 +653,7 @@ function App() {
         'purchases',
       ) && (
         <PurchasesPage
+          dataRevision={revision}
           networkAvailable={networkAvailable}
           operatorSession={operatorSession}
           stores={stores}
@@ -694,9 +664,17 @@ function App() {
       {page === 'closings' && hasCapability(
         { technicalUser: user, operatorSession },
         'cashClosings',
-      ) && <ClosingsPage stores={stores} user={user} operatorSession={operatorSession} />}
+      ) && (
+        <ClosingsPage
+          dataRevision={revision}
+          stores={stores}
+          user={user}
+          operatorSession={operatorSession}
+        />
+      )}
       {page === 'central-cash' && user.role === 'admin' && (
         <CentralCashPage
+          dataRevision={revision}
           networkAvailable={networkAvailable}
           stores={stores}
           user={user}
@@ -704,6 +682,7 @@ function App() {
       )}
       {page === 'exports' && user.role === 'admin' && (
         <ExportsPage
+          dataRevision={revision}
           networkAvailable={networkAvailable}
           stores={stores}
           user={user}
@@ -711,6 +690,7 @@ function App() {
       )}
       {page === 'settings' && (
         <SettingsPage
+          dataRevision={revision}
           operatorSession={operatorSession}
           stores={stores}
           user={user}

@@ -38,6 +38,7 @@ export function mapOperatorAuthorizationError(cause: unknown): Error {
     return new Error('No fue posible autorizar la operación.')
   }
   const text = [
+    'code' in cause ? cause.code : '',
     'message' in cause ? cause.message : '',
     'details' in cause ? cause.details : '',
   ].join(' ')

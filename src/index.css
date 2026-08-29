@@ -231,6 +231,14 @@ button:disabled {
     @apply border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100;
   }
 
+  .pull-sync-indicator {
+    pointer-events: none;
+    overflow: hidden;
+    touch-action: pan-y;
+    transition: height 140ms ease-out;
+    @apply flex items-center justify-center gap-2 text-xs font-bold text-teal-700;
+  }
+
   .mobile-nav {
     padding-bottom: max(0.4rem, env(safe-area-inset-bottom));
     @apply fixed inset-x-0 bottom-0 z-40 flex max-w-full justify-around gap-1 border-t border-slate-200 bg-white/95 px-2 pt-2 shadow-[0_-8px_30px_rgba(15,23,42,0.06)] backdrop-blur-xl;

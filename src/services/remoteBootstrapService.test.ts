@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { LocalAppContext, UserProfile } from '../domain/models'
+import type {
+  LocalAppContext,
+  OperatorSession,
+  UserProfile,
+} from '../domain/models'
 
 const mocks = vi.hoisted(() => ({
   getSessionUserId: vi.fn(),
@@ -14,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   sync: vi.fn(),
   refreshPayments: vi.fn(),
   refreshPurchases: vi.fn(),
+  refreshPurchaseSuppliers: vi.fn(),
+  validateOperator: vi.fn(),
   clearAdministrativePaymentData: vi.fn(),
 }))
 
@@ -39,10 +45,6 @@ vi.mock('./localContextService', () => ({
   },
 }))
 
-vi.mock('./referenceDataService', () => ({
-  referenceDataService: { refresh: mocks.refreshReferenceData },
-}))
-
 vi.mock('./offlineShellService', () => ({
   offlineShellService: { ensureReady: mocks.ensureOfflineShell },
 }))
@@ -57,6 +59,17 @@ vi.mock('./paymentService', () => ({
 
 vi.mock('./purchaseService', () => ({
   purchaseService: { refreshRemote: mocks.refreshPurchases },
+}))
+
+vi.mock('./operatorSessionService', () => ({
+  operatorSessionService: { validate: mocks.validateOperator },
+}))
+
+vi.mock('./referenceDataService', () => ({
+  referenceDataService: {
+    refresh: mocks.refreshReferenceData,
+    refreshPurchaseSuppliers: mocks.refreshPurchaseSuppliers,
+  },
 }))
 
 vi.mock('../repositories/operationsRepository', () => ({
@@ -100,10 +113,12 @@ describe('RemoteBootstrapService', () => {
     mocks.recordSuccessfulSync.mockResolvedValue(undefined)
     mocks.refreshPayments.mockResolvedValue(undefined)
     mocks.refreshPurchases.mockResolvedValue(undefined)
+    mocks.refreshPurchaseSuppliers.mockResolvedValue(undefined)
+    mocks.validateOperator.mockResolvedValue(undefined)
     mocks.clearAdministrativePaymentData.mockResolvedValue(undefined)
   })
 
-  it('persists context only after profile, references and app shell succeed', async () => {
+  it('completes the authenticated bootstrap and sync pull sequence', async () => {
     const service = new RemoteBootstrapService()
 
     await expect(service.process()).resolves.toMatchObject({
@@ -121,21 +136,21 @@ describe('RemoteBootstrapService', () => {
   })
 
   it('does not persist an authenticated context after sign-out cancellation', async () => {
-    let releaseRefresh: (() => void) | undefined
-    mocks.refreshReferenceData.mockImplementation(
+    let releaseShell: (() => void) | undefined
+    mocks.ensureOfflineShell.mockImplementation(
       () =>
         new Promise<void>((resolve) => {
-          releaseRefresh = resolve
+          releaseShell = resolve
         }),
     )
     const service = new RemoteBootstrapService()
     const running = service.process()
     await vi.waitFor(() => {
-      expect(mocks.refreshReferenceData).toHaveBeenCalledOnce()
+      expect(mocks.ensureOfflineShell).toHaveBeenCalledOnce()
     })
 
     const stopped = service.cancelForSignOut()
-    releaseRefresh?.()
+    releaseShell?.()
 
     await expect(running).rejects.toBeInstanceOf(
       RemoteBootstrapCancelledError,
@@ -157,5 +172,86 @@ describe('RemoteBootstrapService', () => {
     )
     expect(mocks.refreshReferenceData).not.toHaveBeenCalled()
     expect(mocks.sync).not.toHaveBeenCalled()
+  })
+
+  it('validates the operator before the queue and pulls every allowed dataset after it', async () => {
+    const cashier: UserProfile = {
+      id: 'user-id',
+      fullName: 'Cajera',
+      role: 'cashier',
+      storeId: 'store-id',
+    }
+    const operator: OperatorSession = {
+      token: 'operator-token',
+      account: {
+        id: 'operator-id',
+        username: 'operator',
+        displayName: 'Operador',
+        role: 'store_manager',
+        storeId: 'store-id',
+      },
+      expiresAt: '2999-01-01T00:00:00.000Z',
+    }
+    const events: string[] = []
+    mocks.getSessionUserId.mockResolvedValue(cashier.id)
+    mocks.loadProfile.mockResolvedValue(cashier)
+    mocks.validateOperator.mockImplementation(async () => {
+      events.push('validate-operator')
+      return operator
+    })
+    mocks.sync.mockImplementation(async () => {
+      events.push('sync')
+      return { synced: 1, failed: 0, pending: 0 }
+    })
+    mocks.refreshReferenceData.mockImplementation(async () => {
+      events.push('references')
+    })
+    mocks.refreshPurchaseSuppliers.mockImplementation(async () => {
+      events.push('suppliers')
+    })
+    mocks.refreshPurchases.mockImplementation(async () => {
+      events.push('purchases')
+    })
+
+    const result = await new RemoteBootstrapService().process({
+      forceRetry: true,
+    })
+
+    expect(result).toMatchObject({
+      status: 'authenticated',
+      operatorSession: operator,
+      sync: { synced: 1, failed: 0, pending: 0 },
+    })
+    expect(events).toEqual([
+      'validate-operator',
+      'sync',
+      'references',
+      'suppliers',
+      'purchases',
+    ])
+    expect(mocks.sync).toHaveBeenCalledWith({
+      forceRetry: true,
+      operatorAccountId: operator.account.id,
+    })
+  })
+
+  it('stops before SyncQueue when the operator session is required', async () => {
+    const cashier: UserProfile = {
+      id: 'user-id',
+      fullName: 'Cajera',
+      role: 'cashier',
+      storeId: 'store-id',
+    }
+    mocks.getSessionUserId.mockResolvedValue(cashier.id)
+    mocks.loadProfile.mockResolvedValue(cashier)
+    mocks.validateOperator.mockResolvedValue(undefined)
+
+    await expect(new RemoteBootstrapService().process()).resolves.toMatchObject({
+      status: 'requires-operator-login',
+      profile: cashier,
+      context,
+    })
+    expect(mocks.sync).not.toHaveBeenCalled()
+    expect(mocks.refreshReferenceData).not.toHaveBeenCalled()
   })
 })

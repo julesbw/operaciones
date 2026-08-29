@@ -33,6 +33,7 @@ type AttendancePageProps = {
   user: UserProfile
   operatorSession?: OperatorSession
   operatorAccountId?: string | null
+  dataRevision?: number
   onDataChanged: () => void
   onStoreFilterChange: (value: StoreScopeValue) => void
   onSync?: () => Promise<void>
@@ -98,6 +99,7 @@ export function AttendancePage({
   user,
   operatorSession,
   operatorAccountId,
+  dataRevision = 0,
   onDataChanged,
   onStoreFilterChange,
   onSync,
@@ -220,7 +222,7 @@ export function AttendancePage({
     return () => {
       active = false
     }
-  }, [activeStores, assignedStoreId, date, effectiveStoreId, storeScope.kind])
+  }, [activeStores, assignedStoreId, dataRevision, date, effectiveStoreId, storeScope.kind])
 
   const presentCount = useMemo(
     () => Object.values(statuses).filter((status) => status === 'present').length,

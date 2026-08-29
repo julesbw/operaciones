@@ -35,6 +35,7 @@ type ExportsPageProps = {
   stores: Store[]
   user: UserProfile
   networkAvailable: boolean
+  dataRevision?: number
 }
 
 const TAB_OPTIONS: readonly FilterChipOption<ExportTab>[] = [
@@ -357,6 +358,7 @@ export function ExportsPage({
   stores,
   user,
   networkAvailable,
+  dataRevision = 0,
 }: ExportsPageProps) {
   const today = getOperationalDate()
   const [tab, setTab] = useState<ExportTab>('pending')
@@ -402,7 +404,7 @@ export function ExportsPage({
     } finally {
       setLoading(false)
     }
-  }, [dateFrom, dateTo, queryStoreId, tab])
+  }, [dataRevision, dateFrom, dateTo, queryStoreId, tab])
 
   useEffect(() => {
     void load()
