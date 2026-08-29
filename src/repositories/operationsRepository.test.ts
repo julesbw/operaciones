@@ -11,6 +11,11 @@ import type {
   PaidPurchase,
   SyncQueueItem,
 } from '../domain/models'
+import type { CashClosingRow } from '../types/database'
+import type {
+  CachedCashClosing,
+  CachedCashClosingDetail,
+} from '../types/cashClosingCache'
 import { OperationsRepository } from './operationsRepository'
 
 function attendance(id: string): AttendanceRecord {
@@ -145,6 +150,75 @@ function purchaseQueueItem(entityId: string): SyncQueueItem {
     operation: 'insert',
     createdAt: '2026-08-17T12:00:00.000Z',
     attempts: 0,
+  }
+}
+
+const closingBills = {
+  b1000: 1,
+  b500: 0,
+  b200: 0,
+  b100: 0,
+  b50: 0,
+  b20: 0,
+  monedas: 0,
+}
+
+function cachedClosing(
+  id: string,
+  storeId: string,
+  businessDate: string,
+  closedAt = `${businessDate}T18:00:00.000Z`,
+): CachedCashClosing {
+  const row: CashClosingRow = {
+    id,
+    store_id: storeId,
+    business_date: businessDate,
+    closing_number: 1,
+    store_name_snapshot: `Tienda ${storeId}`,
+    gross_sales: 1_000,
+    closing_reconciliation_mode: 'normal',
+    expense_total: 0,
+    cash_expense_total: 0,
+    expenses_total_snapshot: 0,
+    cash_expenses_total_snapshot: 0,
+    outgoing_transfers_total_snapshot: 0,
+    store_cash_payments_total_snapshot: 0,
+    purchases_total_snapshot: 0,
+    cash_purchases_total_snapshot: 0,
+    operational_outflows_total_snapshot: 0,
+    cash_outflows_total_snapshot: 0,
+    other_movements: 0,
+    opening_balance: 0,
+    counted_cash: 1_000,
+    cash_balance: 0,
+    cash_to_withdraw: 1_000,
+    expected_cash: 1_000,
+    difference: 0,
+    bills: closingBills,
+    balance_bills: closingBills,
+    withdraw_bills: closingBills,
+    notes: null,
+    status: 'closed',
+    closed_at: closedAt,
+    closed_by: 'user-id',
+    closed_by_operator_account_id: null,
+    created_by: 'user-id',
+    created_at: closedAt,
+    updated_at: closedAt,
+  }
+  return { ...row, cachedAt: closedAt }
+}
+
+function cachedDetail(closing: CachedCashClosing): CachedCashClosingDetail {
+  return {
+    closingId: closing.id,
+    closing,
+    expenses: [],
+    transfers: [],
+    payments: [],
+    purchases: [],
+    adjustments: [],
+    cachedAt: closing.cachedAt,
   }
 }
 
@@ -769,6 +843,69 @@ describe('OperationsRepository purchase cache protection', () => {
       ])
       await expect(repository.listSuppliers()).resolves.toEqual([])
       await expect(repository.countPendingQueue()).resolves.toBe(1)
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+})
+
+describe('OperationsRepository cash closing cache', () => {
+  it('filters cached closings by store and inclusive date range', async () => {
+    const database = new OperationsDatabase(
+      `operations-test-${crypto.randomUUID()}`,
+    )
+    const repository = new OperationsRepository(database)
+
+    try {
+      await repository.replaceCachedCashClosingsForScope([
+        cachedClosing('north-new', 'north', '2026-08-12'),
+        cachedClosing('north-old', 'north', '2026-08-01'),
+        cachedClosing('center', 'center', '2026-08-12'),
+      ])
+
+      await expect(
+        repository.listCachedCashClosings('north', '2026-08-10', '2026-08-12'),
+      ).resolves.toMatchObject([{ id: 'north-new' }])
+      await expect(
+        repository.listCachedCashClosings(undefined, '2026-08-12'),
+      ).resolves.toMatchObject([{ id: 'center' }, { id: 'north-new' }])
+    } finally {
+      database.close()
+      await database.delete()
+    }
+  })
+
+  it('replaces only the requested cache scope and protects detail by store', async () => {
+    const database = new OperationsDatabase(
+      `operations-test-${crypto.randomUUID()}`,
+    )
+    const repository = new OperationsRepository(database)
+    const north = cachedClosing('north', 'north', '2026-08-12')
+    const center = cachedClosing('center', 'center', '2026-08-12')
+
+    try {
+      await repository.replaceCachedCashClosingsForScope([north, center])
+      await repository.saveCachedCashClosingDetail(cachedDetail(north))
+
+      await repository.replaceCachedCashClosingsForScope(
+        [cachedClosing('north-refresh', 'north', '2026-08-12')],
+        'north',
+        '2026-08-12',
+      )
+
+      await expect(repository.listCachedCashClosings()).resolves.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'north-refresh' }),
+          expect.objectContaining({ id: 'center' }),
+        ]),
+      )
+      await expect(
+        repository.getCachedCashClosingDetail(north.id, 'north'),
+      ).resolves.toBeDefined()
+      await expect(
+        repository.getCachedCashClosingDetail(north.id, 'center'),
+      ).resolves.toBeUndefined()
     } finally {
       database.close()
       await database.delete()

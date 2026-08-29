@@ -23,6 +23,10 @@ import type {
   SyncQueueItem,
   SyncStatus,
 } from '../domain/models'
+import type {
+  CachedCashClosing,
+  CachedCashClosingDetail,
+} from '../types/cashClosingCache'
 import {
   sanitizeSyncDiagnostic,
   sanitizeSyncErrorCode,
@@ -79,6 +83,8 @@ export class OperationsRepository {
         this.database.centralCashPendingClosings,
         this.database.centralCashSummary,
         this.database.closingAdjustments,
+        this.database.cashClosings,
+        this.database.cashClosingDetails,
       ],
       async () => {
         await Promise.all([
@@ -102,6 +108,8 @@ export class OperationsRepository {
           this.database.centralCashPendingClosings.clear(),
           this.database.centralCashSummary.clear(),
           this.database.closingAdjustments.clear(),
+          this.database.cashClosings.clear(),
+          this.database.cashClosingDetails.clear(),
         ])
       },
     )
@@ -528,6 +536,8 @@ export class OperationsRepository {
         this.database.centralCashMovements,
         this.database.centralCashPendingClosings,
         this.database.centralCashSummary,
+        this.database.cashClosings,
+        this.database.cashClosingDetails,
         this.database.suppliers,
         this.database.purchases,
         this.database.purchasePayments,
@@ -562,6 +572,8 @@ export class OperationsRepository {
           this.database.centralCashMovements.clear(),
           this.database.centralCashPendingClosings.clear(),
           this.database.centralCashSummary.clear(),
+          this.database.cashClosings.clear(),
+          this.database.cashClosingDetails.clear(),
           this.database.suppliers.clear(),
           this.database.purchases.bulkDelete(removablePurchaseIds),
           this.database.purchasePayments.bulkDelete(removablePaymentIds),
@@ -819,6 +831,76 @@ export class OperationsRepository {
 
   deleteClosingDraft(id: string): Promise<void> {
     return this.database.closingDrafts.delete(id)
+  }
+
+  async listCachedCashClosings(
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<CachedCashClosing[]> {
+    const closings = storeId
+      ? await this.database.cashClosings.where('store_id').equals(storeId).toArray()
+      : await this.database.cashClosings.toArray()
+
+    return closings
+      .filter((closing) => {
+        if (dateFrom && closing.business_date < dateFrom) return false
+        if (dateTo && closing.business_date > dateTo) return false
+        return true
+      })
+      // oxlint-disable-next-line unicorn/no-array-sort
+      .sort(
+        (left, right) =>
+          right.business_date.localeCompare(left.business_date) ||
+          right.closed_at.localeCompare(left.closed_at),
+      )
+  }
+
+  async replaceCachedCashClosingsForScope(
+    closings: CachedCashClosing[],
+    storeId?: string,
+    dateFrom?: string,
+    dateTo = dateFrom,
+  ): Promise<void> {
+    await this.database.transaction(
+      'rw',
+      this.database.cashClosings,
+      async () => {
+        const existing = await this.database.cashClosings.toArray()
+        const replacedIds = existing
+          .filter((closing) => {
+            if (storeId && closing.store_id !== storeId) return false
+            if (dateFrom && closing.business_date < dateFrom) return false
+            if (dateTo && closing.business_date > dateTo) return false
+            return true
+          })
+          .map((closing) => closing.id)
+
+        await this.database.cashClosings.bulkDelete(replacedIds)
+        await this.database.cashClosings.bulkPut(closings)
+      },
+    )
+  }
+
+  saveCachedCashClosing(closing: CachedCashClosing): Promise<string> {
+    return this.database.cashClosings.put(closing)
+  }
+
+  async getCachedCashClosingDetail(
+    closingId: string,
+    storeId?: string,
+  ): Promise<CachedCashClosingDetail | undefined> {
+    const detail = await this.database.cashClosingDetails.get(closingId)
+    if (!detail || (storeId && detail.closing.store_id !== storeId)) {
+      return undefined
+    }
+    return detail
+  }
+
+  saveCachedCashClosingDetail(
+    detail: CachedCashClosingDetail,
+  ): Promise<string> {
+    return this.database.cashClosingDetails.put(detail)
   }
 
   saveCentralCashSummary(summary: CentralCashSummary): Promise<string> {

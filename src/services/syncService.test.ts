@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   isNetworkAvailable: vi.fn(),
   getRequiredActiveSession: vi.fn(),
+  refreshCashClosings: vi.fn(),
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -61,6 +62,12 @@ vi.mock('./operatorSessionService', () => ({
   },
 }))
 
+vi.mock('./cashClosingCacheService', () => ({
+  cashClosingCacheService: {
+    refreshList: mocks.refreshCashClosings,
+  },
+}))
+
 import {
   isSyncAuthenticationFailure,
   SyncAuthenticationError,
@@ -91,6 +98,7 @@ const pendingPurchase: SyncQueueItem = {
 describe('SyncService manual retry', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.refreshCashClosings.mockResolvedValue([])
   })
 
   it('bypasses backoff only when forceRetry is requested', async () => {
@@ -178,6 +186,12 @@ describe('SyncService manual retry', () => {
 
     expect(mocks.purchaseSync).toHaveBeenCalledWith('operator-a', 'operator-token')
     expect(mocks.purchaseSync).not.toHaveBeenCalledWith('operator-b', 'operator-token')
+    expect(mocks.refreshCashClosings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storeId: 'store-id',
+        operatorToken: 'operator-token',
+      }),
+    )
   })
 
   it('keeps legacy unattributed work pending with an actionable error', async () => {
@@ -293,6 +307,7 @@ describe('SyncService manual retry', () => {
         lastAttemptAt: expect.any(String),
       }),
     )
+    expect(mocks.refreshCashClosings).not.toHaveBeenCalled()
   })
 
   it('persists a safe Supabase code and diagnostic details', async () => {

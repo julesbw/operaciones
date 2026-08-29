@@ -5,23 +5,22 @@ import type {
   ClosingReconciliationMode,
   Expense,
   MerchandiseTransfer,
+  OperatorSession,
   PaidPurchase,
   Payment,
   UserProfile,
 } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
-import type {
-  CashClosingExpenseItemRow,
-  CashClosingRow,
-  CashClosingPaymentItemRow,
-  CashClosingPurchaseItemRow,
-  CashClosingTransferItemRow,
-} from '../types/database'
-import type { ClosingAdjustment } from '../domain/models'
+import type { CashClosingRow } from '../types/database'
+import type { CashClosingDetail } from '../types/cashClosingCache'
 import { calculateBillsTotal } from '../utils/money'
+import { cashClosingCacheService } from './cashClosingCacheService'
 import { connectivityService } from './connectivityService'
-import { syncService } from './syncService'
+import {
+  isSyncAuthenticationFailure,
+  syncService,
+} from './syncService'
 import {
   mapOperatorAuthorizationError,
   OperatorAuthorizationError,
@@ -56,14 +55,7 @@ export type ClosingOperationalSummary = ClosingOperationalTotals & {
   storeCashPurchases: PaidPurchase[]
 }
 
-export type CashClosingDetail = {
-  closing: CashClosingRow
-  expenses: CashClosingExpenseItemRow[]
-  transfers: CashClosingTransferItemRow[]
-  payments: CashClosingPaymentItemRow[]
-  purchases: CashClosingPurchaseItemRow[]
-  adjustments: ClosingAdjustment[]
-}
+export type { CashClosingDetail } from '../types/cashClosingCache'
 
 export type ClosingDomainErrorCode =
   | 'CLOSING_ALREADY_EXISTS'
@@ -522,62 +514,125 @@ class ClosingService {
     dateFrom?: string,
     dateTo = dateFrom,
     user?: UserProfile,
+    operatorSession?: OperatorSession,
   ): Promise<CashClosingRow[]> {
-    if (!supabase || !connectivityService.isNetworkAvailable()) return []
+    if (!user) return []
+    const cached = await this.listCachedClosed(
+      storeId,
+      dateFrom,
+      dateTo,
+      user,
+      operatorSession,
+    )
+    if (!supabase || !connectivityService.isNetworkAvailable()) return cached
 
     try {
-      if (!user) throw new Error('No se pudo resolver la identidad actual.')
-      const { data, error } = await supabase.rpc('list_cash_closings', {
-        p_operator_token: user.role === 'admin'
-          ? null
-          : operatorSessionService.getRequiredActiveToken(user.id),
-        p_store_id: storeId ?? null,
-        p_date_from: dateFrom ?? null,
-        p_date_to: dateTo ?? null,
-      })
-      if (error) throw error
-      return data
+      return await this.refreshClosed(
+        storeId,
+        dateFrom,
+        dateTo,
+        user,
+        operatorSession,
+      )
     } catch (cause: unknown) {
       const mapped = mapOperatorAuthorizationError(cause)
-      if (mapped instanceof OperatorAuthorizationError) throw mapped
+      if (
+        mapped instanceof OperatorAuthorizationError ||
+        isSyncAuthenticationFailure(cause)
+      ) throw mapped
       console.error(
-        'No fue posible consultar cortes cerrados; se conservarán los borradores locales',
+        'No fue posible consultar cortes cerrados; se conservará la caché local',
         mapped,
       )
-      return []
+      return cached
     }
+  }
+
+  listCachedClosed(
+    storeId: string | undefined,
+    dateFrom: string | undefined,
+    dateTo: string | undefined,
+    user: UserProfile,
+    operatorSession?: OperatorSession,
+  ) {
+    return cashClosingCacheService.listCached({
+      user,
+      operatorSession,
+      storeId,
+      dateFrom,
+      dateTo,
+    })
+  }
+
+  refreshClosed(
+    storeId: string | undefined,
+    dateFrom: string | undefined,
+    dateTo: string | undefined,
+    user: UserProfile,
+    operatorSession?: OperatorSession,
+  ): Promise<CashClosingRow[]> {
+    return cashClosingCacheService.refreshList({
+      user,
+      operatorSession,
+      storeId,
+      dateFrom,
+      dateTo,
+    })
+  }
+
+  getCachedClosedDetail(
+    id: string,
+    user: UserProfile,
+    operatorSession?: OperatorSession,
+  ) {
+    return cashClosingCacheService.getCachedDetail(id, {
+      user,
+      operatorSession,
+    })
+  }
+
+  refreshClosedDetail(
+    id: string,
+    user: UserProfile,
+    operatorSession?: OperatorSession,
+  ): Promise<CashClosingDetail> {
+    return cashClosingCacheService.refreshDetail(id, {
+      user,
+      operatorSession,
+    })
+  }
+
+  saveCachedDetail(detail: CashClosingDetail): Promise<string> {
+    return cashClosingCacheService.saveDetail(detail)
   }
 
   async getClosedDetail(
     id: string,
     user: UserProfile,
+    operatorSession?: OperatorSession,
   ): Promise<CashClosingDetail> {
-    if (!supabase) throw new Error('Supabase no está configurado')
-    connectivityService.requireOnline(
-      'Se necesita conexión para consultar un corte cerrado.',
-    )
+    const cached = await this.getCachedClosedDetail(id, user, operatorSession)
+    if (!supabase || !connectivityService.isNetworkAvailable()) {
+      if (cached) return cached
+      throw new Error('No hay información local para este Corte.')
+    }
 
-    const { data, error } = await supabase.rpc('get_cash_closing_detail', {
-      p_operator_token: user.role === 'admin'
-        ? null
-        : operatorSessionService.getRequiredActiveToken(user.id),
-      p_closing_id: id,
-    })
-    if (error) throw mapOperatorAuthorizationError(error)
-    return {
-      ...data,
-      adjustments: data.adjustments.map((adjustment) => ({
-        id: adjustment.id,
-        cashClosingId: adjustment.cash_closing_id,
-        type: adjustment.type,
-        amount: Number(adjustment.amount),
-        concept: adjustment.concept,
-        notes: adjustment.notes ?? undefined,
-        bills: adjustment.bills,
-        coinsAmount: Number(adjustment.coins_amount),
-        createdBy: adjustment.created_by,
-        createdAt: adjustment.created_at,
-      })),
+    try {
+      return await this.refreshClosedDetail(id, user, operatorSession)
+    } catch (cause: unknown) {
+      const mapped = mapOperatorAuthorizationError(cause)
+      if (
+        mapped instanceof OperatorAuthorizationError ||
+        isSyncAuthenticationFailure(cause)
+      ) throw mapped
+      if (cached) {
+        console.error(
+          'No fue posible actualizar el detalle del Corte; se conservará la caché local',
+          mapped,
+        )
+        return cached
+      }
+      throw mapped
     }
   }
 
@@ -799,6 +854,7 @@ class ClosingService {
       throw error
     }
     if (!data) throw new Error('Supabase no devolvió el corte confirmado')
+    await cashClosingCacheService.saveClosing(data)
     await operationsRepository.deleteClosingDraft(closedDraft.id)
     return data
   }

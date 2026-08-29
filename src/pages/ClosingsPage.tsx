@@ -57,7 +57,11 @@ import {
   type ClosingAdjustmentLockState,
 } from '../services/closingAdjustmentService'
 import { connectivityService } from '../services/connectivityService'
-import { syncService } from '../services/syncService'
+import { OperatorAuthorizationError } from '../services/operatorAuthorization'
+import {
+  isSyncAuthenticationFailure,
+  syncService,
+} from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import {
   calculateCentralCashBillsTotal,
@@ -69,6 +73,7 @@ type ClosingsPageProps = {
   user: UserProfile
   operatorSession?: OperatorSession
   dataRevision?: number
+  networkAvailable?: boolean
 }
 
 type DraftSaveState = 'idle' | 'saving' | 'saved'
@@ -87,6 +92,11 @@ function numberValue(value: string): number {
 
 function moneyValue(value: string): number {
   return Math.round(numberValue(value) * 100) / 100
+}
+
+function isUnsafeCacheFallbackError(cause: unknown): boolean {
+  return cause instanceof OperatorAuthorizationError ||
+    isSyncAuthenticationFailure(cause)
 }
 
 function StepProgress({ currentStep }: { currentStep: CashClosingStep }) {
@@ -354,6 +364,7 @@ function ClosingDetailView({
   closingId,
   stores,
   user,
+  operatorSession,
   networkAvailable,
   dataRevision,
   onBack,
@@ -361,6 +372,7 @@ function ClosingDetailView({
   closingId: string
   stores: Store[]
   user: UserProfile
+  operatorSession?: OperatorSession
   networkAvailable: boolean
   dataRevision: number
   onBack: () => void
@@ -373,25 +385,67 @@ function ClosingDetailView({
   const [showPurchaseDetails, setShowPurchaseDetails] = useState(false)
   const [adjustmentOpen, setAdjustmentOpen] = useState(false)
   const [lockState, setLockState] = useState<ClosingAdjustmentLockState>()
+  const [fromCache, setFromCache] = useState(false)
 
   useEffect(() => {
     let active = true
     setDetail(undefined)
     setError('')
+    setFromCache(false)
     setShowExpenseDetails(false)
     setShowTransferDetails(false)
     setShowPaymentDetails(false)
     setShowPurchaseDetails(false)
     setLockState(undefined)
-    void closingService
-      .getClosedDetail(closingId, user)
-      .then((result) => {
-        if (active) setDetail(result)
-      })
-      .catch((cause: unknown) => {
+
+    async function loadDetail() {
+      try {
+        const cached = await closingService.getCachedClosedDetail(
+          closingId,
+          user,
+          operatorSession,
+        )
+        if (!active) return
+        if (cached) {
+          setDetail(cached)
+          setFromCache(true)
+        }
+
+        if (!isSupabaseConfigured || !networkAvailable) {
+          if (!cached) throw new Error('No hay información local para este Corte.')
+          return
+        }
+
+        try {
+          const refreshed = await closingService.refreshClosedDetail(
+            closingId,
+            user,
+            operatorSession,
+          )
+          if (active) {
+            setDetail(refreshed)
+            setFromCache(false)
+          }
+        } catch (cause: unknown) {
+          if (!cached || isUnsafeCacheFallbackError(cause)) throw cause
+          console.error(
+            'No fue posible actualizar el detalle del Corte; se conservará la caché local',
+            cause,
+          )
+        }
+      } catch (cause: unknown) {
         console.error('No fue posible consultar el corte', cause)
-        if (active) setError('No fue posible consultar el detalle del corte.')
-      })
+        if (active) {
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'No fue posible consultar el detalle del corte.',
+          )
+        }
+      }
+    }
+
+    void loadDetail()
     if (user.role === 'admin') {
       void closingAdjustmentService
         .lockState(closingId)
@@ -401,7 +455,7 @@ function ClosingDetailView({
     return () => {
       active = false
     }
-  }, [closingId, dataRevision, user])
+  }, [closingId, dataRevision, networkAvailable, operatorSession, user])
 
   if (error) {
     return (
@@ -444,6 +498,11 @@ function ClosingDetailView({
         <p className="mt-2 text-sm text-slate-500">
           {formatLongDate(closing.business_date)} · Cerrado {formatClosingTime(closing.closed_at)}
         </p>
+        {fromCache && (
+          <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+            Mostrando información guardada localmente.
+          </p>
+        )}
       </div>
 
       <div className="mt-7 space-y-5">
@@ -633,13 +692,15 @@ function ClosingDetailView({
           networkAvailable={networkAvailable}
           onClose={() => setAdjustmentOpen(false)}
           onCreated={(adjustment) => {
-            setDetail((current) => {
-              if (!current) return current
-              const nextAdjustments = [
-                ...current.adjustments.filter(({ id }) => id !== adjustment.id),
-                adjustment,
-              ]
-              return { ...current, adjustments: nextAdjustments }
+            if (!detail) return
+            const nextAdjustments = [
+              ...detail.adjustments.filter(({ id }) => id !== adjustment.id),
+              adjustment,
+            ]
+            const nextDetail = { ...detail, adjustments: nextAdjustments }
+            setDetail(nextDetail)
+            void closingService.saveCachedDetail(nextDetail).catch((cause: unknown) => {
+              console.error('No fue posible actualizar el detalle cacheado del Corte', cause)
             })
             setAdjustmentOpen(false)
           }}
@@ -654,8 +715,11 @@ export function ClosingsPage({
   user,
   operatorSession,
   dataRevision = 0,
+  networkAvailable: networkAvailableProp,
 }: ClosingsPageProps) {
   const today = getLocalDate()
+  const networkAvailable =
+    networkAvailableProp ?? connectivityService.isNetworkAvailable()
   const identity = { technicalUser: user, operatorSession }
   const storeScope = getRuntimeStoreScope(identity)
   const assignedStoreId = storeScope.kind === 'fixed' ? storeScope.storeId : ''
@@ -675,6 +739,7 @@ export function ClosingsPage({
   const [drafts, setDrafts] = useState<CashClosingDraft[]>([])
   const [closedClosings, setClosedClosings] = useState<CashClosingRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [fromCache, setFromCache] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createStoreId, setCreateStoreId] = useState(activeStores[0]?.id ?? '')
@@ -682,6 +747,7 @@ export function ClosingsPage({
   const [checkingDraft, setCheckingDraft] = useState(false)
   const [existingDraft, setExistingDraft] = useState<CashClosingDraft>()
   const addButtonRef = useRef<HTMLButtonElement>(null)
+  const loadSequence = useRef(0)
 
   const queryStoreId = isAdmin
     ? storeFilter === ALL_STORES ? undefined : storeFilter
@@ -698,31 +764,78 @@ export function ClosingsPage({
   }
 
   async function loadHistory() {
+    const sequence = ++loadSequence.current
     setLoading(true)
     setLoadError('')
+    setFromCache(false)
     try {
-      const [localDrafts, remoteClosings] = await Promise.all([
+      const [localDrafts, cachedClosings] = await Promise.all([
         statusFilter === 'closed'
           ? Promise.resolve([])
           : closingService.listDrafts(queryStoreId, dateFrom, dateTo),
         statusFilter === 'draft'
           ? Promise.resolve([])
-          : closingService.listClosed(queryStoreId, dateFrom, dateTo, user),
+          : closingService.listCachedClosed(
+              queryStoreId,
+              dateFrom,
+              dateTo,
+              user,
+              operatorSession,
+            ),
       ])
-      setDrafts(
+      const scopedDrafts =
         isAdmin
           ? localDrafts
           : localDrafts.filter(
               (draft) =>
                 draft.operatorAccountId === operatorSession?.account.id,
-            ),
-      )
-      setClosedClosings(remoteClosings)
+            )
+      if (sequence !== loadSequence.current) return
+
+      setDrafts(scopedDrafts)
+      setClosedClosings(cachedClosings)
+      setFromCache(cachedClosings.length > 0)
+
+      const hasLocalData = scopedDrafts.length > 0 || cachedClosings.length > 0
+      const shouldRefresh =
+        statusFilter !== 'draft' && isSupabaseConfigured && networkAvailable
+      if (hasLocalData || !shouldRefresh) setLoading(false)
+      if (!shouldRefresh) return
+
+      try {
+        const refreshedClosings = await closingService.refreshClosed(
+          queryStoreId,
+          dateFrom,
+          dateTo,
+          user,
+          operatorSession,
+        )
+        if (sequence !== loadSequence.current) return
+        setClosedClosings(refreshedClosings)
+        setFromCache(false)
+      } catch (cause: unknown) {
+        console.error(
+          'No fue posible actualizar los Cortes; se conservará la caché local',
+          cause,
+        )
+        if (sequence === loadSequence.current) {
+          if (isUnsafeCacheFallbackError(cause)) {
+            setClosedClosings([])
+            setFromCache(false)
+            setLoadError('No fue posible autorizar la consulta de Cortes.')
+          } else if (!hasLocalData) {
+            setLoadError('No fue posible consultar el historial de Cortes.')
+          }
+        }
+      } finally {
+        if (sequence === loadSequence.current) setLoading(false)
+      }
     } catch (cause: unknown) {
       console.error('No fue posible consultar el historial de cortes', cause)
-      setLoadError('No fue posible consultar el historial de cortes.')
-    } finally {
-      setLoading(false)
+      if (sequence === loadSequence.current) {
+        setLoadError('No fue posible consultar el historial de Cortes.')
+        setLoading(false)
+      }
     }
   }
 
@@ -730,7 +843,18 @@ export function ClosingsPage({
     if (view.kind === 'history') void loadHistory()
     // loadHistory depends only on the filter snapshot used by this effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataRevision, dateFrom, dateTo, statusFilter, storeFilter, view.kind])
+  }, [
+    dataRevision,
+    dateFrom,
+    dateTo,
+    networkAvailable,
+    operatorSession,
+    queryStoreId,
+    statusFilter,
+    storeFilter,
+    user,
+    view.kind,
+  ])
 
   const historyEntries = useMemo<ClosingHistoryEntry[]>(() => {
     const entries: ClosingHistoryEntry[] = [
@@ -814,9 +938,10 @@ export function ClosingsPage({
       <ClosingDetailView
         closingId={view.closingId}
         dataRevision={dataRevision}
+        operatorSession={operatorSession}
         stores={stores}
         user={user}
-        networkAvailable={connectivityService.isNetworkAvailable()}
+        networkAvailable={networkAvailable}
         onBack={() => setView({ kind: 'history' })}
       />
     )
@@ -872,12 +997,21 @@ export function ClosingsPage({
           onChange={setStatusFilter}
         />
 
+        {fromCache && (
+          <p className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+            Mostrando información guardada localmente.
+          </p>
+        )}
         {loadError && <p className="alert-error">{loadError}</p>}
         {loading && <p className="empty-state">Consultando cortes…</p>}
         {!loading && !loadError && historyEntries.length === 0 && (
           <div className="panel empty-state">
             <CashIcon className="mx-auto mb-3 size-8" />
-            <p>No hay cortes en este periodo.</p>
+            <p>
+              {!networkAvailable && statusFilter !== 'draft'
+                ? 'No hay Cortes almacenados localmente para esta fecha.'
+                : 'No hay cortes en este periodo.'}
+            </p>
           </div>
         )}
         {!loading && !loadError && historyEntries.length > 0 && (

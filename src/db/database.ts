@@ -21,6 +21,10 @@ import type {
   Supplier,
   SyncQueueItem,
 } from '../domain/models'
+import type {
+  CachedCashClosing,
+  CachedCashClosingDetail,
+} from '../types/cashClosingCache'
 
 type LegacyClosingDraft = CashClosingDraft & {
   closingReconciliationMode?: CashClosingDraft['closingReconciliationMode']
@@ -68,6 +72,8 @@ export class OperationsDatabase extends Dexie {
   centralCashPendingClosings!: Table<CentralCashPendingClosing, string>
   centralCashSummary!: Table<CentralCashSummary, string>
   closingAdjustments!: Table<ClosingAdjustment, string>
+  cashClosings!: Table<CachedCashClosing, string>
+  cashClosingDetails!: Table<CachedCashClosingDetail, string>
 
   constructor(databaseName = OPERATIONS_DATABASE_NAME) {
     super(databaseName)
@@ -139,6 +145,12 @@ export class OperationsDatabase extends Dexie {
     }
     const schemaV17 = {
       ...schemaV16,
+    }
+    const schemaV18 = {
+      ...schemaV17,
+      cashClosings:
+        '&id, store_id, business_date, [store_id+business_date], closed_at, cachedAt',
+      cashClosingDetails: '&closingId, cachedAt',
     }
 
     this.version(1).stores(schemaV1)
@@ -276,6 +288,7 @@ export class OperationsDatabase extends Dexie {
           })
       })
     this.version(17).stores(schemaV17)
+    this.version(18).stores(schemaV18)
   }
 }
 

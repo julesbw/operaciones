@@ -667,6 +667,7 @@ function App() {
       ) && (
         <ClosingsPage
           dataRevision={revision}
+          networkAvailable={networkAvailable}
           stores={stores}
           user={user}
           operatorSession={operatorSession}

@@ -1,14 +1,19 @@
 import type {
   AttendanceRecord,
   Expense,
+  LocalAppContext,
   MerchandiseTransfer,
+  OperatorSession,
   SyncQueueItem,
 } from '../domain/models'
+import { hasCapability } from '../domain/capabilities'
 import type { ExpenseRow } from '../types/database'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
+import { cashClosingCacheService } from './cashClosingCacheService'
 import { connectivityService } from './connectivityService'
 import { mapExpenseRow } from './expenseService'
+import { profileFromLocalContext } from './localContextService'
 import { purchaseService } from './purchaseService'
 import { operatorSessionService } from './operatorSessionService'
 import {
@@ -218,11 +223,12 @@ export class SyncService {
     }
 
     let operatorToken: string | null = null
+    let activeOperator: OperatorSession | undefined
     let activeOperatorId: string | undefined
     const preflightErrors: string[] = []
     let preflightFailed = 0
     if (context.role !== 'admin') {
-      const activeOperator = operatorSessionService.getRequiredActiveSession(
+      activeOperator = operatorSessionService.getRequiredActiveSession(
         context.userId,
       )
       if (
@@ -285,7 +291,7 @@ export class SyncService {
       // oxlint-disable-next-line no-await-in-loop
       results.push(await this.processItem(item, operatorToken))
     }
-    await this.pullRecent()
+    await this.pullRecent(context, operatorToken, activeOperator)
 
     return {
       synced: results.filter((result) => result.success).length,
@@ -428,7 +434,11 @@ export class SyncService {
     )
   }
 
-  private async pullRecent(): Promise<void> {
+  private async pullRecent(
+    context: LocalAppContext,
+    operatorToken: string | null,
+    activeOperator?: OperatorSession,
+  ): Promise<void> {
     if (!supabase) return
 
     const since = new Date()
@@ -486,6 +496,21 @@ export class SyncService {
         })),
       ),
     ])
+
+    const profile = profileFromLocalContext(context)
+    const identity = {
+      technicalUser: profile,
+      operatorSession: activeOperator,
+    }
+    if (hasCapability(identity, 'cashClosings')) {
+      await cashClosingCacheService.refreshList({
+        user: profile,
+        operatorSession: activeOperator,
+        operatorToken,
+        storeId: activeOperator?.account.storeId,
+        dateFrom: sinceDate,
+      })
+    }
   }
 
   private async pushItem(
