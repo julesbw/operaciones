@@ -450,6 +450,7 @@ function App() {
     const remoteStopped = remoteBootstrapService.cancelForSignOut()
     setUser(undefined)
     setOperatorSession(undefined)
+    setStartupNotice(undefined)
     setPage('home')
     setAttendanceStoreFilter(ALL_STORES)
     setState('requires-first-login')
@@ -577,6 +578,7 @@ function App() {
         store={stores.find((store) => store.id === user.storeId)}
         technicalUserId={user.id}
         onSignedIn={() => operatorSignedIn()}
+        onSignOut={() => void signOut()}
       />
     )
   }
