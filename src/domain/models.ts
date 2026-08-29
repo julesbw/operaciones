@@ -406,6 +406,7 @@ export type SyncQueueItem = {
   attempts: number
   operatorAccountId?: string | null
   lastError?: string
+  lastAttemptAt?: string
   nextAttemptAt?: string
 }
 

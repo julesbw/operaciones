@@ -17,6 +17,10 @@ import {
 import type { OperatorSession, UserProfile } from '../domain/models'
 import { getEffectiveDisplayName } from '../domain/runtimeIdentity'
 import {
+  toUserFacingSyncError,
+  type SyncInspectorSnapshot,
+} from '../services/syncInspectorService'
+import {
   ArrowIcon,
   CashIcon,
   ChevronRightIcon,
@@ -33,6 +37,7 @@ import {
   WalletIcon,
   XIcon,
 } from './icons'
+import { SyncInspectorModal } from './SyncInspectorModal'
 
 export type { PageId } from '../domain/capabilities'
 
@@ -119,6 +124,28 @@ type AppShellProps = {
   onSignOut: () => void
   onSwitchOperator?: () => void
   onSync: () => void
+  onOpenSyncInspector?: () => void
+  onRefreshSyncInspector?: () => void
+  syncInspector?: SyncInspectorSnapshot
+  syncInspectorError?: string
+  syncInspectorLoading?: boolean
+}
+
+const EMPTY_SYNC_INSPECTOR: SyncInspectorSnapshot = {
+  items: [],
+  summary: { total: 0, pending: 0, syncing: 0, error: 0 },
+}
+
+function syncIndicatorLabel(
+  pendingCount: number,
+  errorCount: number,
+  waitingCount: number,
+): string {
+  if (pendingCount === 0) return 'Al día'
+  if (errorCount === 0) {
+    return `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}`
+  }
+  return `${waitingCount} pendiente${waitingCount === 1 ? '' : 's'} · ${errorCount} con error`
 }
 
 function initials(name: string): string {
@@ -144,12 +171,19 @@ export function AppShell({
   onSignOut,
   onSwitchOperator,
   onSync,
+  onOpenSyncInspector,
+  onRefreshSyncInspector,
+  syncInspector = EMPTY_SYNC_INSPECTOR,
+  syncInspectorError,
+  syncInspectorLoading = false,
 }: AppShellProps) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [syncInspectorOpen, setSyncInspectorOpen] = useState(false)
   const profileButtonRef = useRef<HTMLButtonElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const moreButtonRef = useRef<HTMLButtonElement>(null)
+  const syncButtonRef = useRef<HTMLButtonElement>(null)
   const swipeStartRef = useRef<{ x: number; y: number } | undefined>(undefined)
   const restoreScrollRef = useRef(true)
   const identity = { technicalUser: user, operatorSession }
@@ -173,6 +207,19 @@ export function AppShell({
       ? 'Encargado'
       : 'Cajero'
   const activeName = getEffectiveDisplayName(user, operatorSession ?? null)
+  const waitingSyncCount = syncInspector.summary.pending + syncInspector.summary.syncing
+  const syncLabel =
+    !networkAvailable
+      ? 'Sin conexión'
+      : syncing
+        ? 'Sincronizando'
+        : pendingCount > 0
+          ? syncIndicatorLabel(pendingCount, syncInspector.summary.error, waitingSyncCount)
+          : backendReachable === false || syncError
+            ? 'Error de sincronización'
+            : 'Al día'
+  const syncTitle =
+    toUserFacingSyncError(syncError) ?? syncLabel
 
   useEffect(() => {
     setMoreMenuOpen(false)
@@ -334,12 +381,15 @@ export function AppShell({
 
           <div className="ml-auto flex items-center gap-2">
             <button
-              aria-label={syncError ?? 'Sincronizar datos'}
+              aria-label="Abrir detalle de sincronización"
               className={`sync-pill ${!networkAvailable || backendReachable === false ? 'sync-pill-offline' : ''}`}
-              disabled={syncing || !networkAvailable}
-              title={syncError}
+              ref={syncButtonRef}
+              title={syncTitle}
               type="button"
-              onClick={onSync}
+              onClick={() => {
+                setSyncInspectorOpen(true)
+                onOpenSyncInspector?.()
+              }}
             >
               {!networkAvailable || backendReachable === false ? (
                 <WifiOffIcon className="size-4" />
@@ -347,15 +397,7 @@ export function AppShell({
                 <SyncIcon className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
               )}
               <span className="hidden sm:inline">
-                {!networkAvailable
-                  ? 'Sin conexión'
-                  : backendReachable === false || syncError
-                    ? 'Error de sincronización'
-                  : syncing
-                    ? 'Sincronizando'
-                    : pendingCount > 0
-                      ? `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}`
-                      : 'Al día'}
+                {syncLabel}
               </span>
               {pendingCount > 0 && <span className="sm:hidden">{pendingCount}</span>}
             </button>
@@ -458,6 +500,21 @@ export function AppShell({
           })}
         </div>
       </div>
+
+      <SyncInspectorModal
+        error={syncInspectorError}
+        loading={syncInspectorLoading}
+        networkAvailable={networkAvailable}
+        onClose={() => setSyncInspectorOpen(false)}
+        onRefresh={onRefreshSyncInspector ?? (() => undefined)}
+        onSync={onSync}
+        open={syncInspectorOpen}
+        operatorSession={operatorSession}
+        returnFocusRef={syncButtonRef}
+        snapshot={syncInspector}
+        syncing={syncing}
+        user={user}
+      />
 
       {profileOpen && (
         <div

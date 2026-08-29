@@ -272,6 +272,7 @@ describe('purchase validation', () => {
     expect(await db.syncQueue.get('purchase:purchase-sync')).toMatchObject({
       attempts: 1,
       lastError: 'Sin conexión',
+      lastAttemptAt: expect.any(String),
     })
 
     rpcMock.mockResolvedValueOnce({

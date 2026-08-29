@@ -40,6 +40,10 @@ import {
   remoteBootstrapService,
 } from './services/remoteBootstrapService'
 import { syncService } from './services/syncService'
+import {
+  syncInspectorService,
+  type SyncInspectorSnapshot,
+} from './services/syncInspectorService'
 
 type AppBootstrapState =
   | 'loading-local'
@@ -50,6 +54,11 @@ type AppBootstrapState =
   | 'awaiting-operator'
   | 'validating-operator'
   | 'fatal-error'
+
+const EMPTY_SYNC_INSPECTOR: SyncInspectorSnapshot = {
+  items: [],
+  summary: { total: 0, pending: 0, syncing: 0, error: 0 },
+}
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Error desconocido'
@@ -84,6 +93,10 @@ function App() {
     useState<StoreScopeValue>(ALL_STORES)
   const [stores, setStores] = useState<Store[]>([])
   const [pendingCount, setPendingCount] = useState(0)
+  const [syncInspector, setSyncInspector] =
+    useState<SyncInspectorSnapshot>(EMPTY_SYNC_INSPECTOR)
+  const [syncInspectorLoading, setSyncInspectorLoading] = useState(false)
+  const [syncInspectorLoadError, setSyncInspectorLoadError] = useState<string>()
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string>()
   const [networkAvailable, setNetworkAvailable] = useState(
@@ -97,14 +110,36 @@ function App() {
   }, [user])
 
   const refreshLocalState = useCallback(async () => {
-    const [availableStores, pending] = await Promise.all([
+    const [availableStores, inspector] = await Promise.all([
       referenceDataService.listStores(),
-      syncService.countPending(),
+      syncInspectorService.getSnapshot(),
     ])
     setStores(availableStores)
-    setPendingCount(pending)
+    setSyncInspector(inspector)
+    setPendingCount(inspector.summary.total)
     setRevision((value) => value + 1)
   }, [])
+
+  const refreshSyncInspector = useCallback(async () => {
+    setSyncInspectorLoading(true)
+    setSyncInspectorLoadError(undefined)
+    try {
+      const inspector = await syncInspectorService.getSnapshot()
+      setSyncInspector(inspector)
+      setPendingCount(inspector.summary.total)
+    } catch (cause: unknown) {
+      console.error('No fue posible cargar el detalle de sincronización', cause)
+      setSyncInspectorLoadError(
+        'No fue posible cargar el detalle de sincronización.',
+      )
+    } finally {
+      setSyncInspectorLoading(false)
+    }
+  }, [])
+
+  const openSyncInspector = useCallback(() => {
+    void refreshSyncInspector()
+  }, [refreshSyncInspector])
 
   const restoreLocalFallback = useCallback(async () => {
     const context = await localContextService.load()
@@ -589,9 +624,14 @@ function App() {
       networkAvailable={networkAvailable}
       pendingCount={pendingCount}
       syncError={syncError}
+      syncInspector={syncInspector}
+      syncInspectorError={syncInspectorLoadError}
+      syncInspectorLoading={syncInspectorLoading}
       syncing={syncing || state === 'recovering-session'}
       user={user}
       onNavigate={navigate}
+      onOpenSyncInspector={openSyncInspector}
+      onRefreshSyncInspector={() => void refreshSyncInspector()}
       onSignOut={() => void signOut()}
       onSwitchOperator={operatorSession ? () => void switchOperator() : undefined}
       onSync={() => void syncCurrentSession(true)}

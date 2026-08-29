@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { OperatorSession, UserProfile } from '../domain/models'
+import type { SyncInspectorSnapshot } from '../services/syncInspectorService'
 import { AppShell, navigationItemsForRole, type PageId } from './AppShell'
 
 const user: UserProfile = {
@@ -30,6 +31,7 @@ function renderStatus(
     syncError: string
     syncing: boolean
     currentPage: PageId
+    syncInspector: SyncInspectorSnapshot
   }> = {},
 ) {
   return renderToStaticMarkup(
@@ -58,8 +60,21 @@ describe('AppShell sync indicator', () => {
     })
 
     expect(markup).toContain('Sin conexión')
-    expect(markup).toContain('disabled=""')
+    expect(markup).toContain('aria-label="Abrir detalle de sincronización"')
     expect(markup).toContain('Contenido local')
+  })
+
+  it('distinguishes waiting operations from failed operations', () => {
+    const snapshot: SyncInspectorSnapshot = {
+      items: [],
+      summary: { total: 4, pending: 2, syncing: 0, error: 2 },
+    }
+    const markup = renderStatus({
+      pendingCount: 4,
+      syncInspector: snapshot,
+    })
+
+    expect(markup).toContain('2 pendientes · 2 con error')
   })
 
   it('reports backend errors separately from browser connectivity', () => {

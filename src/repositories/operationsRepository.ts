@@ -717,7 +717,7 @@ export class OperationsRepository {
         const current = await this.database.syncQueue.get(item.id)
         if (current?.createdAt !== item.createdAt) return
 
-        const attempts = item.attempts + 1
+        const attempts = (item.attempts ?? 0) + 1
         const delaySeconds = Math.min(300, 2 ** attempts)
         const nextAttemptAt = new Date(
           Date.now() + delaySeconds * 1_000,
@@ -725,6 +725,7 @@ export class OperationsRepository {
         await this.database.syncQueue.update(item.id, {
           attempts,
           lastError: message,
+          lastAttemptAt: new Date().toISOString(),
           nextAttemptAt,
         })
         await this.markEntitySyncStatus(
