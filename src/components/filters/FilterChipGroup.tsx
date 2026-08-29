@@ -22,7 +22,7 @@ export function FilterChipGroup<T extends string>({
   return (
     <div
       aria-label={ariaLabel}
-      className="filter-chip-group"
+      className="filter-chip-group flex flex-nowrap overflow-x-auto overflow-y-hidden"
       role="group"
     >
       {options.map((option) => {

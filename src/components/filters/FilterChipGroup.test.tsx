@@ -30,6 +30,9 @@ describe('FilterChipGroup', () => {
     expect(markup).toContain('aria-pressed="true"')
     expect(markup).toContain('Pagados')
     expect(markup).toContain('filter-chip-group')
+    expect(markup).toContain('flex-nowrap')
+    expect(markup).toContain('overflow-x-auto')
+    expect(markup).toContain('overflow-y-hidden')
   })
 
   it('reports the value of the selected option', () => {

@@ -79,7 +79,7 @@ body,
 #root {
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 html {
@@ -178,7 +178,7 @@ button:disabled {
 
 @layer components {
   .sidebar {
-    @apply sticky top-0 h-dvh flex-col border-r border-slate-200 bg-white px-5 py-6;
+    @apply sticky top-0 self-start h-dvh flex-col border-r border-slate-200 bg-white px-5 py-6;
   }
 
   .brand-mark {
@@ -220,7 +220,15 @@ button:disabled {
   }
 
   .topbar {
-    @apply sticky top-0 z-30 flex h-[68px] items-center border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:h-[76px] lg:px-10;
+    min-height: calc(68px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    @apply sticky top-0 z-30 flex items-center border-b border-slate-200/80 bg-white/90 px-4 backdrop-blur-xl sm:px-6 lg:px-10;
+  }
+
+  @media (min-width: 1024px) {
+    .topbar {
+      min-height: calc(76px + env(safe-area-inset-top, 0px));
+    }
   }
 
   .sync-pill {
@@ -527,7 +535,7 @@ button:disabled {
     pointer-events: auto;
     position: relative;
     touch-action: pan-x pan-y;
-    @apply flex w-full max-w-full min-w-0 select-none gap-2 overflow-x-auto overscroll-x-contain pb-1;
+    @apply w-full max-w-full min-w-0 select-none gap-2 overscroll-x-contain pb-1;
   }
 
   .filter-chip-item,
