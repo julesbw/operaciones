@@ -102,8 +102,10 @@ function mapAdjustment(
 }
 
 class ClosingAdjustmentService {
-  async lockState(cashClosingId: string): Promise<ClosingAdjustmentLockState> {
-    if (!supabase || !connectivityService.isNetworkAvailable()) return 'prepared'
+  async lockState(
+    cashClosingId: string,
+  ): Promise<ClosingAdjustmentLockState | undefined> {
+    if (!supabase || !connectivityService.isNetworkAvailable()) return undefined
     const { data: receipt, error: receiptError } = await supabase
       .from('central_cash_receipts')
       .select('id')

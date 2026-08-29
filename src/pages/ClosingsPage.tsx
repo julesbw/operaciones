@@ -446,7 +446,7 @@ function ClosingDetailView({
     }
 
     void loadDetail()
-    if (user.role === 'admin') {
+    if (user.role === 'admin' && networkAvailable) {
       void closingAdjustmentService
         .lockState(closingId)
         .then(setLockState)
