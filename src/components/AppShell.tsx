@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ComponentType,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -224,6 +225,8 @@ export function AppShell({
   const swipeStartRef = useRef<{ x: number; y: number } | undefined>(undefined)
   const pullStartRef = useRef<{ x: number; y: number } | undefined>(undefined)
   const pullDistanceRef = useRef(0)
+  const pullFrameRef = useRef<number | undefined>(undefined)
+  const pendingPullDistanceRef = useRef<number | undefined>(undefined)
   const restoreScrollRef = useRef(true)
   const [pullDistance, setPullDistance] = useState(0)
   const [pullReady, setPullReady] = useState(false)
@@ -263,10 +266,19 @@ export function AppShell({
             : 'Sincronizado'
   const syncTitle =
     toUserFacingSyncError(syncError) ?? syncLabel
+  const pullProgress = Math.min(1, pullDistance / PULL_TO_SYNC_THRESHOLD)
 
   useEffect(() => {
     setMoreMenuOpen(false)
   }, [currentPage])
+
+  useEffect(() => {
+    return () => {
+      if (pullFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(pullFrameRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!moreMenuOpen) return
@@ -368,11 +380,34 @@ export function AppShell({
     }
   }
 
+  function cancelPullFrame() {
+    if (pullFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(pullFrameRef.current)
+      pullFrameRef.current = undefined
+    }
+    pendingPullDistanceRef.current = undefined
+  }
+
   function resetPull() {
+    cancelPullFrame()
     pullStartRef.current = undefined
     pullDistanceRef.current = 0
     setPullDistance(0)
     setPullReady(false)
+  }
+
+  function schedulePullUpdate(distance: number) {
+    pendingPullDistanceRef.current = distance
+    if (pullFrameRef.current !== undefined) return
+
+    pullFrameRef.current = window.requestAnimationFrame(() => {
+      pullFrameRef.current = undefined
+      const nextDistance = pendingPullDistanceRef.current
+      pendingPullDistanceRef.current = undefined
+      if (nextDistance === undefined) return
+      setPullDistance(nextDistance)
+      setPullReady(nextDistance >= PULL_TO_SYNC_THRESHOLD)
+    })
   }
 
   function startPull(event: ReactTouchEvent<HTMLElement>) {
@@ -411,8 +446,7 @@ export function AppShell({
 
     const distance = Math.min(PULL_TO_SYNC_MAX, distanceY)
     pullDistanceRef.current = distance
-    setPullDistance(distance)
-    setPullReady(distance >= PULL_TO_SYNC_THRESHOLD)
+    schedulePullUpdate(distance)
   }
 
   function finishPull() {
@@ -532,16 +566,28 @@ export function AppShell({
             <div
               aria-live="polite"
               className="pull-sync-indicator lg:hidden"
-              style={{ height: `${syncing ? 48 : pullDistance}px` }}
+              data-pulling={!syncing && pullDistance > 0}
+              data-ready={pullReady}
+              data-syncing={syncing}
+              style={{
+                height: `${syncing ? 48 : pullDistance}px`,
+                '--pull-progress-opacity': `${0.6 + pullProgress * 0.4}`,
+                '--pull-progress-offset': `${(1 - pullProgress) * -4}px`,
+                '--pull-progress-scale': `${0.96 + pullProgress * 0.04}`,
+              } as CSSProperties}
             >
-              <SyncIcon className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
-              <span>
-                {syncing
-                  ? 'Sincronizando…'
-                  : pullReady
-                    ? 'Suelta para sincronizar'
-                    : 'Jala para sincronizar'}
-              </span>
+              <div className="pull-sync-indicator-content">
+                <SyncIcon
+                  className={`pull-sync-indicator-icon size-4 ${syncing ? 'animate-spin' : ''}`}
+                />
+                <span>
+                  {syncing
+                    ? 'Sincronizando…'
+                    : pullReady
+                      ? 'Suelta para sincronizar'
+                      : 'Jala para sincronizar'}
+                </span>
+              </div>
             </div>
           )}
           {children}

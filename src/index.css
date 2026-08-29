@@ -235,8 +235,41 @@ button:disabled {
     pointer-events: none;
     overflow: hidden;
     touch-action: pan-y;
-    transition: height 140ms ease-out;
-    @apply flex items-center justify-center gap-2 text-xs font-bold text-teal-700;
+    transition: height 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: height;
+    @apply flex items-center justify-center text-xs font-bold text-teal-700;
+  }
+
+  .pull-sync-indicator[data-pulling='true'] {
+    transition: none;
+  }
+
+  .pull-sync-indicator-content {
+    opacity: var(--pull-progress-opacity);
+    transform: translateY(var(--pull-progress-offset)) scale(var(--pull-progress-scale));
+    transition:
+      opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    @apply flex items-center gap-2;
+  }
+
+  .pull-sync-indicator[data-ready='true'] .pull-sync-indicator-content,
+  .pull-sync-indicator[data-syncing='true'] .pull-sync-indicator-content {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  .pull-sync-indicator[data-ready='false'][data-syncing='false']
+    .pull-sync-indicator-content {
+    transition: none;
+  }
+
+  .pull-sync-indicator-icon {
+    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .pull-sync-indicator[data-ready='true'] .pull-sync-indicator-icon {
+    transform: rotate(180deg) scale(1.05);
   }
 
   .mobile-nav {
@@ -646,6 +679,12 @@ button:disabled {
   .mobile-more-menu,
   .mobile-more-menu-item,
   .mobile-more-menu-item-active {
+    transition-duration: 1ms;
+  }
+
+  .pull-sync-indicator,
+  .pull-sync-indicator-content,
+  .pull-sync-indicator-icon {
     transition-duration: 1ms;
   }
 
