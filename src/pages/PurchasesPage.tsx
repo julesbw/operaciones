@@ -66,6 +66,7 @@ type PurchasesPageProps = {
   operatorSession?: OperatorSession
   networkAvailable: boolean
   dataRevision?: number
+  initialPurchaseId?: string
   onDataChanged: () => void
 }
 
@@ -83,6 +84,7 @@ export function PurchasesPage({
   operatorSession,
   networkAvailable,
   dataRevision = 0,
+  initialPurchaseId,
   onDataChanged,
 }: PurchasesPageProps) {
   const today = getLocalDate()
@@ -134,6 +136,7 @@ export function PurchasesPage({
   const [paymentId, setPaymentId] = useState('')
   const fabRef = useRef<HTMLButtonElement>(null)
   const supplierInputRef = useRef<HTMLSelectElement>(null)
+  const initialPurchaseResolutionRef = useRef<string | undefined>(undefined)
 
   const activeSuppliers = useMemo(
     () => suppliers.filter((supplier) => supplier.isActive),
@@ -174,6 +177,48 @@ export function PurchasesPage({
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (!initialPurchaseId) {
+      initialPurchaseResolutionRef.current = undefined
+      return
+    }
+    if (initialPurchaseResolutionRef.current === initialPurchaseId) return
+
+    const cached = purchases.find(
+      (item) => item.purchase.id === initialPurchaseId,
+    )
+    if (cached) {
+      setSelected(cached)
+      initialPurchaseResolutionRef.current = initialPurchaseId
+      return
+    }
+    if (!networkAvailable) return
+    initialPurchaseResolutionRef.current = initialPurchaseId
+
+    let active = true
+    void (async () => {
+      let items = await purchaseService.list()
+      let target = items.find(
+        (item) => item.purchase.id === initialPurchaseId,
+      )
+      if (!target && isAdmin) {
+        await purchaseService.refreshRemote(user)
+        items = await purchaseService.list()
+        target = items.find(
+          (item) => item.purchase.id === initialPurchaseId,
+        )
+      }
+      if (!active) return
+      if (target) setSelected(target)
+    })()
+      .catch((cause: unknown) => {
+        console.error('No fue posible abrir la Compra desde la notificación', cause)
+      })
+    return () => {
+      active = false
+    }
+  }, [initialPurchaseId, isAdmin, networkAvailable, purchases, user])
 
   useEffect(() => {
     if (!feedback) return

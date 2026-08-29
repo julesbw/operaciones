@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell, type PageId } from './components/AppShell'
+import type { NotificationNavigation } from './components/NotificationCenter'
 import { canAccessPage, hasCapability } from './domain/capabilities'
 import {
   ALL_STORES,
@@ -96,6 +97,8 @@ function App() {
   const [operatorSession, setOperatorSession] = useState<OperatorSession>()
   const userRef = useRef<UserProfile | undefined>(undefined)
   const [page, setPage] = useState<PageId>('home')
+  const [notificationTarget, setNotificationTarget] =
+    useState<NotificationNavigation>()
   const [attendanceStoreFilter, setAttendanceStoreFilter] =
     useState<StoreScopeValue>(ALL_STORES)
   const [stores, setStores] = useState<Store[]>([])
@@ -115,6 +118,10 @@ function App() {
   useEffect(() => {
     userRef.current = user
   }, [user])
+
+  useEffect(() => {
+    setNotificationTarget(undefined)
+  }, [user?.id])
 
   const refreshLocalState = useCallback(async () => {
     const [availableStores, inspector] = await Promise.all([
@@ -474,6 +481,7 @@ function App() {
   }
 
   function navigate(nextPage: PageId) {
+    setNotificationTarget(undefined)
     if (
       !user ||
       !canAccessPage(
@@ -484,6 +492,21 @@ function App() {
       setPage('home')
       return
     }
+    setPage(nextPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function navigateFromNotification(target: NotificationNavigation) {
+    if (!user) return
+    const nextPage: PageId = target.entityType === 'purchase'
+      ? 'purchases'
+      : target.entityType === 'merchandise_transfer'
+        ? 'transfers'
+        : 'closings'
+    if (!canAccessPage({ technicalUser: user, operatorSession }, nextPage)) {
+      return
+    }
+    setNotificationTarget(target)
     setPage(nextPage)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -589,6 +612,7 @@ function App() {
       backendReachable={backendReachable}
       currentPage={page}
       networkAvailable={networkAvailable}
+      notificationRefreshKey={revision}
       pendingCount={pendingCount}
       sessionRequired={state === 'awaiting-operator'}
       syncError={syncError}
@@ -598,6 +622,7 @@ function App() {
       syncing={syncing || state === 'recovering-session'}
       user={user}
       onNavigate={navigate}
+      onOpenNotification={navigateFromNotification}
       onOpenSyncInspector={openSyncInspector}
       onRefreshSyncInspector={() => void refreshSyncInspector()}
       onSignOut={() => void signOut()}
@@ -629,6 +654,8 @@ function App() {
       {page === 'transfers' && (
         <TransfersPage
           dataRevision={revision}
+          initialTransferId={notificationTarget?.entityType === 'merchandise_transfer' ? notificationTarget.entityId : undefined}
+          networkAvailable={networkAvailable}
           operatorAccountId={operatorSession?.account.id ?? null}
           operatorSession={operatorSession}
           stores={stores}
@@ -656,6 +683,7 @@ function App() {
       ) && (
         <PurchasesPage
           dataRevision={revision}
+          initialPurchaseId={notificationTarget?.entityType === 'purchase' ? notificationTarget.entityId : undefined}
           networkAvailable={networkAvailable}
           operatorSession={operatorSession}
           stores={stores}
@@ -669,6 +697,7 @@ function App() {
       ) && (
         <ClosingsPage
           dataRevision={revision}
+          initialClosingId={notificationTarget?.entityType === 'cash_closing' ? notificationTarget.entityId : undefined}
           networkAvailable={networkAvailable}
           stores={stores}
           user={user}

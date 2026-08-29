@@ -62,6 +62,8 @@ type TransfersPageProps = {
   operatorSession?: OperatorSession
   operatorAccountId?: string | null
   dataRevision?: number
+  networkAvailable?: boolean
+  initialTransferId?: string
   onDataChanged: () => void
   onSync?: () => Promise<void>
 }
@@ -105,10 +107,14 @@ export function TransfersPage({
   operatorSession,
   operatorAccountId,
   dataRevision = 0,
+  networkAvailable: networkAvailableProp,
+  initialTransferId,
   onDataChanged,
   onSync,
 }: TransfersPageProps) {
   const today = getOperationalDate()
+  const networkAvailable =
+    networkAvailableProp ?? connectivityService.isNetworkAvailable()
   const activeStores = useMemo(
     () => stores.filter((store) => store.status === 'active'),
     [stores],
@@ -143,6 +149,7 @@ export function TransfersPage({
     useState<MerchandiseTransfer>()
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const ticketInputRef = useRef<HTMLInputElement>(null)
+  const initialTransferResolutionRef = useRef<string | undefined>(undefined)
 
   const queryOriginStoreId = resolveTransferOriginStoreId(storeScope, storeFilter)
 
@@ -172,6 +179,42 @@ export function TransfersPage({
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (!initialTransferId) {
+      initialTransferResolutionRef.current = undefined
+      return
+    }
+    if (initialTransferResolutionRef.current === initialTransferId) return
+
+    const cached = transfers.find((transfer) => transfer.id === initialTransferId)
+    if (cached) {
+      setSelectedTransfer(cached)
+      initialTransferResolutionRef.current = initialTransferId
+      return
+    }
+    if (!networkAvailable) return
+    initialTransferResolutionRef.current = initialTransferId
+
+    let active = true
+    void (async () => {
+      let items = await transferService.list()
+      let target = items.find((transfer) => transfer.id === initialTransferId)
+      if (!target && isAdmin) {
+        await transferService.refreshRemote(user)
+        items = await transferService.list()
+        target = items.find((transfer) => transfer.id === initialTransferId)
+      }
+      if (!active) return
+      if (target) setSelectedTransfer(target)
+    })()
+      .catch((cause: unknown) => {
+        console.error('No fue posible abrir la Transferencia desde la notificación', cause)
+      })
+    return () => {
+      active = false
+    }
+  }, [initialTransferId, isAdmin, networkAvailable, transfers, user])
 
   useEffect(() => {
     if (

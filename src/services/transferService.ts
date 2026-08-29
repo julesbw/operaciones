@@ -2,8 +2,11 @@ import type {
   MerchandiseTransfer,
   MerchandiseTransferInput,
   SyncQueueItem,
+  UserProfile,
 } from '../domain/models'
+import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
+import type { MerchandiseTransferRow } from '../types/database'
 import { getOperationalDate } from '../utils/date'
 
 export class TransferValidationError extends Error {
@@ -72,6 +75,24 @@ export function sumTransferAmounts(
   return cents / 100
 }
 
+function mapRemoteTransfer(row: MerchandiseTransferRow): MerchandiseTransfer {
+  return {
+    id: row.id,
+    originStoreId: row.origin_store_id,
+    destinationStoreId: row.destination_store_id,
+    ticketNumber: row.ticket_number,
+    amount: Number(row.amount),
+    businessDate: row.business_date,
+    notes: row.notes ?? undefined,
+    createdBy: row.created_by,
+    operatorAccountId: row.created_by_operator_account_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    version: row.version,
+    syncStatus: 'synced',
+  }
+}
+
 class TransferService {
   async create(
     input: MerchandiseTransferInput,
@@ -121,6 +142,20 @@ class TransferService {
       originStoreId,
       dateFrom,
       dateTo,
+    )
+  }
+
+  async refreshRemote(user: UserProfile): Promise<void> {
+    if (user.role !== 'admin' || !supabase) return
+    const { data, error } = await supabase
+      .from('merchandise_transfers')
+      .select(
+        'id, origin_store_id, destination_store_id, ticket_number, amount, business_date, notes, created_by, created_by_operator_account_id, created_at, updated_at, version',
+      )
+      .returns<MerchandiseTransferRow[]>()
+    if (error) throw error
+    await operationsRepository.saveRemoteMerchandiseTransfers(
+      data.map(mapRemoteTransfer),
     )
   }
 

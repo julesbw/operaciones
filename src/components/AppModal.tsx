@@ -12,11 +12,15 @@ type AppModalProps = {
   closeDisabled?: boolean
   closeLabel: string
   eyebrow?: string
+  headerContent?: ReactNode
   hasUnsavedChanges?: boolean
   initialFocusRef?: RefObject<HTMLElement | null>
   open: boolean
   returnFocusRef?: RefObject<HTMLElement | null>
+  scrollableContent?: boolean
   title: string
+  cardClassName?: string
+  overlayClassName?: string
   onClose: () => void
 }
 
@@ -25,11 +29,15 @@ export function AppModal({
   closeDisabled = false,
   closeLabel,
   eyebrow,
+  headerContent,
   hasUnsavedChanges = false,
   initialFocusRef,
   open,
   returnFocusRef,
+  scrollableContent = false,
   title,
+  cardClassName,
+  overlayClassName,
   onClose,
 }: AppModalProps) {
   const titleId = useId()
@@ -120,42 +128,61 @@ export function AppModal({
 
   if (!open) return null
 
+  const overlayClasses = [
+    'app-modal-overlay fixed inset-0 z-[60] flex min-h-dvh items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]',
+    overlayClassName,
+  ].filter(Boolean).join(' ')
+  const cardClasses = [
+    'app-modal-card w-full max-w-[440px] rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6',
+    scrollableContent
+      ? 'flex min-h-0 max-h-[calc(100dvh-2rem)] flex-col overflow-hidden'
+      : 'max-h-[calc(100dvh-2rem)] overflow-y-auto',
+    cardClassName,
+  ].filter(Boolean).join(' ')
+
   return (
     <div
-      className="app-modal-overlay fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]"
+      className={overlayClasses}
       role="presentation"
       onClick={() => requestClose()}
     >
       <div
         aria-labelledby={titleId}
         aria-modal="true"
-        className="app-modal-card max-h-[calc(100dvh-2rem)] w-full max-w-[440px] overflow-y-auto rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
+        className={cardClasses}
         ref={cardRef}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-            <h2
-              className={`${eyebrow ? 'mt-1' : ''} text-2xl font-black text-slate-950`}
-              id={titleId}
+        <div className="shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+              <h2
+                className={`${eyebrow ? 'mt-1' : ''} text-2xl font-black text-slate-950`}
+                id={titleId}
+              >
+                {title}
+              </h2>
+            </div>
+            <button
+              aria-label={closeLabel}
+              className="icon-button shrink-0"
+              disabled={closeDisabled}
+              ref={closeButtonRef}
+              type="button"
+              onClick={() => requestClose(true)}
             >
-              {title}
-            </h2>
+              <XIcon className="size-5" />
+            </button>
           </div>
-          <button
-            aria-label={closeLabel}
-            className="icon-button shrink-0"
-            disabled={closeDisabled}
-            ref={closeButtonRef}
-            type="button"
-            onClick={() => requestClose(true)}
-          >
-            <XIcon className="size-5" />
-          </button>
+          {headerContent}
         </div>
-        {children}
+        {scrollableContent ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {children}
+          </div>
+        ) : children}
       </div>
     </div>
   )

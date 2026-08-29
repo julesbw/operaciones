@@ -128,6 +128,8 @@ describe('AppShell administrative navigation', () => {
     expect(cashierMarkup).not.toContain('Caja Central')
     expect(adminMarkup).toContain('Caja Central')
     expect(cashierMarkup).toContain('Colaboradores')
+    expect(cashierMarkup).not.toContain('aria-label="Notificaciones"')
+    expect(adminMarkup).toContain('aria-label="Notificaciones"')
   })
 })
 

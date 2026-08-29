@@ -10,6 +10,8 @@ import type {
   PaymentFundingSource,
   ClosingReconciliationMode,
   StoreStatus,
+  NotificationEntityType,
+  NotificationEventType,
 } from '../domain/models'
 import type {
   ExportBatchStatus,
@@ -314,6 +316,28 @@ export type PurchasePaymentRow = {
   paid_at: string
   created_by: string
   created_at: string
+}
+
+export type NotificationRow = {
+  id: string
+  event_type: NotificationEventType
+  title: string
+  message: string
+  store_id: string | null
+  store_name: string | null
+  entity_type: NotificationEntityType
+  entity_id: string
+  actor_operator_account_id: string | null
+  actor_auth_user_id: string | null
+  created_at: string
+  read_at: string | null
+}
+
+export type NotificationRecipientRow = {
+  notification_id: string
+  recipient_type: 'auth_user' | 'app_account'
+  recipient_id: string
+  read_at: string | null
 }
 
 export type CentralCashReceiptRow = {
@@ -655,6 +679,12 @@ export type Database = {
       >
       export_batches: TableDefinition<ExportBatchRow, never, never>
       export_batch_items: TableDefinition<ExportBatchItemRow, never, never>
+      notifications: TableDefinition<NotificationRow, never, never>
+      notification_recipients: TableDefinition<
+        NotificationRecipientRow,
+        never,
+        never
+      >
     }
     Views: Record<string, never>
     Functions: {
@@ -989,6 +1019,22 @@ export type Database = {
       revoke_app_session: {
         Args: { p_session_token: string }
         Returns: undefined
+      }
+      list_notifications: {
+        Args: { p_limit: number }
+        Returns: NotificationRow[]
+      }
+      count_unread_notifications: {
+        Args: Record<never, never>
+        Returns: number
+      }
+      mark_notification_read: {
+        Args: { p_notification_id: string }
+        Returns: boolean
+      }
+      mark_all_notifications_read: {
+        Args: Record<never, never>
+        Returns: number
       }
     }
     Enums: Record<string, never>

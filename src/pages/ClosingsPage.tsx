@@ -74,6 +74,7 @@ type ClosingsPageProps = {
   operatorSession?: OperatorSession
   dataRevision?: number
   networkAvailable?: boolean
+  initialClosingId?: string
 }
 
 type DraftSaveState = 'idle' | 'saving' | 'saved'
@@ -716,6 +717,7 @@ export function ClosingsPage({
   operatorSession,
   dataRevision = 0,
   networkAvailable: networkAvailableProp,
+  initialClosingId,
 }: ClosingsPageProps) {
   const today = getLocalDate()
   const networkAvailable =
@@ -855,6 +857,12 @@ export function ClosingsPage({
     user,
     view.kind,
   ])
+
+  useEffect(() => {
+    if (initialClosingId) {
+      setView({ kind: 'detail', closingId: initialClosingId })
+    }
+  }, [initialClosingId])
 
   const historyEntries = useMemo<ClosingHistoryEntry[]>(() => {
     const entries: ClosingHistoryEntry[] = [

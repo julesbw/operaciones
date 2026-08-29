@@ -39,6 +39,10 @@ import {
   WalletIcon,
   XIcon,
 } from './icons'
+import {
+  NotificationCenter,
+  type NotificationNavigation,
+} from './NotificationCenter'
 import { SyncInspectorModal } from './SyncInspectorModal'
 
 export type { PageId } from '../domain/capabilities'
@@ -132,6 +136,8 @@ type AppShellProps = {
   syncInspector?: SyncInspectorSnapshot
   syncInspectorError?: string
   syncInspectorLoading?: boolean
+  notificationRefreshKey?: number
+  onOpenNotification?: (navigation: NotificationNavigation) => void
 }
 
 const EMPTY_SYNC_INSPECTOR: SyncInspectorSnapshot = {
@@ -214,6 +220,8 @@ export function AppShell({
   syncInspector = EMPTY_SYNC_INSPECTOR,
   syncInspectorError,
   syncInspectorLoading = false,
+  notificationRefreshKey = 0,
+  onOpenNotification,
 }: AppShellProps) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
@@ -515,6 +523,13 @@ export function AppShell({
           </div>
 
           <div className="ml-auto flex items-center gap-2">
+            <NotificationCenter
+              activePage={currentPage}
+              enabled={user.role === 'admin'}
+              networkAvailable={networkAvailable}
+              onOpenEntity={onOpenNotification ?? (() => undefined)}
+              refreshKey={notificationRefreshKey}
+            />
             <button
               aria-label="Abrir detalle de sincronización"
               className={`sync-pill ${!networkAvailable || backendReachable === false ? 'sync-pill-offline' : ''}`}
