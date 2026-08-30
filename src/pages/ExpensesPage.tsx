@@ -10,6 +10,7 @@ import { AppModal } from '../components/AppModal'
 import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   CheckIcon,
   PlusIcon,
@@ -489,7 +490,7 @@ export function ExpensesPage({
             <ReceiptIcon className="size-5 shrink-0 text-slate-400" />
           </div>
 
-          {loading && <p className="empty-state">Cargando gastos…</p>}
+          {loading && !loadError && <ListPageSkeleton rowsOnly rows={4} />}
           {!loading && loadError && (
             <div className="p-5 sm:p-6">
               <div className="alert-error" role="alert">{loadError}</div>

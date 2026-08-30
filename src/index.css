@@ -176,7 +176,35 @@ button:disabled {
   }
 }
 
+@keyframes skeleton-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
 @layer components {
+  .skeleton-block {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    background: #e7ded2;
+  }
+
+  .skeleton-block::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    background: linear-gradient(90deg, transparent, rgb(251 248 242 / 0.72), transparent);
+    animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+
+  .skeleton-block-dark {
+    background: rgb(255 255 255 / 0.2);
+  }
+
+  .skeleton-block-dark::after {
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.22), transparent);
+  }
+
   .sidebar {
     @apply sticky top-0 self-start h-dvh flex-col border-r border-slate-200 bg-white px-5 py-6;
   }
@@ -708,6 +736,10 @@ button:disabled {
   .app-modal-overlay,
   .app-modal-card {
     animation-duration: 1ms;
+  }
+
+  .skeleton-block::after {
+    animation: none;
   }
 }
 

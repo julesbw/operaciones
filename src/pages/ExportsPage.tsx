@@ -4,6 +4,7 @@ import {
   type FilterChipOption,
 } from '../components/filters/FilterChipGroup'
 import { DatePickerButton } from '../components/DatePickerButton'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -557,7 +558,7 @@ export function ExportsPage({
           </p>
         )}
         {error && <p className="alert-error">{error}</p>}
-        {loading && <p className="empty-state">Consultando exportaciones…</p>}
+        {loading && !error && <ListPageSkeleton rowsOnly rows={5} />}
 
         {!loading && tab === 'pending' && candidates.length === 0 && (
           <div className="panel empty-state">

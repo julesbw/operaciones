@@ -5,6 +5,7 @@ import {
   useState,
 } from 'react'
 import { AppModal } from '../components/AppModal'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -250,8 +251,10 @@ export function PaymentsPage({
         />
       </div>
 
-      {loading ? (
-        <p className="empty-state mt-6">Preparando pagos…</p>
+      {loading && !error ? (
+        <div className="panel mt-6 overflow-hidden p-0">
+          <ListPageSkeleton rowsOnly rows={5} />
+        </div>
       ) : tab === 'pending' ? (
         visibleStates.length === 0 ? (
           <div className="panel mt-6 border-dashed text-center">

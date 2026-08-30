@@ -11,6 +11,7 @@ import {
   StoreScopeSelector,
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   ArrowIcon,
   CashIcon,
@@ -466,7 +467,7 @@ function ClosingDetailView({
       </section>
     )
   }
-  if (!detail) return <p className="empty-state">Cargando corte…</p>
+  if (!detail) return <ListPageSkeleton rowsOnly rows={6} />
 
   const { closing, expenses, transfers, payments, purchases, adjustments } = detail
   const storeName = stores.find((store) => store.id === closing.store_id)?.name
@@ -1011,7 +1012,7 @@ export function ClosingsPage({
           </p>
         )}
         {loadError && <p className="alert-error">{loadError}</p>}
-        {loading && <p className="empty-state">Consultando cortes…</p>}
+        {loading && !loadError && <ListPageSkeleton rowsOnly rows={5} />}
         {!loading && !loadError && historyEntries.length === 0 && (
           <div className="panel empty-state">
             <CashIcon className="mx-auto mb-3 size-8" />
@@ -1483,7 +1484,11 @@ function ClosingFlow({
         <p className="alert-success mt-6"><CheckIcon className="size-5" />{message}</p>
       )}
 
-      {loading && <p className="empty-state">Preparando corte…</p>}
+      {loading && !error && (
+        <div className="panel mt-6 overflow-hidden p-0">
+          <ListPageSkeleton rowsOnly rows={4} />
+        </div>
+      )}
 
       {!loading && draft && summary && (
         <div className="mx-auto mt-6 max-w-3xl">

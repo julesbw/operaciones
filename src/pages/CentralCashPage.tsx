@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AppModal } from '../components/AppModal'
 import { BillCounter } from '../components/BillCounter'
 import { DatePickerButton } from '../components/DatePickerButton'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   FilterChipGroup,
   type FilterChipOption,
@@ -548,7 +549,7 @@ export function CentralCashPage({
         )}
         {error && <p className="alert-error">{error}</p>}
         {message && <p className="alert-success">{message}</p>}
-        {loading && <p className="empty-state">Consultando Caja Central…</p>}
+        {loading && !error && <ListPageSkeleton rowsOnly rows={5} />}
 
         {!loading && tab === 'movements' && movements.length === 0 && (
           <div className="panel empty-state lg:py-8">

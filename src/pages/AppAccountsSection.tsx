@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { AppModal } from '../components/AppModal'
+import { SettingsSkeleton } from '../components/Skeletons'
 import type { AppAccount, AppAccountRole, Collaborator, Store } from '../domain/models'
 import {
   appAccountService,
@@ -217,8 +218,8 @@ export function AppAccountsSection({
 
       <article className="panel mt-5 p-0">
         <div className="divide-y divide-slate-100">
-          {loading ? (
-            <p className="p-5 text-sm text-slate-500">Cargando usuarios…</p>
+          {loading && !error ? (
+            <SettingsSkeleton rowsOnly rows={4} />
           ) : accounts.length === 0 ? (
             <div className="empty-state">
               <p className="font-bold text-slate-700">Aún no hay usuarios operativos</p>

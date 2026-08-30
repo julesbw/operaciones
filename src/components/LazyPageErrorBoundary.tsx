@@ -7,7 +7,7 @@ import {
   isDynamicImportChunkError,
   lazyChunkRecoveryService,
 } from '../services/lazyChunkRecovery'
-import { LazyPageFallback } from './LazyPageFallback'
+import { ListPageSkeleton } from './Skeletons'
 
 type LazyPageErrorBoundaryProps = {
   children: ReactNode
@@ -122,7 +122,7 @@ export class LazyPageErrorBoundary extends Component<
     if (!this.state.error) return this.props.children
     if (isDynamicImportChunkError(this.state.error)) {
       return this.state.recovering ? (
-        <LazyPageFallback message="Actualizando la aplicación…" />
+        <ListPageSkeleton />
       ) : (
         <ManualRecoveryFallback />
       )

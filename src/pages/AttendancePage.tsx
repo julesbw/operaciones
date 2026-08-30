@@ -4,6 +4,7 @@ import {
   StoreScopeSelector,
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   getRuntimeStoreScope,
   hasCapability,
@@ -368,7 +369,7 @@ export function AttendancePage({
           </div>
 
           {error && <p className="alert-error m-5">{error}</p>}
-          {loading && <p className="empty-state">Preparando la lista…</p>}
+          {loading && !error && <ListPageSkeleton rowsOnly rows={5} />}
           {!loading && collaborators.length === 0 && !error && (
             <p className="empty-state">
               {isGlobalView

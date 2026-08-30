@@ -10,6 +10,7 @@ import { AppModal } from '../components/AppModal'
 import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -459,8 +460,10 @@ export function PurchasesPage({
         </div>
       </div>
 
-      {loading ? (
-        <p className="mt-8 text-center text-sm text-slate-500">Cargando Compras…</p>
+      {loading && !error ? (
+        <div className="panel mt-6 overflow-hidden p-0">
+          <ListPageSkeleton rowsOnly rows={5} />
+        </div>
       ) : grouped.length === 0 ? (
         <div className="panel mt-6 border-dashed text-center">
           <ReceiptIcon className="mx-auto size-9 text-slate-300" />

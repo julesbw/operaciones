@@ -17,7 +17,9 @@ describe('LazyPageErrorBoundary', () => {
     }
 
     const markup = renderToStaticMarkup(boundary.render())
-    expect(markup).toContain('Actualizando la aplicación…')
+    expect(markup).toContain('aria-label="Cargando lista"')
+    expect(markup).toContain('skeleton-block')
+    expect(markup).not.toContain('Cargando sección')
   })
 
   it('shows a manual update action after chunk recovery is exhausted', () => {

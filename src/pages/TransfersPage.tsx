@@ -13,6 +13,7 @@ import {
   StoreScopeSelector,
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
+import { ListPageSkeleton } from '../components/Skeletons'
 import {
   getRuntimeStoreScope,
   hasCapability,
@@ -461,7 +462,7 @@ export function TransfersPage({
             <TransferIcon className="size-5 shrink-0 text-slate-400" />
           </div>
 
-          {loading && <p className="empty-state">Cargando transferencias…</p>}
+          {loading && !loadError && <ListPageSkeleton rowsOnly rows={4} />}
           {!loading && loadError && (
             <div className="p-5 sm:p-6">
               <div className="alert-error" role="alert">

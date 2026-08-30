@@ -7,7 +7,10 @@ import {
 } from 'react'
 import { AppShell, type PageId } from './components/AppShell'
 import { LazyPageErrorBoundary } from './components/LazyPageErrorBoundary'
-import { LazyPageFallback } from './components/LazyPageFallback'
+import {
+  DashboardSkeleton,
+  DelayedSkeletonFallback,
+} from './components/Skeletons'
 import { lazyNamedPage } from './components/lazyPage'
 import { canAccessPage } from './domain/capabilities'
 import {
@@ -454,6 +457,9 @@ function App() {
   async function signedIn(profile: UserProfile) {
     setAttendanceStoreFilter(ALL_STORES)
     setStartupNotice(undefined)
+    setUser(profile)
+    setOperatorSession(undefined)
+    setState('recovering-session')
     await runRemoteBootstrap(profile)
   }
 
@@ -751,19 +757,29 @@ function App() {
       onSync={() => void syncCurrentSession(true)}
     >
       <LazyPageErrorBoundary resetKey={page}>
-        <Suspense fallback={<LazyPageFallback />}>
+        <Suspense
+          fallback={(
+            <DelayedSkeletonFallback
+              kind={page === 'home' ? 'dashboard' : page === 'settings' ? 'settings' : 'list'}
+            />
+          )}
+        >
           {page === 'home' && canAccessPage(
             { technicalUser: user, operatorSession },
             'home',
           ) && (
-            <DashboardPage
-              operatorSession={operatorSession}
-              pendingCount={pendingCount}
-              revision={revision}
-              stores={stores}
-              user={user}
-              onNavigate={navigate}
-            />
+            state === 'recovering-session' && user.role === 'admin' ? (
+              <DashboardSkeleton />
+            ) : (
+              <DashboardPage
+                operatorSession={operatorSession}
+                pendingCount={pendingCount}
+                revision={revision}
+                stores={stores}
+                user={user}
+                onNavigate={navigate}
+              />
+            )
           )}
           {page === 'expenses' && canAccessPage(
             { technicalUser: user, operatorSession },

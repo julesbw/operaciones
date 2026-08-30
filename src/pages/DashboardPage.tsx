@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { DashboardSkeleton } from '../components/Skeletons'
 import type { OperatorSession, Store, UserProfile } from '../domain/models'
 import { getEffectiveDisplayName } from '../domain/runtimeIdentity'
 import { ArrowIcon, CashIcon, ReceiptIcon, UsersIcon } from '../components/icons'
@@ -34,14 +35,19 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const [todayExpenses, setTodayExpenses] = useState(0)
   const [attendanceCount, setAttendanceCount] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string>()
   const today = getLocalDate()
   const displayName = getEffectiveDisplayName(user, operatorSession ?? null)
   const firstName = displayName.trim().split(/\s+/)[0] || 'bienvenido'
 
   useEffect(() => {
+    let active = true
     const storeIds = user.storeId
       ? [user.storeId]
       : stores.filter((store) => store.status === 'active').map((store) => store.id)
+    setLoading(true)
+    setLoadError(undefined)
     void Promise.all(
       storeIds.map(async (storeId) => {
         const [expenseTotal, attendance] = await Promise.all([
@@ -51,17 +57,30 @@ export function DashboardPage({
         return { expenseTotal, attendanceCount: attendance.length }
       }),
     ).then((summaries) => {
+      if (!active) return
       setTodayExpenses(
         summaries.reduce((total, summary) => total + summary.expenseTotal, 0),
       )
       setAttendanceCount(
         summaries.reduce((total, summary) => total + summary.attendanceCount, 0),
       )
+    }).catch((cause: unknown) => {
+      if (!active) return
+      console.error('No fue posible cargar el resumen del dashboard', cause)
+      setLoadError('No fue posible actualizar el resumen.')
+    }).finally(() => {
+      if (active) setLoading(false)
     })
+    return () => {
+      active = false
+    }
   }, [revision, stores, today, user.storeId])
+
+  if (loading && !loadError) return <DashboardSkeleton />
 
   return (
     <section>
+      {loadError && <p className="alert-error mb-5" role="alert">{loadError}</p>}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-3 text-[11px] font-extrabold uppercase tracking-[0.16em] text-teal-700 sm:text-xs">
