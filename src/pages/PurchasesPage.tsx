@@ -89,7 +89,6 @@ export function PurchasesPage({
   onDataChanged,
 }: PurchasesPageProps) {
   const today = getLocalDate()
-  const monthStart = `${today.slice(0, 8)}01`
   const activeStores = useMemo(
     () => stores.filter((store) => store.status === 'active'),
     [stores],
@@ -107,7 +106,7 @@ export function PurchasesPage({
   const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(
     isAdmin ? ALL_STORES : assignedStoreId,
   )
-  const [dateFrom, setDateFrom] = useState(monthStart)
+  const [dateFrom, setDateFrom] = useState(`${today}`)
   const [dateTo, setDateTo] = useState(today)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

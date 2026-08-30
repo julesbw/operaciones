@@ -735,7 +735,7 @@ export function ClosingsPage({
   const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(
     isAdmin ? ALL_STORES : assignedStoreId,
   )
-  const [dateFrom, setDateFrom] = useState(`${today.slice(0, 8)}01`)
+  const [dateFrom, setDateFrom] = useState(`${today}`)
   const [dateTo, setDateTo] = useState(today)
   const [statusFilter, setStatusFilter] =
     useState<ClosingStatusFilter>('all')

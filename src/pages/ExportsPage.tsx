@@ -364,7 +364,7 @@ export function ExportsPage({
   const today = getOperationalDate()
   const [tab, setTab] = useState<ExportTab>('pending')
   const [storeFilter, setStoreFilter] = useState<StoreScopeValue>(ALL_STORES)
-  const [dateFrom, setDateFrom] = useState(`${today.slice(0, 8)}01`)
+  const [dateFrom, setDateFrom] = useState(`${today}`)
   const [dateTo, setDateTo] = useState(today)
   const [candidates, setCandidates] = useState<ExportCandidate[]>([])
   const [batches, setBatches] = useState<ExportBatch[]>([])
