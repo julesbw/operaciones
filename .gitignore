@@ -6,3 +6,4 @@ dist
 *.local
 coverage
 
+supabase/.temp/
