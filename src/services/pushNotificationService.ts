@@ -45,9 +45,53 @@ type NavigatorWithStandalone = Navigator & {
 }
 
 const PUBLIC_KEY_ENV_NAME = 'VITE_WEB_PUSH_VAPID_PUBLIC_KEY'
+const LOCAL_PUSH_DISABLED_KEY = 'operaciones-push-disabled'
+const LOGOUT_CLEANUP_TIMEOUT_MS = 5_000
 
 function publicVapidKey(): string {
   return import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY?.trim() ?? ''
+}
+
+function isLocallyDisabled(): boolean {
+  if (typeof localStorage === 'undefined') return false
+  try {
+    return localStorage.getItem(LOCAL_PUSH_DISABLED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markLocallyDisabled(): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(LOCAL_PUSH_DISABLED_KEY, '1')
+  } catch {
+    // La suscripción remota y la del navegador siguen siendo la fuente principal.
+  }
+}
+
+function clearLocallyDisabled(): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.removeItem(LOCAL_PUSH_DISABLED_KEY)
+  } catch {
+    // La activación remota ya quedó registrada aunque no se pueda limpiar la marca.
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new PushNotificationError(
+        'La limpieza de notificaciones tardó demasiado.',
+        'error',
+      ))
+    }, timeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
+  })
 }
 
 function isIosOrIpados(): boolean {
@@ -173,6 +217,7 @@ export class PushNotificationService {
     const permission = Notification.permission
     if (permission === 'denied') return { state: 'permission-denied' }
     if (permission === 'default') return { state: 'permission-default' }
+    if (isLocallyDisabled()) return { state: 'disabled' }
 
     try {
       const registration = await readyRegistration()
@@ -223,8 +268,25 @@ export class PushNotificationService {
     }
 
     const registration = await readyRegistration()
+    const renewAfterLogout = isLocallyDisabled()
     let subscription = await registration.pushManager.getSubscription()
     let createdLocally = false
+
+    if (subscription && renewAfterLogout) {
+      try {
+        const unsubscribed = await subscription.unsubscribe()
+        if (!unsubscribed) {
+          throw new Error('El navegador no confirmó la renovación.')
+        }
+      } catch (cause: unknown) {
+        throw new PushNotificationError(
+          cause instanceof Error
+            ? cause.message
+            : 'No fue posible preparar la activación Push.',
+        )
+      }
+      subscription = null
+    }
 
     if (!subscription) {
       if (permission !== 'granted') {
@@ -274,6 +336,7 @@ export class PushNotificationService {
       )
     }
 
+    clearLocallyDisabled()
     return { state: 'enabled' }
   }
 
@@ -287,29 +350,60 @@ export class PushNotificationService {
     }
     if (!supabase) throw new PushNotificationError('Supabase no está configurado.')
 
+    markLocallyDisabled()
     const registration = await readyRegistration()
     const subscription = await registration.pushManager.getSubscription()
     if (!subscription) return { state: 'disabled' }
 
-    const { error } = await supabase.rpc('revoke_push_subscription', {
-      p_endpoint: subscription.endpoint,
-    })
-    if (error) throw new PushNotificationError('No fue posible desactivar Push.')
+    let revokeFailed = false
+    try {
+      const { error } = await supabase.rpc('revoke_push_subscription', {
+        p_endpoint: subscription.endpoint,
+      })
+      if (error) revokeFailed = true
+    } catch {
+      revokeFailed = true
+    }
 
+    let unsubscribeFailed = false
     try {
       const unsubscribed = await subscription.unsubscribe()
       if (!unsubscribed) {
-        throw new Error('El navegador no confirmó la desactivación.')
+        unsubscribeFailed = true
       }
-    } catch (cause: unknown) {
+    } catch {
+      unsubscribeFailed = true
+    }
+
+    if (revokeFailed) {
       throw new PushNotificationError(
-        cause instanceof Error
-          ? cause.message
-          : 'No fue posible quitar la suscripción de este dispositivo.',
+        'No fue posible revocar la suscripción Push en el servidor.',
+        'error',
+      )
+    }
+    if (unsubscribeFailed) {
+      throw new PushNotificationError(
+        'No fue posible quitar la suscripción Push del navegador.',
+        'error',
       )
     }
 
     return { state: 'disabled' }
+  }
+
+  async disableForLogout(): Promise<void> {
+    const initial = unsupportedStatus()
+    if (initial.state !== 'disabled') return
+
+    markLocallyDisabled()
+    try {
+      await withTimeout(this.disable(), LOGOUT_CLEANUP_TIMEOUT_MS)
+    } catch (cause: unknown) {
+      const detail = cause instanceof PushNotificationError
+        ? cause.message
+        : 'No fue posible limpiar la suscripción Push.'
+      console.error('No fue posible limpiar Push durante el logout', detail)
+    }
   }
 }
 

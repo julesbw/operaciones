@@ -101,6 +101,15 @@ describe('SyncService manual retry', () => {
     mocks.refreshCashClosings.mockResolvedValue([])
   })
 
+  it('does not classify transient transport failures as authentication failures', () => {
+    expect(isSyncAuthenticationFailure(new Error('Failed to fetch'))).toBe(false)
+    expect(
+      isSyncAuthenticationFailure({ status: 503, message: 'Service Unavailable' }),
+    ).toBe(false)
+    expect(isSyncAuthenticationFailure({ status: 401 })).toBe(true)
+    expect(isSyncAuthenticationFailure({ code: 'invalid_refresh_token' })).toBe(true)
+  })
+
   it('bypasses backoff only when forceRetry is requested', async () => {
     const query = {
       select: vi.fn().mockReturnThis(),

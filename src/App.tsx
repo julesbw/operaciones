@@ -237,7 +237,7 @@ function App() {
         })
 
         if (result.status === 'requires-login') {
-          await clearOperatorSession()
+          await clearTechnicalSession()
           const context = await localContextService.load()
           setLocalContext(context)
           setUser(undefined)

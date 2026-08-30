@@ -32,6 +32,11 @@ function createSubscription() {
 const getSubscription = vi.fn()
 const subscribe = vi.fn()
 const requestPermission = vi.fn()
+const localStorageMock = {
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+}
 
 beforeEach(() => {
   vi.stubEnv('VITE_WEB_PUSH_VAPID_PUBLIC_KEY', publicKey)
@@ -54,13 +59,18 @@ beforeEach(() => {
     permission: 'default',
     requestPermission,
   })
+  vi.stubGlobal('localStorage', localStorageMock)
   mocks.rpc.mockReset()
   getSubscription.mockReset()
   subscribe.mockReset()
   requestPermission.mockReset()
+  localStorageMock.getItem.mockReset()
+  localStorageMock.setItem.mockReset()
+  localStorageMock.removeItem.mockReset()
   requestPermission.mockResolvedValue('granted')
   mocks.rpc.mockResolvedValue({ data: 'subscription-id', error: null })
   getSubscription.mockResolvedValue(null)
+  localStorageMock.getItem.mockReturnValue(null)
 })
 
 describe('pushNotificationService', () => {
@@ -160,5 +170,32 @@ describe('pushNotificationService', () => {
       state: 'disabled',
     })
     expect(order).toEqual(['revoke', 'unsubscribe'])
+  })
+
+  it('unsubscribes locally even when remote revocation fails', async () => {
+    const subscription = createSubscription()
+    getSubscription.mockResolvedValue(subscription)
+    mocks.rpc.mockResolvedValue({ data: null, error: new Error('remote failure') })
+
+    await expect(pushNotificationService.disable()).rejects.toMatchObject({
+      message: 'No fue posible revocar la suscripción Push en el servidor.',
+    })
+    expect(subscription.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      'operaciones-push-disabled',
+      '1',
+    )
+  })
+
+  it('keeps Push disabled after logout until explicit activation', async () => {
+    localStorageMock.getItem.mockReturnValue('1')
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+    const subscription = createSubscription()
+    getSubscription.mockResolvedValue(subscription)
+
+    await expect(pushNotificationService.getStatus()).resolves.toEqual({
+      state: 'disabled',
+    })
+    expect(getSubscription).not.toHaveBeenCalled()
   })
 })

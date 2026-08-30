@@ -90,6 +90,21 @@ posteriores invocaciones.
 La migración, los secrets, el webhook y el scheduler no se aplican
 automáticamente desde este repositorio.
 
+## Logout y cambio de usuario
+
+`authService.signOut()` ejecuta primero la limpieza del dispositivo actual
+mediante `pushNotificationService.disableForLogout()`: revoca el endpoint de
+`operaciones` para el administrador autenticado y después llama a
+`PushSubscription.unsubscribe()`. El logout de Supabase usa alcance local para
+no invalidar sesiones del mismo usuario en otros dispositivos. Si alguna de
+estas operaciones falla, se registra un diagnóstico seguro y el logout de
+Supabase continúa.
+
+La activación explícita elimina la marca local de Push desactivado. Por eso, al
+volver a iniciar sesión en el dispositivo, Push aparece desactivado y no se
+reactiva ni solicita permiso automáticamente. Cerrar la PWA o bloquear el
+teléfono no ejecuta este flujo y mantiene la suscripción activa.
+
 ## Pruebas y operación
 
 Antes de habilitar la UI en producción:
