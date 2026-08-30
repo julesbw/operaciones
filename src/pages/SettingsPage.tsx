@@ -580,7 +580,7 @@ export function SettingsPage({
         <h1 className="page-title">Ajustes</h1>
       </div>
 
-      <div className="mt-4 flex max-w-full gap-2 overflow-x-auto overscroll-x-contain border-b border-slate-200">
+      <div className="mt-4 flex max-w-full flex-nowrap gap-2 overflow-x-auto overflow-y-hidden overscroll-x-contain border-b border-slate-200">
         {isAdmin && (
           <button className={tab === 'stores' ? 'tab-active' : 'tab-item'} type="button" onClick={() => setTab('stores')}>
             <StoreIcon className="size-4" /> Tiendas

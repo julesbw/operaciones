@@ -41,6 +41,14 @@ describe('SettingsPage operational users', () => {
     expect(render({ id: 'admin', fullName: 'Admin', role: 'admin' })).toContain('Usuarios')
   })
 
+  it('keeps the settings page selector horizontal without vertical overflow', () => {
+    const markup = render({ id: 'admin', fullName: 'Admin', role: 'admin' })
+
+    expect(markup).toContain('flex-nowrap')
+    expect(markup).toContain('overflow-x-auto')
+    expect(markup).toContain('overflow-y-hidden')
+  })
+
   it('does not expose Usuarios to cashiers', () => {
     expect(render({ id: 'cashier', fullName: 'Caja', role: 'cashier', storeId: 'store-id' })).not.toContain('Usuarios')
   })
