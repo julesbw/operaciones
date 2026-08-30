@@ -12,6 +12,7 @@ import type {
   StoreStatus,
   NotificationEntityType,
   NotificationEventType,
+  NotificationSourceApp,
 } from '../domain/models'
 import type {
   ExportBatchStatus,
@@ -320,6 +321,7 @@ export type PurchasePaymentRow = {
 
 export type NotificationRow = {
   id: string
+  source_app: NotificationSourceApp
   event_type: NotificationEventType
   title: string
   message: string
@@ -1021,19 +1023,22 @@ export type Database = {
         Returns: undefined
       }
       list_notifications: {
-        Args: { p_limit: number }
+        Args: { p_source_app: NotificationSourceApp; p_limit: number }
         Returns: NotificationRow[]
       }
       count_unread_notifications: {
-        Args: Record<never, never>
+        Args: { p_source_app: NotificationSourceApp }
         Returns: number
       }
       mark_notification_read: {
-        Args: { p_notification_id: string }
+        Args: {
+          p_source_app: NotificationSourceApp
+          p_notification_id: string
+        }
         Returns: boolean
       }
       mark_all_notifications_read: {
-        Args: Record<never, never>
+        Args: { p_source_app: NotificationSourceApp }
         Returns: number
       }
     }

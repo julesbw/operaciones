@@ -40,6 +40,13 @@ export const NOTIFICATION_EVENT_TYPES = [
 ] as const
 export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number]
 
+export const NOTIFICATION_SOURCE_APPS = [
+  'operaciones',
+  'arrendamientos',
+] as const
+export type NotificationSourceApp = (typeof NOTIFICATION_SOURCE_APPS)[number]
+export const OPERATIONS_NOTIFICATION_SOURCE_APP = 'operaciones' as const
+
 export const NOTIFICATION_ENTITY_TYPES = [
   'purchase',
   'merchandise_transfer',
@@ -263,6 +270,7 @@ export type PaidPurchase = {
 
 export type InAppNotification = {
   id: string
+  sourceApp: NotificationSourceApp
   eventType: NotificationEventType
   title: string
   message: string

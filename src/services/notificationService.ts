@@ -1,10 +1,14 @@
-import type { InAppNotification } from '../domain/models'
+import {
+  OPERATIONS_NOTIFICATION_SOURCE_APP,
+  type InAppNotification,
+} from '../domain/models'
 import { supabase } from '../lib/supabase'
 import type { NotificationRow } from '../types/database'
 
 function mapNotification(row: NotificationRow): InAppNotification {
   return {
     id: row.id,
+    sourceApp: row.source_app,
     eventType: row.event_type,
     title: row.title,
     message: row.message,
@@ -27,8 +31,13 @@ class NotificationService {
     if (!supabase) return { notifications: [], unreadCount: 0 }
 
     const [listResult, countResult] = await Promise.all([
-      supabase.rpc('list_notifications', { p_limit: limit }),
-      supabase.rpc('count_unread_notifications'),
+      supabase.rpc('list_notifications', {
+        p_source_app: OPERATIONS_NOTIFICATION_SOURCE_APP,
+        p_limit: limit,
+      }),
+      supabase.rpc('count_unread_notifications', {
+        p_source_app: OPERATIONS_NOTIFICATION_SOURCE_APP,
+      }),
     ])
     if (listResult.error) throw listResult.error
     if (countResult.error) throw countResult.error
@@ -42,6 +51,7 @@ class NotificationService {
   async markRead(notificationId: string): Promise<boolean> {
     if (!supabase) return false
     const { data, error } = await supabase.rpc('mark_notification_read', {
+      p_source_app: OPERATIONS_NOTIFICATION_SOURCE_APP,
       p_notification_id: notificationId,
     })
     if (error) throw error
@@ -50,7 +60,9 @@ class NotificationService {
 
   async markAllRead(): Promise<number> {
     if (!supabase) return 0
-    const { data, error } = await supabase.rpc('mark_all_notifications_read')
+    const { data, error } = await supabase.rpc('mark_all_notifications_read', {
+      p_source_app: OPERATIONS_NOTIFICATION_SOURCE_APP,
+    })
     if (error) throw error
     return data
   }
