@@ -9,13 +9,11 @@ import type {
   NotificationEntityType,
 } from '../domain/models'
 import { notificationService } from '../services/notificationService'
+import type { NotificationNavigation } from '../services/pushNotificationNavigation'
 import { AppModal } from './AppModal'
 import { BellIcon, CheckIcon, SyncIcon } from './icons'
 
-export type NotificationNavigation = {
-  entityType: NotificationEntityType
-  entityId: string
-}
+export type { NotificationNavigation } from '../services/pushNotificationNavigation'
 
 type NotificationCenterProps = {
   activePage?: string
@@ -149,8 +147,10 @@ export function NotificationCenter({
     await markAsRead(notification)
     setOpen(false)
     onOpenEntity({
+      notificationId: notification.id,
       entityType: notification.entityType,
       entityId: notification.entityId,
+      source: 'in-app',
     })
   }
 

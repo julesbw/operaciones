@@ -75,6 +75,17 @@ Confirmar es online-required. El cliente genera `payment_id`, sincroniza asisten
 
 `weekly_payments` se conserva únicamente para compatibilidad histórica. Su RPC queda sin permiso de ejecución y ningún pago nuevo genera un registro en `expenses`; `collaborator_payments` es la única fuente de verdad nueva. El nombre remoto evita colisionar con `public.payments`, que pertenece a Arrendamientos en el proyecto Supabase compartido; Dexie mantiene `payments` como almacén local del módulo.
 
+## Web Push
+
+Web Push es una proyección secundaria de las notificaciones in-app. El trigger
+de `notification_recipients` crea una fila idempotente en
+`notification_deliveries` para cada suscripción activa de un administrador de
+Operaciones. Una Edge Function reclama esa fila, vuelve a validar el origen,
+destinatario y suscripción, y envía un payload construido desde la notificación
+persistida y la entidad referenciada. La entrega no escribe `read_at`; sólo el
+click validado en la PWA puede reutilizar la RPC de lectura. Consulta
+[`WEB_PUSH.md`](WEB_PUSH.md) para secrets, webhook, scheduler y rollback.
+
 ## Contexto de tienda en asistencias
 
 El filtro de Asistencias se conserva en `App` mientras dura la sesión de navegación. Para administración puede valer `all` o el UUID de una tienda; para cashier la página ignora cualquier filtro visual y deriva siempre la tienda desde `profile.store_id`.

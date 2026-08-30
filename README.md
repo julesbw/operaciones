@@ -52,4 +52,4 @@ npm run lint
 npm run build
 ```
 
-La explicación de capas, sincronización y decisiones de seguridad está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Compras y Proveedores se documentan en [`docs/PURCHASES.md`](docs/PURCHASES.md). Caja Central se documenta en [`docs/CENTRAL_CASH.md`](docs/CENTRAL_CASH.md). El contrato y flujo de lotes se documentan en [`docs/EXPORTS_V2.md`](docs/EXPORTS_V2.md). La paleta, tipografía y reglas de marca están en [`docs/VISUAL_IDENTITY.md`](docs/VISUAL_IDENTITY.md).
+La explicación de capas, sincronización y decisiones de seguridad está en [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Compras y Proveedores se documentan en [`docs/PURCHASES.md`](docs/PURCHASES.md). Caja Central se documenta en [`docs/CENTRAL_CASH.md`](docs/CENTRAL_CASH.md). El contrato y flujo de lotes se documentan en [`docs/EXPORTS_V2.md`](docs/EXPORTS_V2.md). El plan de Web Push está en [`docs/WEB_PUSH_PLAN.md`](docs/WEB_PUSH_PLAN.md) y su operación en [`docs/WEB_PUSH.md`](docs/WEB_PUSH.md). La paleta, tipografía y reglas de marca están en [`docs/VISUAL_IDENTITY.md`](docs/VISUAL_IDENTITY.md).

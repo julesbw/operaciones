@@ -10,6 +10,92 @@ const APP_SHELL = [
   '/apple-touch-icon-180x180.png',
   '/la-piedad-operaciones-ui.png',
 ]
+const PUSH_SOURCE_APP = 'operaciones'
+const PUSH_ICON = '/pwa-192x192.png'
+const PUSH_BADGE = '/pwa-64x64.png'
+const PUSH_TARGETS = {
+  PURCHASE_CREATED: 'purchase',
+  TRANSFER_CREATED: 'merchandise_transfer',
+  CASH_CLOSING_CLOSED: 'cash_closing',
+}
+
+function isUuid(value) {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  )
+}
+
+function validPushPayload(value) {
+  if (!value || typeof value !== 'object') return undefined
+  const expectedEntityType = PUSH_TARGETS[value.eventType]
+  if (
+    value.sourceApp !== PUSH_SOURCE_APP ||
+    !expectedEntityType ||
+    value.entityType !== expectedEntityType ||
+    !isUuid(value.notificationId) ||
+    !isUuid(value.entityId) ||
+    typeof value.title !== 'string' ||
+    value.title.trim().length === 0 ||
+    value.title.length > 160 ||
+    typeof value.body !== 'string' ||
+    value.body.trim().length === 0 ||
+    value.body.length > 500
+  ) {
+    return undefined
+  }
+  return {
+    notificationId: value.notificationId,
+    sourceApp: PUSH_SOURCE_APP,
+    eventType: value.eventType,
+    entityType: value.entityType,
+    entityId: value.entityId,
+    title: value.title.trim(),
+    body: value.body.trim(),
+  }
+}
+
+function validNotificationTarget(value) {
+  if (!value || typeof value !== 'object') return undefined
+  const expectedEntityType = PUSH_TARGETS[value.eventType]
+  if (
+    value.sourceApp !== PUSH_SOURCE_APP ||
+    !expectedEntityType ||
+    value.entityType !== expectedEntityType ||
+    !isUuid(value.notificationId) ||
+    !isUuid(value.entityId)
+  ) {
+    return undefined
+  }
+  return {
+    notificationId: value.notificationId,
+    sourceApp: PUSH_SOURCE_APP,
+    eventType: value.eventType,
+    entityType: value.entityType,
+    entityId: value.entityId,
+  }
+}
+
+function readPushPayload(event) {
+  if (!event.data) return undefined
+  try {
+    return validPushPayload(JSON.parse(event.data.text()))
+  } catch {
+    return undefined
+  }
+}
+
+function targetFromNotificationData(data) {
+  return validNotificationTarget(data)
+}
+
+function notificationTargetUrl(target) {
+  const url = new URL('/', self.location.origin)
+  url.searchParams.set('notificationId', target.notificationId)
+  url.searchParams.set('entityType', target.entityType)
+  url.searchParams.set('entityId', target.entityId)
+  return url.toString()
+}
 
 function assetsFromHtml(html) {
   return [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
@@ -72,6 +158,53 @@ self.addEventListener('message', (event) => {
     isAppShellReady().then((ready) => {
       event.ports[0]?.postMessage({ ready })
     }),
+  )
+})
+
+self.addEventListener('push', (event) => {
+  const payload = readPushPayload(event)
+  if (!payload) return
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: PUSH_ICON,
+      badge: PUSH_BADGE,
+      data: payload,
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = targetFromNotificationData(event.notification.data)
+  if (!target) return
+
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true,
+      })
+      const currentWindow = windows.find((client) => {
+        try {
+          return new URL(client.url).origin === self.location.origin
+        } catch {
+          return false
+        }
+      })
+
+      if (currentWindow) {
+        await currentWindow.focus()
+        currentWindow.postMessage({
+          type: 'OPEN_NOTIFICATION',
+          target,
+        }, [])
+        return
+      }
+
+      await self.clients.openWindow(notificationTargetUrl(target))
+    })(),
   )
 })
 

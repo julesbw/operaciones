@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { AppModal } from '../components/AppModal'
 import { AppAccountsSection } from './AppAccountsSection'
-import { CheckIcon, PlusIcon, ReceiptIcon, SettingsIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
+import { BellIcon, CheckIcon, PlusIcon, ReceiptIcon, SettingsIcon, StoreIcon, UsersIcon, XIcon } from '../components/icons'
 import {
   ALL_STORES,
   StoreFilter,
@@ -23,6 +23,12 @@ import { paymentService } from '../services/paymentService'
 import { referenceDataService } from '../services/referenceDataService'
 import { storeService } from '../services/storeService'
 import { supplierService } from '../services/supplierService'
+import {
+  PushNotificationError,
+  pushNotificationService,
+  type PushNotificationState,
+  type PushNotificationStatus,
+} from '../services/pushNotificationService'
 import { WEEKDAYS } from '../domain/constants'
 import { currencyFormatter } from '../utils/money'
 
@@ -33,6 +39,7 @@ type SettingsPageProps = {
   stores: Store[]
   user: UserProfile
   dataRevision?: number
+  networkAvailable?: boolean
   onStoresChanged: () => void
 }
 
@@ -44,11 +51,22 @@ const buildTimeLabel = Number.isNaN(buildTime.getTime())
       timeStyle: 'long',
     }).format(buildTime)
 
+const PUSH_STATE_LABELS: Record<PushNotificationState, string> = {
+  unsupported: 'No compatible',
+  'ios-install-required': 'Instala la PWA para activar (iPhone/iPad)',
+  'permission-default': 'Permiso no solicitado',
+  enabled: 'Activadas en este dispositivo',
+  'permission-denied': 'Bloqueadas por el navegador',
+  disabled: 'Desactivadas en este dispositivo',
+  error: 'Error de registro',
+}
+
 export function SettingsPage({
   operatorSession,
   stores,
   user,
   dataRevision = 0,
+  networkAvailable = connectivityService.isNetworkAvailable(),
   onStoresChanged,
 }: SettingsPageProps) {
   const isAdmin = user.role === 'admin'
@@ -91,6 +109,11 @@ export function SettingsPage({
   const [error, setError] = useState<string>()
   const [creationError, setCreationError] = useState<string>()
   const [message, setMessage] = useState<string>()
+  const [pushStatus, setPushStatus] = useState<PushNotificationStatus>({
+    state: 'disabled',
+  })
+  const [pushBusy, setPushBusy] = useState(false)
+  const [pushError, setPushError] = useState<string>()
   const storeFabRef = useRef<HTMLButtonElement>(null)
   const collaboratorFabRef = useRef<HTMLButtonElement>(null)
   const supplierFabRef = useRef<HTMLButtonElement>(null)
@@ -106,6 +129,17 @@ export function SettingsPage({
     (user.demo ||
       (isSupabaseConfigured && connectivityService.isNetworkAvailable()))
   const activeStores = stores.filter((store) => store.status === 'active')
+  const pushAction =
+    pushStatus.state === 'enabled'
+      ? 'disable'
+      : pushStatus.state === 'permission-default' ||
+          pushStatus.state === 'disabled' ||
+          pushStatus.state === 'error'
+        ? 'enable'
+        : undefined
+  const pushStatusLabel = pushBusy
+    ? 'Registrando / desactivando'
+    : PUSH_STATE_LABELS[pushStatus.state]
 
   useEffect(() => {
     if (!isAdmin) return
@@ -132,6 +166,25 @@ export function SettingsPage({
     const timeout = window.setTimeout(() => setMessage(undefined), 3200)
     return () => window.clearTimeout(timeout)
   }, [message])
+
+  useEffect(() => {
+    if (!isAdmin || tab !== 'system') return
+    let active = true
+    setPushError(undefined)
+    void pushNotificationService
+      .getStatus()
+      .then((status) => {
+        if (active) setPushStatus(status)
+      })
+      .catch((cause: unknown) => {
+        if (!active) return
+        console.error('No fue posible consultar las notificaciones Push', cause)
+        setPushError('No fue posible consultar el estado de Push.')
+      })
+    return () => {
+      active = false
+    }
+  }, [isAdmin, tab])
 
   useEffect(() => {
     if (!canCreateSuppliers) {
@@ -209,6 +262,41 @@ export function SettingsPage({
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function updatePushSubscription(action: 'enable' | 'disable') {
+    if (pushBusy || !networkAvailable) return
+    setPushBusy(true)
+    setPushError(undefined)
+    try {
+      const status = action === 'enable'
+        ? await pushNotificationService.enable()
+        : await pushNotificationService.disable()
+      setPushStatus(status)
+    } catch (cause: unknown) {
+      console.error('No fue posible actualizar las notificaciones Push', cause)
+      if (cause instanceof PushNotificationError && cause.state) {
+        setPushStatus({ state: cause.state })
+      } else {
+        const current = await pushNotificationService
+          .getStatus()
+          .catch(() => undefined)
+        setPushStatus(
+          action === 'disable' && current
+            ? current
+            : { state: 'error', detail: current?.detail },
+        )
+      }
+      setPushError(
+        cause instanceof PushNotificationError && cause.message
+          ? cause.message
+          : action === 'enable'
+            ? 'No fue posible activar las notificaciones en este dispositivo.'
+            : 'No fue posible desactivar las notificaciones en este dispositivo.',
+      )
+    } finally {
+      setPushBusy(false)
     }
   }
 
@@ -799,33 +887,87 @@ export function SettingsPage({
       )}
 
       {tab === 'system' && (
-        <article className="panel mt-6">
-          <div className="flex items-center gap-3">
-            <span className="stat-icon bg-teal-50 text-teal-700">
-              <SettingsIcon className="size-5" />
-            </span>
-            <div>
-              <p className="eyebrow">Sistema</p>
-              <h2 className="text-xl font-extrabold text-slate-950">Información de la aplicación</h2>
+        <>
+          <article className="panel mt-6">
+            <div className="flex items-center gap-3">
+              <span className="stat-icon bg-teal-50 text-teal-700">
+                <SettingsIcon className="size-5" />
+              </span>
+              <div>
+                <p className="eyebrow">Sistema</p>
+                <h2 className="text-xl font-extrabold text-slate-950">Información de la aplicación</h2>
+              </div>
             </div>
-          </div>
-          <dl className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
-              <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Versión PWA</dt>
-              <dd className="mt-1 font-extrabold text-slate-950">v{import.meta.env.APP_VERSION}</dd>
-            </div>
-            <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
-              <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Versión del build</dt>
-              <dd className="mt-1 break-all font-mono text-sm font-bold text-slate-950">{import.meta.env.BUILD_VERSION}</dd>
-            </div>
-            <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
-              <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Hora del build</dt>
-              <dd className="mt-1 text-sm font-bold text-slate-950">
-                <time dateTime={import.meta.env.BUILD_TIME}>{buildTimeLabel}</time>
-              </dd>
-            </div>
-          </dl>
-        </article>
+            <dl className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Versión PWA</dt>
+                <dd className="mt-1 font-extrabold text-slate-950">v{import.meta.env.APP_VERSION}</dd>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Versión del build</dt>
+                <dd className="mt-1 break-all font-mono text-sm font-bold text-slate-950">{import.meta.env.BUILD_VERSION}</dd>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Hora del build</dt>
+                <dd className="mt-1 text-sm font-bold text-slate-950">
+                  <time dateTime={import.meta.env.BUILD_TIME}>{buildTimeLabel}</time>
+                </dd>
+              </div>
+            </dl>
+          </article>
+
+          {isAdmin && (
+            <article className="panel mt-6">
+              <div className="flex items-start gap-3">
+                <span className="stat-icon bg-teal-50 text-teal-700">
+                  <BellIcon className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="eyebrow">Notificaciones Push</p>
+                  <h2 className="text-xl font-extrabold text-slate-950">
+                    Avisos en este dispositivo
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Recibe avisos de Compras, Transferencias y Cortes cerrados aunque la PWA no esté abierta.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <div>
+                  <p aria-live="polite" className="font-extrabold text-slate-950">
+                    {pushStatusLabel}
+                  </p>
+                  {pushStatus.detail && (
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      {pushStatus.detail}
+                    </p>
+                  )}
+                </div>
+                {pushAction && (
+                  <button
+                    className={pushAction === 'enable' ? 'button-primary' : 'button-secondary'}
+                    disabled={pushBusy || !networkAvailable}
+                    type="button"
+                    onClick={() => void updatePushSubscription(pushAction)}
+                  >
+                    {pushBusy
+                      ? 'Procesando…'
+                      : pushAction === 'enable'
+                        ? 'Activar notificaciones'
+                        : 'Desactivar'}
+                  </button>
+                )}
+              </div>
+              {!networkAvailable && pushAction && (
+                <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold leading-6 text-amber-900">
+                  Conéctate para cambiar las notificaciones Push.
+                </p>
+              )}
+              {pushError && <p className="alert-error mt-3" role="alert">{pushError}</p>}
+            </article>
+          )}
+        </>
       )}
 
       {isAdmin && tab === 'stores' && (

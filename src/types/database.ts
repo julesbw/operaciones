@@ -342,6 +342,35 @@ export type NotificationRecipientRow = {
   read_at: string | null
 }
 
+export type PushSubscriptionRow = {
+  id: string
+  source_app: NotificationSourceApp
+  auth_user_id: string
+  endpoint: string
+  p256dh: string
+  auth: string
+  created_at: string
+  updated_at: string
+  last_seen_at: string
+  revoked_at: string | null
+}
+
+export type NotificationDeliveryRow = {
+  id: string
+  source_app: NotificationSourceApp
+  notification_id: string
+  subscription_id: string
+  channel: 'push'
+  status: 'pending' | 'processing' | 'delivered' | 'failed' | 'abandoned'
+  attempt_count: number
+  next_attempt_at: string | null
+  last_attempt_at: string | null
+  delivered_at: string | null
+  last_error: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type CentralCashReceiptRow = {
   id: string
   cash_closing_id: string
@@ -684,6 +713,12 @@ export type Database = {
       notifications: TableDefinition<NotificationRow, never, never>
       notification_recipients: TableDefinition<
         NotificationRecipientRow,
+        never,
+        never
+      >
+      push_subscriptions: TableDefinition<PushSubscriptionRow, never, never>
+      notification_deliveries: TableDefinition<
+        NotificationDeliveryRow,
         never,
         never
       >
@@ -1040,6 +1075,14 @@ export type Database = {
       mark_all_notifications_read: {
         Args: { p_source_app: NotificationSourceApp }
         Returns: number
+      }
+      register_push_subscription: {
+        Args: { p_endpoint: string; p_p256dh: string; p_auth: string }
+        Returns: string
+      }
+      revoke_push_subscription: {
+        Args: { p_endpoint: string }
+        Returns: boolean
       }
     }
     Enums: Record<string, never>

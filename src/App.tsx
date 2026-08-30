@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell, type PageId } from './components/AppShell'
-import type { NotificationNavigation } from './components/NotificationCenter'
 import { canAccessPage, hasCapability } from './domain/capabilities'
 import {
   ALL_STORES,
@@ -46,6 +45,13 @@ import {
   syncInspectorService,
   type SyncInspectorSnapshot,
 } from './services/syncInspectorService'
+import { notificationService } from './services/notificationService'
+import type { NotificationNavigation } from './services/pushNotificationNavigation'
+import {
+  clearNotificationQuery,
+  navigationFromLocation,
+  navigationFromWorkerMessage,
+} from './services/pushNotificationNavigation'
 
 type AppBootstrapState =
   | 'loading-local'
@@ -97,8 +103,17 @@ function App() {
   const [operatorSession, setOperatorSession] = useState<OperatorSession>()
   const userRef = useRef<UserProfile | undefined>(undefined)
   const [page, setPage] = useState<PageId>('home')
-  const [notificationTarget, setNotificationTarget] =
-    useState<NotificationNavigation>()
+  const [notificationTarget, setNotificationTarget] = useState<NotificationNavigation | undefined>(
+    () =>
+      typeof window === 'undefined'
+        ? undefined
+        : navigationFromLocation(window.location),
+  )
+  const notificationNavigationRef = useRef<
+    (target: NotificationNavigation) => void
+  >(() => undefined)
+  const handledNotificationKeyRef = useRef<string | undefined>(undefined)
+  const [pendingPushReadId, setPendingPushReadId] = useState<string>()
   const [attendanceStoreFilter, setAttendanceStoreFilter] =
     useState<StoreScopeValue>(ALL_STORES)
   const [stores, setStores] = useState<Store[]>([])
@@ -120,8 +135,26 @@ function App() {
   }, [user])
 
   useEffect(() => {
-    setNotificationTarget(undefined)
-  }, [user?.id])
+    if (typeof window !== 'undefined' && navigationFromLocation(window.location)) {
+      clearNotificationQuery()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      return
+    }
+    const onServiceWorkerMessage = (event: MessageEvent<unknown>) => {
+      const target = navigationFromWorkerMessage(event.data)
+      if (!target) return
+      clearNotificationQuery()
+      notificationNavigationRef.current(target)
+    }
+    navigator.serviceWorker.addEventListener('message', onServiceWorkerMessage)
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', onServiceWorkerMessage)
+    }
+  }, [])
 
   const refreshLocalState = useCallback(async () => {
     const [availableStores, inspector] = await Promise.all([
@@ -459,6 +492,9 @@ function App() {
     setOperatorSession(undefined)
     setStartupNotice(undefined)
     setPage('home')
+    setNotificationTarget(undefined)
+    handledNotificationKeyRef.current = undefined
+    setPendingPushReadId(undefined)
     setAttendanceStoreFilter(ALL_STORES)
     setState('requires-first-login')
     const [, remoteSignOut] = await Promise.allSettled([
@@ -497,7 +533,10 @@ function App() {
   }
 
   function navigateFromNotification(target: NotificationNavigation) {
-    if (!user) return
+    if (!user) {
+      setNotificationTarget(target)
+      return
+    }
     const nextPage: PageId = target.entityType === 'purchase'
       ? 'purchases'
       : target.entityType === 'merchandise_transfer'
@@ -506,10 +545,58 @@ function App() {
     if (!canAccessPage({ technicalUser: user, operatorSession }, nextPage)) {
       return
     }
+    const targetKey = `${target.notificationId}:${target.entityType}:${target.entityId}`
+    const alreadyHandled = handledNotificationKeyRef.current === targetKey
+    handledNotificationKeyRef.current = targetKey
     setNotificationTarget(target)
     setPage(nextPage)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (
+      !alreadyHandled &&
+      target.source === 'push' &&
+      user.role === 'admin' &&
+      networkAvailable
+    ) {
+      void notificationService.markRead(target.notificationId).catch((cause: unknown) => {
+        console.error(
+          'No fue posible marcar la notificación Push como leída',
+          cause,
+        )
+      })
+    } else if (
+      target.source === 'push' &&
+      user.role === 'admin' &&
+      !networkAvailable
+    ) {
+      setPendingPushReadId(target.notificationId)
+    }
   }
+
+  notificationNavigationRef.current = navigateFromNotification
+
+  useEffect(() => {
+    if (!user || !notificationTarget) return
+    navigateFromNotification(notificationTarget)
+  }, [user?.id, notificationTarget])
+
+  useEffect(() => {
+    if (
+      !pendingPushReadId ||
+      !networkAvailable ||
+      !user ||
+      user.role !== 'admin'
+    ) {
+      return
+    }
+    const notificationId = pendingPushReadId
+    setPendingPushReadId(undefined)
+    void notificationService.markRead(notificationId).catch((cause: unknown) => {
+      console.error(
+        'No fue posible marcar la notificación Push pendiente como leída',
+        cause,
+      )
+    })
+  }, [networkAvailable, pendingPushReadId, user?.id, user?.role])
 
   if (state === 'loading-local' || state === 'fatal-error') {
     return (
@@ -723,6 +810,7 @@ function App() {
       {page === 'settings' && (
         <SettingsPage
           dataRevision={revision}
+          networkAvailable={networkAvailable}
           operatorSession={operatorSession}
           stores={stores}
           user={user}

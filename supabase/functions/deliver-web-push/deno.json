@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.window", "es2022"],
+    "strict": true,
+    "types": ["./web-push.d.ts"]
+  },
+  "imports": {
+    "supabase": "npm:@supabase/supabase-js@2.55.0",
+    "web-push": "npm:web-push@3.6.7"
+  }
+}
