@@ -3,11 +3,17 @@ import {
   FilterChipGroup,
   type FilterChipOption,
 } from '../components/filters/FilterChipGroup'
+import { lazyNamedPage } from '../components/lazyPage'
 import type { StoreScopeValue } from '../components/filters/StoreScopeSelector'
+import { hasCapability } from '../domain/capabilities'
 import { UsersIcon } from '../components/icons'
 import type { OperatorSession, Store, UserProfile } from '../domain/models'
 import { AttendancePage } from './AttendancePage'
-import { PaymentsPage } from './PaymentsPage'
+
+const LazyPaymentsPage = lazyNamedPage(
+  () => import('./PaymentsPage'),
+  'PaymentsPage',
+)
 
 type CollaboratorsTab = 'attendance' | 'payments'
 
@@ -40,6 +46,10 @@ export function CollaboratorsPage({
   onSync,
 }: CollaboratorsPageProps) {
   const [tab, setTab] = useState<CollaboratorsTab>('attendance')
+  const canViewPayments = hasCapability(
+    { technicalUser: user, operatorSession },
+    'payments',
+  )
 
   return (
     <section>
@@ -74,8 +84,8 @@ export function CollaboratorsPage({
             onSync={onSync}
           />
         )}
-        {tab === 'payments' && user.role === 'admin' && (
-          <PaymentsPage
+        {tab === 'payments' && canViewPayments && (
+          <LazyPaymentsPage
             dataRevision={dataRevision}
             embedded
             stores={stores}

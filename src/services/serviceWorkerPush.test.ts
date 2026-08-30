@@ -17,15 +17,33 @@ const validPayload = {
   body: 'Tienda Centro · $4,850',
 }
 
-function loadWorker() {
+type WorkerOptions = {
+  addAll?: (paths: string[]) => Promise<void>
+  cachedPaths?: string[]
+  fetch?: () => Promise<{ ok: boolean; clone: () => unknown }>
+}
+
+function loadWorker(options: WorkerOptions = {}) {
   const listeners = new Map<string, (event: any) => void>()
   const showNotification = vi.fn()
   const matchAll = vi.fn(async (): Promise<unknown[]> => [])
   const openWindow = vi.fn(async () => undefined)
+  const cachedPaths = new Set(options.cachedPaths ?? [])
+  const cache = {
+    addAll: options.addAll ?? vi.fn(async (paths: string[]) => {
+      for (const path of paths) cachedPaths.add(path)
+    }),
+    match: vi.fn(async (request: string) =>
+      cachedPaths.has(request) ? {} : undefined,
+    ),
+    put: vi.fn(async (request: string) => {
+      cachedPaths.add(request)
+    }),
+  }
   const self = {
     location: { origin: 'https://operaciones.example' },
     registration: { showNotification },
-    clients: { matchAll, openWindow },
+    clients: { claim: vi.fn(), matchAll, openWindow },
     addEventListener: (name: string, listener: (event: any) => void) => {
       listeners.set(name, listener)
     },
@@ -38,14 +56,22 @@ function loadWorker() {
     JSON,
     console,
     caches: {
-      open: vi.fn(),
+      open: vi.fn(async () => cache),
       keys: vi.fn(),
       match: vi.fn(),
     },
-    fetch: vi.fn(),
+    fetch: options.fetch ?? vi.fn(),
   })
   new Script(workerSource).runInContext(context)
-  return { listeners, showNotification, matchAll, openWindow, self }
+  return {
+    cache,
+    cachedPaths,
+    listeners,
+    showNotification,
+    matchAll,
+    openWindow,
+    self,
+  }
 }
 
 describe('Operations service worker Push handlers', () => {
@@ -118,5 +144,69 @@ describe('Operations service worker Push handlers', () => {
     expect(worker.openWindow).toHaveBeenCalledWith(
       'https://operaciones.example/?notificationId=11111111-1111-4111-8111-111111111111&entityType=purchase&entityId=22222222-2222-4222-8222-222222222222',
     )
+  })
+
+  it('reports the installed release and requires every precached path', async () => {
+    const requiredPaths = [
+      '/',
+      '/index.html',
+      '/manifest.webmanifest',
+      '/favicon.ico',
+      '/pwa-64x64.png',
+      '/pwa-192x192.png',
+      '/pwa-512x512.png',
+      '/maskable-icon-512x512.png',
+      '/apple-touch-icon-180x180.png',
+      '/la-piedad-operaciones-ui.png',
+    ]
+    const worker = loadWorker({ cachedPaths: requiredPaths })
+    const postMessage = vi.fn()
+    let verifyPromise: Promise<unknown> | undefined
+    worker.listeners.get('message')?.({
+      data: { type: 'VERIFY_APP_SHELL' },
+      ports: [{ postMessage }],
+      waitUntil: (promise: Promise<unknown>) => { verifyPromise = promise },
+    })
+    await verifyPromise
+    expect(postMessage).toHaveBeenCalledWith({
+      ready: true,
+      releaseId: '__RELEASE_ID__',
+    })
+
+    const incompleteWorker = loadWorker({ cachedPaths: requiredPaths.slice(1) })
+    const incompletePostMessage = vi.fn()
+    let incompletePromise: Promise<unknown> | undefined
+    incompleteWorker.listeners.get('message')?.({
+      data: { type: 'VERIFY_APP_SHELL' },
+      ports: [{ postMessage: incompletePostMessage }],
+      waitUntil: (promise: Promise<unknown>) => { incompletePromise = promise },
+    })
+    await incompletePromise
+    expect(incompletePostMessage).toHaveBeenCalledWith({
+      ready: false,
+      releaseId: '__RELEASE_ID__',
+    })
+  })
+
+  it('fails installation when one precached asset cannot be downloaded', async () => {
+    const addAll = vi.fn(async () => {
+      throw new Error('asset missing')
+    })
+    const indexResponse = {
+      ok: true,
+      clone: () => indexResponse,
+      text: async () => '',
+    }
+    const worker = loadWorker({
+      addAll,
+      fetch: vi.fn(async () => indexResponse),
+    })
+    let installPromise: Promise<unknown> | undefined
+    worker.listeners.get('install')?.({
+      waitUntil: (promise: Promise<unknown>) => { installPromise = promise },
+    })
+
+    await expect(installPromise).rejects.toThrow('asset missing')
+    expect(addAll).toHaveBeenCalledOnce()
   })
 })

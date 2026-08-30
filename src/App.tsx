@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import { AppShell, type PageId } from './components/AppShell'
-import { canAccessPage, hasCapability } from './domain/capabilities'
+import { LazyPageErrorBoundary } from './components/LazyPageErrorBoundary'
+import { LazyPageFallback } from './components/LazyPageFallback'
+import { lazyNamedPage } from './components/lazyPage'
+import { canAccessPage } from './domain/capabilities'
 import {
   ALL_STORES,
   type StoreScopeValue,
@@ -11,17 +20,9 @@ import type {
   Store,
   UserProfile,
 } from './domain/models'
-import { CentralCashPage } from './pages/CentralCashPage'
-import { ClosingsPage } from './pages/ClosingsPage'
-import { CollaboratorsPage } from './pages/CollaboratorsPage'
 import { DashboardPage } from './pages/DashboardPage'
-import { ExpensesPage } from './pages/ExpensesPage'
-import { ExportsPage } from './pages/ExportsPage'
 import { LoginPage } from './pages/LoginPage'
 import { OperatorLoginPage } from './pages/OperatorLoginPage'
-import { PurchasesPage } from './pages/PurchasesPage'
-import { SettingsPage } from './pages/SettingsPage'
-import { TransfersPage } from './pages/TransfersPage'
 import { authService } from './services/authService'
 import { bootstrapService } from './services/bootstrapService'
 import { connectivityService } from './services/connectivityService'
@@ -67,6 +68,39 @@ const EMPTY_SYNC_INSPECTOR: SyncInspectorSnapshot = {
   items: [],
   summary: { total: 0, pending: 0, syncing: 0, error: 0 },
 }
+
+const LazyExpensesPage = lazyNamedPage(
+  () => import('./pages/ExpensesPage'),
+  'ExpensesPage',
+)
+const LazyTransfersPage = lazyNamedPage(
+  () => import('./pages/TransfersPage'),
+  'TransfersPage',
+)
+const LazyCollaboratorsPage = lazyNamedPage(
+  () => import('./pages/CollaboratorsPage'),
+  'CollaboratorsPage',
+)
+const LazyPurchasesPage = lazyNamedPage(
+  () => import('./pages/PurchasesPage'),
+  'PurchasesPage',
+)
+const LazyClosingsPage = lazyNamedPage(
+  () => import('./pages/ClosingsPage'),
+  'ClosingsPage',
+)
+const LazyCentralCashPage = lazyNamedPage(
+  () => import('./pages/CentralCashPage'),
+  'CentralCashPage',
+)
+const LazyExportsPage = lazyNamedPage(
+  () => import('./pages/ExportsPage'),
+  'ExportsPage',
+)
+const LazySettingsPage = lazyNamedPage(
+  () => import('./pages/SettingsPage'),
+  'SettingsPage',
+)
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Error desconocido'
@@ -716,107 +750,132 @@ function App() {
       onSwitchOperator={operatorSession ? () => void switchOperator() : undefined}
       onSync={() => void syncCurrentSession(true)}
     >
-      {page === 'home' && (
-        <DashboardPage
-          operatorSession={operatorSession}
-          pendingCount={pendingCount}
-          revision={revision}
-          stores={stores}
-          user={user}
-          onNavigate={navigate}
-        />
-      )}
-      {page === 'expenses' && (
-        <ExpensesPage
-          dataRevision={revision}
-          networkAvailable={networkAvailable}
-          operatorAccountId={operatorSession?.account.id ?? null}
-          operatorSession={operatorSession}
-          stores={stores}
-          user={user}
-          onDataChanged={() => void refreshLocalState()}
-          onSync={() => syncCurrentSession()}
-        />
-      )}
-      {page === 'transfers' && (
-        <TransfersPage
-          dataRevision={revision}
-          initialTransferId={notificationTarget?.entityType === 'merchandise_transfer' ? notificationTarget.entityId : undefined}
-          networkAvailable={networkAvailable}
-          operatorAccountId={operatorSession?.account.id ?? null}
-          operatorSession={operatorSession}
-          stores={stores}
-          user={user}
-          onDataChanged={() => void refreshLocalState()}
-          onSync={() => syncCurrentSession()}
-        />
-      )}
-      {page === 'collaborators' && (
-        <CollaboratorsPage
-          attendanceStoreFilter={attendanceStoreFilter}
-          dataRevision={revision}
-          operatorAccountId={operatorSession?.account.id ?? null}
-          operatorSession={operatorSession}
-          stores={stores}
-          user={user}
-          onDataChanged={() => void refreshLocalState()}
-          onAttendanceStoreFilterChange={setAttendanceStoreFilter}
-          onSync={() => syncCurrentSession()}
-        />
-      )}
-      {page === 'purchases' && hasCapability(
-        { technicalUser: user, operatorSession },
-        'purchases',
-      ) && (
-        <PurchasesPage
-          dataRevision={revision}
-          initialPurchaseId={notificationTarget?.entityType === 'purchase' ? notificationTarget.entityId : undefined}
-          networkAvailable={networkAvailable}
-          operatorSession={operatorSession}
-          stores={stores}
-          user={user}
-          onDataChanged={() => void refreshLocalState()}
-        />
-      )}
-      {page === 'closings' && hasCapability(
-        { technicalUser: user, operatorSession },
-        'cashClosings',
-      ) && (
-        <ClosingsPage
-          dataRevision={revision}
-          initialClosingId={notificationTarget?.entityType === 'cash_closing' ? notificationTarget.entityId : undefined}
-          networkAvailable={networkAvailable}
-          stores={stores}
-          user={user}
-          operatorSession={operatorSession}
-        />
-      )}
-      {page === 'central-cash' && user.role === 'admin' && (
-        <CentralCashPage
-          dataRevision={revision}
-          networkAvailable={networkAvailable}
-          stores={stores}
-          user={user}
-        />
-      )}
-      {page === 'exports' && user.role === 'admin' && (
-        <ExportsPage
-          dataRevision={revision}
-          networkAvailable={networkAvailable}
-          stores={stores}
-          user={user}
-        />
-      )}
-      {page === 'settings' && (
-        <SettingsPage
-          dataRevision={revision}
-          networkAvailable={networkAvailable}
-          operatorSession={operatorSession}
-          stores={stores}
-          user={user}
-          onStoresChanged={() => void refreshLocalState()}
-        />
-      )}
+      <LazyPageErrorBoundary resetKey={page}>
+        <Suspense fallback={<LazyPageFallback />}>
+          {page === 'home' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'home',
+          ) && (
+            <DashboardPage
+              operatorSession={operatorSession}
+              pendingCount={pendingCount}
+              revision={revision}
+              stores={stores}
+              user={user}
+              onNavigate={navigate}
+            />
+          )}
+          {page === 'expenses' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'expenses',
+          ) && (
+            <LazyExpensesPage
+              dataRevision={revision}
+              networkAvailable={networkAvailable}
+              operatorAccountId={operatorSession?.account.id ?? null}
+              operatorSession={operatorSession}
+              stores={stores}
+              user={user}
+              onDataChanged={() => void refreshLocalState()}
+              onSync={() => syncCurrentSession()}
+            />
+          )}
+          {page === 'transfers' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'transfers',
+          ) && (
+            <LazyTransfersPage
+              dataRevision={revision}
+              initialTransferId={notificationTarget?.entityType === 'merchandise_transfer' ? notificationTarget.entityId : undefined}
+              networkAvailable={networkAvailable}
+              operatorAccountId={operatorSession?.account.id ?? null}
+              operatorSession={operatorSession}
+              stores={stores}
+              user={user}
+              onDataChanged={() => void refreshLocalState()}
+              onSync={() => syncCurrentSession()}
+            />
+          )}
+          {page === 'collaborators' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'collaborators',
+          ) && (
+            <LazyCollaboratorsPage
+              attendanceStoreFilter={attendanceStoreFilter}
+              dataRevision={revision}
+              operatorAccountId={operatorSession?.account.id ?? null}
+              operatorSession={operatorSession}
+              stores={stores}
+              user={user}
+              onDataChanged={() => void refreshLocalState()}
+              onAttendanceStoreFilterChange={setAttendanceStoreFilter}
+              onSync={() => syncCurrentSession()}
+            />
+          )}
+          {page === 'purchases' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'purchases',
+          ) && (
+            <LazyPurchasesPage
+              dataRevision={revision}
+              initialPurchaseId={notificationTarget?.entityType === 'purchase' ? notificationTarget.entityId : undefined}
+              networkAvailable={networkAvailable}
+              operatorSession={operatorSession}
+              stores={stores}
+              user={user}
+              onDataChanged={() => void refreshLocalState()}
+            />
+          )}
+          {page === 'closings' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'closings',
+          ) && (
+            <LazyClosingsPage
+              dataRevision={revision}
+              initialClosingId={notificationTarget?.entityType === 'cash_closing' ? notificationTarget.entityId : undefined}
+              networkAvailable={networkAvailable}
+              stores={stores}
+              user={user}
+              operatorSession={operatorSession}
+            />
+          )}
+          {page === 'central-cash' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'central-cash',
+          ) && (
+            <LazyCentralCashPage
+              dataRevision={revision}
+              networkAvailable={networkAvailable}
+              stores={stores}
+              user={user}
+            />
+          )}
+          {page === 'exports' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'exports',
+          ) && (
+            <LazyExportsPage
+              dataRevision={revision}
+              networkAvailable={networkAvailable}
+              stores={stores}
+              user={user}
+            />
+          )}
+          {page === 'settings' && canAccessPage(
+            { technicalUser: user, operatorSession },
+            'settings',
+          ) && (
+            <LazySettingsPage
+              dataRevision={revision}
+              networkAvailable={networkAvailable}
+              operatorSession={operatorSession}
+              stores={stores}
+              user={user}
+              onStoresChanged={() => void refreshLocalState()}
+            />
+          )}
+        </Suspense>
+      </LazyPageErrorBoundary>
     </AppShell>
   )
 }

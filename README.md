@@ -16,6 +16,8 @@ Sin variables de Supabase la aplicación inicia en modo demostración, con perfi
 
 Después de una inicialización online completa, la PWA puede arrancar desde cero sin conexión. El contexto local permite presentar el perfil y los datos cacheados, pero Supabase Auth, RLS y las RPC siguen siendo la única autoridad para sincronizar y para operaciones definitivas como cerrar un corte. El primer uso del dispositivo siempre requiere conexión.
 
+Las páginas operativas se cargan bajo demanda, pero todos sus chunks se precachean durante la instalación del release. Así, visitar un módulo no es necesario para poder abrirlo sin conexión después de una instalación completa. El protocolo de releases, recuperación de chunks y validación del app shell está en [`docs/LAZY_LOADING_OFFLINE_PLAN.md`](docs/LAZY_LOADING_OFFLINE_PLAN.md).
+
 Conecta el mismo proyecto de Arrendamientos usando únicamente credenciales públicas:
 
 ```env

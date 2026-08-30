@@ -1,5 +1,7 @@
 const CACHE_PREFIX = 'la-piedad-operaciones-shell-'
-const CACHE_NAME = `${CACHE_PREFIX}v4`
+const RELEASE_ID = '__RELEASE_ID__'
+const PRECACHE_ASSETS = []
+const CACHE_NAME = `${CACHE_PREFIX}${RELEASE_ID}`
 const APP_SHELL = [
   '/manifest.webmanifest',
   '/favicon.ico',
@@ -97,12 +99,6 @@ function notificationTargetUrl(target) {
   return url.toString()
 }
 
-function assetsFromHtml(html) {
-  return [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
-    .map((match) => match[1])
-    .filter((path) => path.startsWith('/assets/'))
-}
-
 async function cacheAppShell() {
   const cache = await caches.open(CACHE_NAME)
   const indexResponse = await fetch('/index.html', { cache: 'reload' })
@@ -110,25 +106,23 @@ async function cacheAppShell() {
     throw new Error('No fue posible descargar el app shell')
   }
 
-  const html = await indexResponse.clone().text()
-  const buildAssets = assetsFromHtml(html)
+  await cache.addAll([...APP_SHELL, ...PRECACHE_ASSETS])
   await Promise.all([
     cache.put('/', indexResponse.clone()),
     cache.put('/index.html', indexResponse),
-    cache.addAll([...APP_SHELL, ...buildAssets]),
   ])
 }
 
 async function isAppShellReady() {
   const cache = await caches.open(CACHE_NAME)
-  const indexResponse = await cache.match('/index.html')
-  if (!indexResponse) return false
-  const html = await indexResponse.text()
-  const requiredPaths = [...APP_SHELL, ...assetsFromHtml(html)]
+  const requiredPaths = ['/', '/index.html', ...APP_SHELL, ...PRECACHE_ASSETS]
   const cached = await Promise.all(
     requiredPaths.map((path) => cache.match(path)),
   )
-  return cached.every(Boolean)
+  return {
+    ready: cached.every(Boolean),
+    releaseId: RELEASE_ID,
+  }
 }
 
 self.addEventListener('install', (event) => {
@@ -156,7 +150,7 @@ self.addEventListener('message', (event) => {
   if (event.data?.type !== 'VERIFY_APP_SHELL') return
   event.waitUntil(
     isAppShellReady().then((ready) => {
-      event.ports[0]?.postMessage({ ready })
+      event.ports[0]?.postMessage(ready)
     }),
   )
 })
