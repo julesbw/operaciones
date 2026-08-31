@@ -18,6 +18,7 @@ type CashBreakdownControlProps = {
   visible: boolean
   showToggle: boolean
   toggleDescription: string
+  errorMessage?: string
   onOpenChange: (open: boolean) => void
   onBillsChange: (bills: CentralCashBills) => void
   onCoinsChange: (amount: number) => void
@@ -31,6 +32,7 @@ export function CashBreakdownControl({
   visible,
   showToggle,
   toggleDescription,
+  errorMessage,
   onOpenChange,
   onBillsChange,
   onCoinsChange,
@@ -98,6 +100,12 @@ export function CashBreakdownControl({
           <p className={`mt-3 text-right text-sm font-extrabold ${cashBreakdownMatchesAmount(bills, coinsAmount, Number(amount || 0)) ? 'text-emerald-700' : 'text-amber-700'}`}>
             Total: {currencyFormatter.format(breakdownTotal)}
           </p>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="alert-error mt-4" role="alert">
+          <p>{errorMessage}</p>
         </div>
       )}
 

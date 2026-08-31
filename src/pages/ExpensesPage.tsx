@@ -11,7 +11,7 @@ import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import { ListPageSkeleton } from '../components/Skeletons'
-import { useToast } from '../components/ToastProvider'
+import { TOAST_DURATIONS, useToast } from '../components/ToastProvider'
 import {
   CheckIcon,
   PlusIcon,
@@ -60,6 +60,9 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   transferencia: 'Transferencia',
   otro: 'Otro',
 }
+
+const CASH_BREAKDOWN_MISMATCH_MESSAGE =
+  'Las denominaciones deben sumar exactamente el monto'
 
 const TIME_FORMATTER = new Intl.DateTimeFormat('es-MX', {
   hour: '2-digit',
@@ -155,12 +158,32 @@ export function ExpensesPage({
   const [cashBreakdownOpen, setCashBreakdownOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<string[]>([])
+  const [cashBreakdownError, setCashBreakdownError] = useState('')
   const [saving, setSaving] = useState(false)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const amountInputRef = useRef<HTMLInputElement>(null)
+  const cashBreakdownErrorTimerRef = useRef<number | undefined>(undefined)
   const { toast } = useToast()
   const centralAvailable =
     isAdmin && networkAvailable && isSupabaseConfigured && !user.demo
+
+  const clearCashBreakdownError = useCallback(() => {
+    const timer = cashBreakdownErrorTimerRef.current
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      cashBreakdownErrorTimerRef.current = undefined
+    }
+    setCashBreakdownError('')
+  }, [])
+
+  const showCashBreakdownError = useCallback(() => {
+    clearCashBreakdownError()
+    setCashBreakdownError(CASH_BREAKDOWN_MISMATCH_MESSAGE)
+    cashBreakdownErrorTimerRef.current = window.setTimeout(() => {
+      setCashBreakdownError('')
+      cashBreakdownErrorTimerRef.current = undefined
+    }, TOAST_DURATIONS.error)
+  }, [clearCashBreakdownError])
 
   const queryStoreId = isAdmin
     ? storeFilter === ALL_STORES
@@ -200,6 +223,13 @@ export function ExpensesPage({
       setStoreFilter(ALL_STORES)
     }
   }, [activeStores, isAdmin, storeFilter])
+
+  useEffect(() => {
+    return () => {
+      const timer = cashBreakdownErrorTimerRef.current
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [])
 
   const isFormDirty =
     amount.trim().length > 0 ||
@@ -284,11 +314,13 @@ export function ExpensesPage({
     setCoinsAmount(0)
     setCashBreakdownOpen(false)
     setNotes('')
+    clearCashBreakdownError()
     setErrors([])
     setFormOpen(true)
   }
 
   function closeForm() {
+    clearCashBreakdownError()
     setFormOpen(false)
   }
 
@@ -303,6 +335,7 @@ export function ExpensesPage({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    clearCashBreakdownError()
     setErrors([])
 
     if (
@@ -310,7 +343,8 @@ export function ExpensesPage({
       hasCapturedCashBreakdown(bills, coinsAmount) &&
       !cashBreakdownMatchesAmount(bills, coinsAmount, Number(amount))
     ) {
-      setErrors(['Las denominaciones deben sumar exactamente el monto'])
+      toast.error(CASH_BREAKDOWN_MISMATCH_MESSAGE)
+      showCashBreakdownError()
       return
     }
 
@@ -355,7 +389,14 @@ export function ExpensesPage({
       }
     } catch (cause: unknown) {
       if (cause instanceof ExpenseValidationError) {
-        setErrors(cause.messages)
+        const fieldMessages = cause.messages.filter(
+          (message) => message !== CASH_BREAKDOWN_MISMATCH_MESSAGE,
+        )
+        if (fieldMessages.length !== cause.messages.length) {
+          toast.error(CASH_BREAKDOWN_MISMATCH_MESSAGE)
+          showCashBreakdownError()
+        }
+        setErrors(fieldMessages)
       } else {
         console.error('No fue posible guardar el gasto', cause)
         toast.error('No fue posible guardar el gasto en este dispositivo')
@@ -708,6 +749,7 @@ export function ExpensesPage({
                 amount={amount}
                 bills={bills}
                 coinsAmount={coinsAmount}
+                errorMessage={cashBreakdownError}
                 open={cashBreakdownOpen}
                 showToggle={fundingSource === 'store_cash' && paymentMethod === 'efectivo'}
                 toggleDescription="Opcional para gastos desde la tienda."

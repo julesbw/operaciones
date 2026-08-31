@@ -11,7 +11,7 @@ import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import { ListPageSkeleton } from '../components/Skeletons'
-import { useToast } from '../components/ToastProvider'
+import { TOAST_DURATIONS, useToast } from '../components/ToastProvider'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -41,7 +41,10 @@ import {
   type UserProfile,
 } from '../domain/models'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { purchaseService } from '../services/purchaseService'
+import {
+  PurchaseDomainError,
+  purchaseService,
+} from '../services/purchaseService'
 import { referenceDataService } from '../services/referenceDataService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
@@ -53,6 +56,9 @@ const PAYMENT_LABELS: Record<PaymentMethod, string> = {
   transferencia: 'Transferencia',
   otro: 'Otro',
 }
+
+const CASH_BREAKDOWN_MISMATCH_MESSAGE =
+  'Las denominaciones deben sumar exactamente el monto'
 
 const FILTER_DATE_FORMATTER = new Intl.DateTimeFormat('es-MX', {
   day: '2-digit',
@@ -132,12 +138,32 @@ export function PurchasesPage({
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [cashBreakdownError, setCashBreakdownError] = useState('')
   const [purchaseId, setPurchaseId] = useState('')
   const [paymentId, setPaymentId] = useState('')
   const fabRef = useRef<HTMLButtonElement>(null)
   const supplierInputRef = useRef<HTMLSelectElement>(null)
   const initialPurchaseResolutionRef = useRef<string | undefined>(undefined)
+  const cashBreakdownErrorTimerRef = useRef<number | undefined>(undefined)
   const { toast } = useToast()
+
+  const clearCashBreakdownError = useCallback(() => {
+    const timer = cashBreakdownErrorTimerRef.current
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      cashBreakdownErrorTimerRef.current = undefined
+    }
+    setCashBreakdownError('')
+  }, [])
+
+  const showCashBreakdownError = useCallback(() => {
+    clearCashBreakdownError()
+    setCashBreakdownError(CASH_BREAKDOWN_MISMATCH_MESSAGE)
+    cashBreakdownErrorTimerRef.current = window.setTimeout(() => {
+      setCashBreakdownError('')
+      cashBreakdownErrorTimerRef.current = undefined
+    }, TOAST_DURATIONS.error)
+  }, [clearCashBreakdownError])
 
   const activeSuppliers = useMemo(
     () => suppliers.filter((supplier) => supplier.isActive),
@@ -221,6 +247,13 @@ export function PurchasesPage({
     }
   }, [initialPurchaseId, isAdmin, networkAvailable, purchases, user])
 
+  useEffect(() => {
+    return () => {
+      const timer = cashBreakdownErrorTimerRef.current
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [])
+
   const grouped = useMemo(() => {
     const groups = new Map<string, PaidPurchase[]>()
     for (const item of purchases) {
@@ -269,6 +302,7 @@ export function PurchasesPage({
     setNotes('')
     setPurchaseId(crypto.randomUUID())
     setPaymentId(crypto.randomUUID())
+    clearCashBreakdownError()
     setFormError('')
     setConfirming(false)
     setFormOpen(true)
@@ -276,6 +310,7 @@ export function PurchasesPage({
 
   function handleFundingSourceChange(nextFundingSource: PaymentFundingSource) {
     if (nextFundingSource === fundingSource) return
+    clearCashBreakdownError()
     setFundingSource(nextFundingSource)
     setCashBreakdownOpen(
       cashBreakdownOpenAfterFundingSourceChange({
@@ -287,11 +322,13 @@ export function PurchasesPage({
   }
 
   function closeForm() {
+    clearCashBreakdownError()
     setFormOpen(false)
   }
 
   function prepareConfirmation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    clearCashBreakdownError()
     setFormError('')
     const numericAmount = Number(amount)
     if (!supplierId) {
@@ -310,7 +347,8 @@ export function PurchasesPage({
       requiresCashBreakdown &&
       !cashBreakdownMatchesAmount(bills, coinsAmount, numericAmount)
     ) {
-      setFormError('Las denominaciones deben sumar exactamente el monto.')
+      toast.error(CASH_BREAKDOWN_MISMATCH_MESSAGE)
+      showCashBreakdownError()
       return
     }
     setConfirming(true)
@@ -318,6 +356,7 @@ export function PurchasesPage({
 
   async function confirmPurchase() {
     setSaving(true)
+    clearCashBreakdownError()
     setFormError('')
     try {
       const financialBreakdownCaptured =
@@ -362,11 +401,20 @@ export function PurchasesPage({
           })
       }
     } catch (cause: unknown) {
-      toast.error(
-        cause instanceof Error
-          ? cause.message
-          : 'No fue posible registrar la compra.',
-      )
+      if (
+        cause instanceof PurchaseDomainError &&
+        cause.code === 'PURCHASE_BILLS_MISMATCH'
+      ) {
+        setConfirming(false)
+        toast.error(CASH_BREAKDOWN_MISMATCH_MESSAGE)
+        showCashBreakdownError()
+      } else {
+        toast.error(
+          cause instanceof Error
+            ? cause.message
+            : 'No fue posible registrar la compra.',
+        )
+      }
     } finally {
       setSaving(false)
     }
@@ -561,6 +609,7 @@ export function PurchasesPage({
                   amount={amount}
                   bills={bills}
                   coinsAmount={coinsAmount}
+                  errorMessage={cashBreakdownError}
                   open={cashBreakdownOpen}
                   showToggle={fundingSource === 'store_cash' && paymentMethod === 'efectivo'}
                   toggleDescription="Opcional para pagos desde la tienda."
