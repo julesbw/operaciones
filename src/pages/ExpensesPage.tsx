@@ -11,6 +11,7 @@ import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import { ListPageSkeleton } from '../components/Skeletons'
+import { useToast } from '../components/ToastProvider'
 import {
   CheckIcon,
   PlusIcon,
@@ -135,7 +136,6 @@ export function ExpensesPage({
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [feedback, setFeedback] = useState('')
 
   const [formOpen, setFormOpen] = useState(false)
   const [formStoreId, setFormStoreId] = useState('')
@@ -158,6 +158,7 @@ export function ExpensesPage({
   const [saving, setSaving] = useState(false)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const amountInputRef = useRef<HTMLInputElement>(null)
+  const { toast } = useToast()
   const centralAvailable =
     isAdmin && networkAvailable && isSupabaseConfigured && !user.demo
 
@@ -199,12 +200,6 @@ export function ExpensesPage({
       setStoreFilter(ALL_STORES)
     }
   }, [activeStores, isAdmin, storeFilter])
-
-  useEffect(() => {
-    if (!feedback) return
-    const timeout = window.setTimeout(() => setFeedback(''), 3200)
-    return () => window.clearTimeout(timeout)
-  }, [feedback])
 
   const isFormDirty =
     amount.trim().length > 0 ||
@@ -346,7 +341,7 @@ export function ExpensesPage({
         operatorAccountId,
       )
       await load()
-      setFeedback(
+      toast.success(
         fundingSource === 'store_cash' && !networkAvailable
           ? 'Gasto registrado. Pendiente de sincronizar.'
           : 'Gasto registrado',
@@ -363,7 +358,7 @@ export function ExpensesPage({
         setErrors(cause.messages)
       } else {
         console.error('No fue posible guardar el gasto', cause)
-        setErrors(['No fue posible guardar el gasto en este dispositivo'])
+        toast.error('No fue posible guardar el gasto en este dispositivo')
       }
     } finally {
       setSaving(false)
@@ -379,13 +374,6 @@ export function ExpensesPage({
       <div>
         <h1 className="page-title">Gastos</h1>
       </div>
-
-      {feedback && (
-        <div className="alert-success mt-5" role="status">
-          <CheckIcon className="size-5" />
-          {feedback}
-        </div>
-      )}
 
       {!isAdmin && !cashierStoreId && (
         <div className="alert-error mt-5" role="alert">

@@ -11,6 +11,7 @@ import {
   DashboardSkeleton,
   DelayedSkeletonFallback,
 } from './components/Skeletons'
+import { useToast } from './components/ToastProvider'
 import { lazyNamedPage } from './components/lazyPage'
 import { canAccessPage } from './domain/capabilities'
 import {
@@ -164,12 +165,24 @@ function App() {
   const [networkAvailable, setNetworkAvailable] = useState(
     connectivityService.isNetworkAvailable(),
   )
+  const previousNetworkAvailableRef = useRef(networkAvailable)
   const [backendReachable, setBackendReachable] = useState<boolean>()
   const [revision, setRevision] = useState(0)
+  const { toast } = useToast()
 
   useEffect(() => {
     userRef.current = user
   }, [user])
+
+  useEffect(() => {
+    if (previousNetworkAvailableRef.current === networkAvailable) return
+    previousNetworkAvailableRef.current = networkAvailable
+    if (networkAvailable) {
+      toast.success('Conexión restaurada.')
+    } else {
+      toast.warning('Sin conexión. Los cambios locales siguen guardados.')
+    }
+  }, [networkAvailable, toast])
 
   useEffect(() => {
     if (typeof window !== 'undefined' && navigationFromLocation(window.location)) {
@@ -246,7 +259,11 @@ function App() {
   }, [])
 
   const runRemoteBootstrap = useCallback(
-    async (profile?: UserProfile, forceRetry = false) => {
+    async (
+      profile?: UserProfile,
+      forceRetry = false,
+      notifySync = false,
+    ) => {
       if (!connectivityService.isNetworkAvailable()) {
         setNetworkAvailable(false)
         setBackendReachable(undefined)
@@ -308,6 +325,15 @@ function App() {
         setBackendReachable(true)
         setStartupNotice(undefined)
         const sync = result.sync
+        if (notifySync) {
+          if (sync.failed > 0) {
+            toast.error(
+              sync.errors?.[0] ?? 'No fue posible sincronizar todos los cambios.',
+            )
+          } else {
+            toast.success('Sincronización completada.')
+          }
+        }
         setSyncError(
           sync.failed > 0
             ? sync.errors?.join(' · ') ||
@@ -374,13 +400,16 @@ function App() {
         setStartupNotice(
           'Supabase no respondió. Puedes reintentar cuando tengas conexión.',
         )
+        if (notifySync) {
+          toast.error('No fue posible sincronizar los cambios.')
+        }
         await restoreLocalFallback()
         await refreshLocalState()
       } finally {
         setSyncing(false)
       }
     },
-    [refreshLocalState, restoreLocalFallback],
+    [refreshLocalState, restoreLocalFallback, toast],
   )
 
   useEffect(() => {
@@ -495,11 +524,14 @@ function App() {
     }
   }
 
-  async function syncCurrentSession(forceRetry = false) {
+  async function syncCurrentSession(
+    forceRetry = false,
+    notifySync = false,
+  ) {
     if (!user) return
     if (!connectivityService.isNetworkAvailable()) return
     if (syncing) return
-    await runRemoteBootstrap(user, forceRetry)
+    await runRemoteBootstrap(user, forceRetry, notifySync)
   }
 
   async function switchOperator() {
@@ -754,7 +786,7 @@ function App() {
       onRefreshSyncInspector={() => void refreshSyncInspector()}
       onSignOut={() => void signOut()}
       onSwitchOperator={operatorSession ? () => void switchOperator() : undefined}
-      onSync={() => void syncCurrentSession(true)}
+      onSync={() => void syncCurrentSession(true, true)}
     >
       <LazyPageErrorBoundary resetKey={page}>
         <Suspense

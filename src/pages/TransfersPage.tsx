@@ -14,6 +14,7 @@ import {
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
 import { ListPageSkeleton } from '../components/Skeletons'
+import { useToast } from '../components/ToastProvider'
 import {
   getRuntimeStoreScope,
   hasCapability,
@@ -133,7 +134,6 @@ export function TransfersPage({
   const [transfers, setTransfers] = useState<MerchandiseTransfer[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [feedback, setFeedback] = useState('')
 
   const [formOpen, setFormOpen] = useState(false)
   const [formOriginStoreId, setFormOriginStoreId] = useState('')
@@ -151,6 +151,7 @@ export function TransfersPage({
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const ticketInputRef = useRef<HTMLInputElement>(null)
   const initialTransferResolutionRef = useRef<string | undefined>(undefined)
+  const { toast } = useToast()
 
   const queryOriginStoreId = resolveTransferOriginStoreId(storeScope, storeFilter)
 
@@ -226,12 +227,6 @@ export function TransfersPage({
       setStoreFilter(ALL_STORES)
     }
   }, [activeStores, isAdmin, storeFilter])
-
-  useEffect(() => {
-    if (!feedback) return
-    const timeout = window.setTimeout(() => setFeedback(''), 3_200)
-    return () => window.clearTimeout(timeout)
-  }, [feedback])
 
   const visibleTransfers = useMemo(() => {
     return filterTransfersByTicket(transfers, ticketSearch)
@@ -337,7 +332,7 @@ export function TransfersPage({
         operatorAccountId,
       )
       await load()
-      setFeedback(
+      toast.success(
         connectivityService.isNetworkAvailable()
           ? 'Transferencia registrada'
           : 'Transferencia registrada. Pendiente de sincronizar.',
@@ -352,9 +347,9 @@ export function TransfersPage({
         setErrors(cause.messages)
       } else {
         console.error('No fue posible guardar la transferencia', cause)
-        setErrors([
+        toast.error(
           'No fue posible guardar la transferencia en este dispositivo',
-        ])
+        )
       }
     } finally {
       setSaving(false)
@@ -372,13 +367,6 @@ export function TransfersPage({
   return (
     <section>
       <h1 className="page-title">Transferencias</h1>
-
-      {feedback && (
-        <div className="alert-success mt-5" role="status">
-          <CheckIcon className="size-5" />
-          {feedback}
-        </div>
-      )}
 
       {!isAdmin && !cashierStoreId && (
         <div className="alert-error mt-5" role="alert">

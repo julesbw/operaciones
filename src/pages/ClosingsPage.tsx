@@ -12,6 +12,7 @@ import {
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
 import { ListPageSkeleton } from '../components/Skeletons'
+import { useToast } from '../components/ToastProvider'
 import {
   ArrowIcon,
   CashIcon,
@@ -171,6 +172,39 @@ function compactDate(value: string): string {
   )
 }
 
+function scrollMobileTarget(
+  target: HTMLElement | null,
+  block: ScrollLogicalPosition = 'nearest',
+): void {
+  if (
+    !target ||
+    typeof window === 'undefined' ||
+    typeof target.scrollIntoView !== 'function'
+  ) {
+    return
+  }
+
+  const isMobile = typeof window.matchMedia === 'function'
+    ? window.matchMedia('(max-width: 63.999rem)').matches
+    : window.innerWidth < 1024
+  if (!isMobile) return
+
+  const rect = target.getBoundingClientRect()
+  const topComfortZone = Math.min(144, Math.max(80, window.innerHeight * 0.16))
+  const bottomComfortZone = window.innerHeight - Math.min(
+    128,
+    Math.max(80, window.innerHeight * 0.14),
+  )
+  if (rect.top >= topComfortZone && rect.bottom <= bottomComfortZone) return
+
+  const reducedMotion = typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView({
+    behavior: reducedMotion ? 'auto' : 'smooth',
+    block,
+  })
+}
+
 export function reconcileDraftSelection(
   draft: CashClosingDraft,
   candidates: ClosingOperationalSummary,
@@ -254,8 +288,8 @@ function ClosingAdjustmentForm({
   const [bills, setBills] = useState<CentralCashBills>({
     b1000: 0, b500: 0, b200: 0, b100: 0, b50: 0, b20: 0,
   })
-  const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const { toast } = useToast()
   const billTotal = calculateCentralCashBillsTotal(bills) + Number(coinsAmount || 0)
   const amountValue = moneyValue(amount)
   const valid = Boolean(
@@ -278,7 +312,6 @@ function ClosingAdjustmentForm({
   async function save() {
     if (!valid) return
     setSaving(true)
-    setError('')
     try {
       const adjustment = await closingAdjustmentService.create({
         id: crypto.randomUUID(),
@@ -290,9 +323,10 @@ function ClosingAdjustmentForm({
         bills,
         coinsAmount: moneyValue(coinsAmount),
       })
+      toast.success('Ajuste registrado.')
       onCreated(adjustment)
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : 'No fue posible crear el ajuste.')
+      toast.error(cause instanceof Error ? cause.message : 'No fue posible crear el ajuste.')
     } finally {
       setSaving(false)
     }
@@ -352,7 +386,6 @@ function ClosingAdjustmentForm({
         <p className="mt-1">{type === 'inflow' ? 'Entrada' : 'Salida'} {type === 'inflow' ? '+' : '-'}{currencyFormatter.format(amountValue)}</p>
         <p className="mt-1 text-slate-500">El Corte original permanecerá sin cambios.</p>
       </div>
-      {error && <p className="alert-error">{error}</p>}
       {!networkAvailable && <p className="alert-error">Crear ajustes requiere conexión.</p>}
       <button className="button-primary w-full" disabled={!valid || saving} type="button" onClick={() => void save()}>
         {saving ? 'Confirmando…' : 'Confirmar ajuste'}
@@ -1145,9 +1178,12 @@ function ClosingFlow({
   const [showTransferDetails, setShowTransferDetails] = useState(false)
   const [showPaymentDetails, setShowPaymentDetails] = useState(false)
   const [showPurchaseDetails, setShowPurchaseDetails] = useState(false)
-  const [message, setMessage] = useState<string>()
   const [error, setError] = useState<string>()
   const [selectionConflict, setSelectionConflict] = useState(false)
+  const stepContentRef = useRef<HTMLDivElement>(null)
+  const confirmationSectionRef = useRef<HTMLElement>(null)
+  const previousStepRef = useRef<CashClosingStep | undefined>(undefined)
+  const { toast } = useToast()
 
   const operational = useMemo(
     () =>
@@ -1188,7 +1224,6 @@ function ClosingFlow({
     let active = true
     setLoading(true)
     setError(undefined)
-    setMessage(undefined)
     setCurrentDraft(undefined)
 
     void Promise.all([
@@ -1246,13 +1281,36 @@ function ClosingFlow({
     }
   }, [dataRevision, date, storeId, user.id])
 
+  useEffect(() => {
+    const nextStep = draft?.currentStep
+    const previousStep = previousStepRef.current
+    previousStepRef.current = nextStep
+    if (
+      loading ||
+      nextStep === undefined ||
+      previousStep === undefined ||
+      previousStep === nextStep
+    ) {
+      return
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      scrollMobileTarget(
+        nextStep === 4
+          ? confirmationSectionRef.current
+          : stepContentRef.current,
+        nextStep === 4 ? 'center' : 'nearest',
+      )
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [draft?.currentStep, loading])
+
   function persistDraft(
     nextDraft: CashClosingDraft,
     totals: ClosingOperationalTotals = operational,
   ) {
     const enrichedDraft = applyClosingSummary(nextDraft, totals)
     setCurrentDraft(enrichedDraft)
-    setMessage(undefined)
     setSaveState('saving')
     const sequence = ++saveSequence.current
 
@@ -1265,7 +1323,7 @@ function ClosingFlow({
         console.error('No fue posible guardar el borrador', cause)
         if (saveSequence.current === sequence) {
           setSaveState('idle')
-          setError('No fue posible guardar el borrador en este dispositivo.')
+          toast.error('No fue posible guardar el borrador en este dispositivo.')
         }
       })
   }
@@ -1315,7 +1373,7 @@ function ClosingFlow({
         return
       } catch (cause: unknown) {
         console.error('No fue posible actualizar las salidas del corte', cause)
-        setError('No fue posible actualizar las salidas del día.')
+        toast.error('No fue posible actualizar las salidas del día.')
         return
       }
     }
@@ -1347,7 +1405,7 @@ function ClosingFlow({
       persistDraft(reconciled, latestOperational)
     } catch (cause: unknown) {
       console.error('No fue posible actualizar los movimientos', cause)
-      setError('No fue posible actualizar los movimientos elegibles.')
+      toast.error('No fue posible actualizar los movimientos elegibles.')
     } finally {
       setSaving(false)
     }
@@ -1366,22 +1424,29 @@ function ClosingFlow({
       const confirmedClosing = await closingService.close(latestDraft, user)
       saveSequence.current += 1
       setCurrentDraft(undefined)
+      toast.success('Corte guardado.')
       onClosed(confirmedClosing)
     } catch (cause: unknown) {
       console.error('No fue posible cerrar el corte', cause)
-      if (
+      const movementConflict =
         cause instanceof ClosingDomainError &&
         (cause.code === 'MOVEMENT_ALREADY_ASSIGNED' ||
           cause.code === 'SELECTED_MOVEMENT_NOT_FOUND' ||
           cause.code === 'PURCHASE_ALREADY_IN_CLOSING')
-      ) {
+      if (movementConflict) {
         setSelectionConflict(true)
+        setError(
+          cause instanceof ClosingDomainError
+            ? cause.message
+            : 'El resumen cambió mientras se confirmaba el corte.',
+        )
+      } else {
+        toast.error(
+          cause instanceof Error
+            ? cause.message
+            : 'No fue posible confirmar el cierre. El borrador sigue guardado.',
+        )
       }
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'No fue posible confirmar el cierre. El borrador sigue guardado.',
-      )
     } finally {
       setSaving(false)
     }
@@ -1400,7 +1465,7 @@ function ClosingFlow({
       onBack()
     } catch (cause: unknown) {
       console.error('No fue posible descartar el borrador', cause)
-      setError('No fue posible descartar el borrador.')
+      toast.error('No fue posible descartar el borrador.')
     } finally {
       setSaving(false)
     }
@@ -1480,10 +1545,6 @@ function ClosingFlow({
           )}
         </div>
       )}
-      {message && (
-        <p className="alert-success mt-6"><CheckIcon className="size-5" />{message}</p>
-      )}
-
       {loading && !error && (
         <div className="panel mt-6 overflow-hidden p-0">
           <ListPageSkeleton rowsOnly rows={4} />
@@ -1491,7 +1552,7 @@ function ClosingFlow({
       )}
 
       {!loading && draft && summary && (
-        <div className="mx-auto mt-6 max-w-3xl">
+        <div className="mx-auto mt-6 max-w-3xl" ref={stepContentRef}>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
               <p className="font-bold text-slate-500">
                 Paso {draft.currentStep} de 4 · {selectedStore?.name} · {formatLongDate(date)}
@@ -2013,7 +2074,7 @@ function ClosingFlow({
                   )}
                 </article>
 
-                <article className="panel">
+                <article className="panel" ref={confirmationSectionRef}>
                   <p className="text-sm font-semibold text-slate-500">
                     Al confirmar, el borrador pasará a cerrado y se enviará a Supabase.
                   </p>

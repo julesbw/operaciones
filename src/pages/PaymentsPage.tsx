@@ -6,6 +6,7 @@ import {
 } from 'react'
 import { AppModal } from '../components/AppModal'
 import { ListPageSkeleton } from '../components/Skeletons'
+import { useToast } from '../components/ToastProvider'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -91,10 +92,10 @@ export function PaymentsPage({
   const [selectedHistory, setSelectedHistory] = useState<ConfirmedPayment>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
-  const [message, setMessage] = useState<string>()
   const [networkAvailable, setNetworkAvailable] = useState(
     connectivityService.isNetworkAvailable(),
   )
+  const { toast } = useToast()
 
   const loadLocal = useCallback(async () => {
     const collaborators = await referenceDataService.listCollaborators(
@@ -196,7 +197,7 @@ export function PaymentsPage({
 
   async function paymentConfirmed(confirmed: ConfirmedPayment) {
     setSelectedState(undefined)
-    setMessage(
+    toast.success(
       `Pago de ${confirmed.payment.collaboratorNameSnapshot} confirmado.`,
     )
     await loadLocal()
@@ -219,7 +220,6 @@ export function PaymentsPage({
         </div>
       )}
       {error && <p className="alert-error mt-5">{error}</p>}
-      {message && <p className="alert-success mt-5">{message}</p>}
 
       <div className="mt-6 flex gap-2 border-b border-slate-200">
         <button
@@ -439,7 +439,7 @@ function PaymentFormModal({
   const [notes, setNotes] = useState('')
   const [paymentId, setPaymentId] = useState('')
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
+  const { toast } = useToast()
   const today = getOperationalDate()
 
   useEffect(() => {
@@ -452,7 +452,6 @@ function PaymentFormModal({
     setSourceStoreId(openState.collaborator.storeId)
     setNotes('')
     setPaymentId(crypto.randomUUID())
-    setError(undefined)
   }, [openState])
 
   const pendingPeriods = useMemo(
@@ -520,7 +519,6 @@ function PaymentFormModal({
 
   async function confirm() {
     setSaving(true)
-    setError(undefined)
     try {
       const confirmed = await paymentService.confirm({
         paymentId,
@@ -535,7 +533,7 @@ function PaymentFormModal({
       onConfirmed(confirmed)
     } catch (cause: unknown) {
       console.error('No fue posible confirmar el pago', cause)
-      setError(
+      toast.error(
         cause instanceof Error ? cause.message : 'No fue posible confirmar el pago.',
       )
     } finally {
@@ -742,7 +740,6 @@ function PaymentFormModal({
         </label>
       </div>
 
-      {error && <p className="alert-error mt-5">{error}</p>}
       {!onlineConfirmationAvailable && (
         <p className="mt-4 text-center text-xs leading-5 text-slate-500">
           La selección permanece disponible, pero confirmar requiere conexión

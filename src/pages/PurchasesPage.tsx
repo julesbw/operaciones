@@ -11,12 +11,13 @@ import { CashBreakdownControl } from '../components/CashBreakdownControl'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import { ListPageSkeleton } from '../components/Skeletons'
+import { useToast } from '../components/ToastProvider'
 import {
   ALL_STORES,
   StoreScopeSelector,
   type StoreScopeValue,
 } from '../components/filters/StoreScopeSelector'
-import { CheckIcon, PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
+import { PlusIcon, ReceiptIcon, SyncIcon } from '../components/icons'
 import { EMPTY_CENTRAL_CASH_BILLS } from '../domain/constants'
 import {
   getRuntimeStoreScope,
@@ -110,7 +111,6 @@ export function PurchasesPage({
   const [dateTo, setDateTo] = useState(today)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState('')
   const [selected, setSelected] = useState<PaidPurchase>()
 
   const [formOpen, setFormOpen] = useState(false)
@@ -137,6 +137,7 @@ export function PurchasesPage({
   const fabRef = useRef<HTMLButtonElement>(null)
   const supplierInputRef = useRef<HTMLSelectElement>(null)
   const initialPurchaseResolutionRef = useRef<string | undefined>(undefined)
+  const { toast } = useToast()
 
   const activeSuppliers = useMemo(
     () => suppliers.filter((supplier) => supplier.isActive),
@@ -219,12 +220,6 @@ export function PurchasesPage({
       active = false
     }
   }, [initialPurchaseId, isAdmin, networkAvailable, purchases, user])
-
-  useEffect(() => {
-    if (!feedback) return
-    const timeout = window.setTimeout(() => setFeedback(''), 3200)
-    return () => window.clearTimeout(timeout)
-  }, [feedback])
 
   const grouped = useMemo(() => {
     const groups = new Map<string, PaidPurchase[]>()
@@ -348,7 +343,7 @@ export function PurchasesPage({
       )
       setFormOpen(false)
       setConfirming(false)
-      setFeedback(
+      toast.success(
         fundingSource === 'store_cash' && !networkAvailable
           ? 'Compra registrada. Pendiente de sincronizar.'
           : 'Compra registrada.',
@@ -367,7 +362,7 @@ export function PurchasesPage({
           })
       }
     } catch (cause: unknown) {
-      setFormError(
+      toast.error(
         cause instanceof Error
           ? cause.message
           : 'No fue posible registrar la compra.',
@@ -388,7 +383,6 @@ export function PurchasesPage({
     <section>
       <h1 className="page-title">Compras</h1>
 
-      {feedback && <p className="alert-success mt-5"><CheckIcon className="size-5" />{feedback}</p>}
       {error && <p className="alert-error mt-5">{error}</p>}
       {!loading && activeSuppliers.length === 0 && (
         <p className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">

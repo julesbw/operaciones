@@ -3,6 +3,7 @@ import { AppModal } from '../components/AppModal'
 import { BillCounter } from '../components/BillCounter'
 import { DatePickerButton } from '../components/DatePickerButton'
 import { ListPageSkeleton } from '../components/Skeletons'
+import { useToast } from '../components/ToastProvider'
 import {
   FilterChipGroup,
   type FilterChipOption,
@@ -267,7 +268,7 @@ export function CentralCashPage({
   const [action, setAction] = useState<'receiving' | 'adjusting'>()
   const [fromCache, setFromCache] = useState(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const { toast } = useToast()
 
   const queryStoreId = storeFilter === ALL_STORES ? undefined : storeFilter
 
@@ -354,14 +355,12 @@ export function CentralCashPage({
     setReceiptId(crypto.randomUUID())
     setReceiptNotes('')
     setError('')
-    setMessage('')
   }
 
   async function confirmReceipt() {
     if (!selectedClosing || !receiptId) return
     setAction('receiving')
     setError('')
-    setMessage('')
     try {
       await centralCashService.receiveClosing(
         selectedClosing.id,
@@ -369,7 +368,7 @@ export function CentralCashPage({
         receiptNotes,
       )
       setSelectedClosing(undefined)
-      setMessage('Recepción confirmada.')
+      toast.success('Recepción confirmada.')
       setTab('movements')
       await load()
     } catch (cause: unknown) {
@@ -379,9 +378,9 @@ export function CentralCashPage({
       ) {
         setSelectedClosing(undefined)
         await load()
-        setError('Este Corte acaba de ser recibido desde otro dispositivo.')
+        toast.warning('Este Corte acaba de ser recibido desde otro dispositivo.')
       } else {
-        setError(errorMessage(cause))
+        toast.error(errorMessage(cause))
       }
     } finally {
       setAction(undefined)
@@ -392,7 +391,6 @@ export function CentralCashPage({
     if (!adjustment || !validAdjustment) return
     setAction('adjusting')
     setError('')
-    setMessage('')
     try {
       await centralCashService.createAdjustment({
         id: adjustment.id,
@@ -405,11 +403,11 @@ export function CentralCashPage({
         coinsAmount: Number(adjustment.coinsAmount || 0),
       })
       setAdjustment(undefined)
-      setMessage('Ajuste registrado.')
+      toast.success('Ajuste registrado.')
       setTab('movements')
       await load()
     } catch (cause: unknown) {
-      setError(errorMessage(cause))
+      toast.error(errorMessage(cause))
     } finally {
       setAction(undefined)
     }
@@ -548,7 +546,6 @@ export function CentralCashPage({
           </p>
         )}
         {error && <p className="alert-error">{error}</p>}
-        {message && <p className="alert-success">{message}</p>}
         {loading && !error && <ListPageSkeleton rowsOnly rows={5} />}
 
         {!loading && tab === 'movements' && movements.length === 0 && (
@@ -676,7 +673,6 @@ export function CentralCashPage({
         onClick={() => {
           setAdjustment(newAdjustment())
           setError('')
-          setMessage('')
         }}
       >
         <PlusIcon className="size-6" />
