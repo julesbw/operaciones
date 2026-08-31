@@ -12,6 +12,7 @@ import { DatePickerButton } from '../components/DatePickerButton'
 import { FilterChipGroup } from '../components/filters/FilterChipGroup'
 import { ListPageSkeleton } from '../components/Skeletons'
 import { TOAST_DURATIONS, useToast } from '../components/ToastProvider'
+import { DraftActionMenu } from '../components/DraftActionMenu'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -45,6 +46,12 @@ import {
   PurchaseDomainError,
   purchaseService,
 } from '../services/purchaseService'
+import {
+  FORM_DRAFT_SAVE_DEBOUNCE_MS,
+  formDraftService,
+  isPurchaseDraftData,
+  type PurchaseDraftData,
+} from '../services/formDraftService'
 import { referenceDataService } from '../services/referenceDataService'
 import { syncService } from '../services/syncService'
 import { formatLongDate, getLocalDate } from '../utils/date'
@@ -141,10 +148,22 @@ export function PurchasesPage({
   const [cashBreakdownError, setCashBreakdownError] = useState('')
   const [purchaseId, setPurchaseId] = useState('')
   const [paymentId, setPaymentId] = useState('')
+  const [draftAvailable, setDraftAvailable] = useState(false)
+  const [draftMenuOpen, setDraftMenuOpen] = useState(false)
   const fabRef = useRef<HTMLButtonElement>(null)
   const supplierInputRef = useRef<HTMLSelectElement>(null)
   const initialPurchaseResolutionRef = useRef<string | undefined>(undefined)
   const cashBreakdownErrorTimerRef = useRef<number | undefined>(undefined)
+  const draftOwnerId = operatorSession?.account.id ?? user.id
+  const formOwnerIdRef = useRef(draftOwnerId)
+  const previousDraftOwnerRef = useRef(draftOwnerId)
+  const latestDraftRef = useRef<{
+    ownerId: string
+    formOwnerId: string
+    formOpen: boolean
+    meaningful: boolean
+    data: PurchaseDraftData
+  } | undefined>(undefined)
   const { toast } = useToast()
 
   const clearCashBreakdownError = useCallback(() => {
@@ -288,7 +307,124 @@ export function PurchasesPage({
     Object.values(bills).some((count) => count > 0) ||
     coinsAmount > 0
 
-  function openForm() {
+  const purchaseDraftData = useMemo<PurchaseDraftData>(
+    () => ({
+      supplierId,
+      businessDate,
+      folio,
+      amount,
+      fundingSource,
+      sourceStoreId,
+      paymentMethod,
+      bills: { ...bills },
+      coinsAmount,
+      cashBreakdownOpen,
+      notes,
+      purchaseId,
+      paymentId,
+    }),
+    [
+      amount,
+      bills,
+      businessDate,
+      cashBreakdownOpen,
+      folio,
+      fundingSource,
+      notes,
+      paymentId,
+      paymentMethod,
+      purchaseId,
+      coinsAmount,
+      sourceStoreId,
+      supplierId,
+    ],
+  )
+
+  latestDraftRef.current = {
+    ownerId: draftOwnerId,
+    formOwnerId: formOwnerIdRef.current,
+    formOpen,
+    meaningful: formDirty,
+    data: purchaseDraftData,
+  }
+
+  useEffect(() => {
+    const ownerChanged = previousDraftOwnerRef.current !== draftOwnerId
+    previousDraftOwnerRef.current = draftOwnerId
+    if (ownerChanged) {
+      formOwnerIdRef.current = ''
+      setFormOpen(false)
+    } else {
+      formOwnerIdRef.current = draftOwnerId
+    }
+    setDraftMenuOpen(false)
+    setDraftAvailable(
+      Boolean(
+        formDraftService.read(
+          'purchase',
+          draftOwnerId,
+          isPurchaseDraftData,
+        ),
+      ),
+    )
+  }, [draftOwnerId])
+
+  useEffect(() => {
+    if (!formOpen || formOwnerIdRef.current !== draftOwnerId) return
+
+    const timer = window.setTimeout(() => {
+      const current = latestDraftRef.current
+      if (
+        !current ||
+        !current.formOpen ||
+        current.ownerId !== current.formOwnerId
+      ) {
+        return
+      }
+      if (!current.meaningful) {
+        formDraftService.clear('purchase', current.ownerId)
+        setDraftAvailable(false)
+        return
+      }
+      if (formDraftService.save('purchase', current.ownerId, current.data)) {
+        setDraftAvailable(true)
+      }
+    }, FORM_DRAFT_SAVE_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [draftOwnerId, formOpen, formDirty, purchaseDraftData])
+
+  useEffect(() => {
+    const flushDraft = () => {
+      const current = latestDraftRef.current
+      if (
+        !current ||
+        !current.formOpen ||
+        current.ownerId !== current.formOwnerId
+      ) {
+        return
+      }
+      if (!current.meaningful) {
+        formDraftService.clear('purchase', current.ownerId)
+        setDraftAvailable(false)
+        return
+      }
+      if (formDraftService.save('purchase', current.ownerId, current.data)) {
+        setDraftAvailable(true)
+      }
+    }
+
+    window.addEventListener('beforeunload', flushDraft)
+    window.addEventListener('pagehide', flushDraft)
+    return () => {
+      window.removeEventListener('beforeunload', flushDraft)
+      window.removeEventListener('pagehide', flushDraft)
+      flushDraft()
+    }
+  }, [])
+
+  function resetFormForNewDraft() {
+    formOwnerIdRef.current = draftOwnerId
     setSupplierId(initialSupplierId)
     setBusinessDate(today)
     setFolio('')
@@ -308,6 +444,85 @@ export function PurchasesPage({
     setFormOpen(true)
   }
 
+  function readPurchaseDraft() {
+    return formDraftService.read('purchase', draftOwnerId, isPurchaseDraftData)
+  }
+
+  function persistCurrentDraft() {
+    if (formOwnerIdRef.current !== draftOwnerId) return
+    if (!formDirty) {
+      formDraftService.clear('purchase', draftOwnerId)
+      setDraftAvailable(false)
+      return
+    }
+    if (formDraftService.save('purchase', draftOwnerId, purchaseDraftData)) {
+      setDraftAvailable(true)
+    }
+  }
+
+  function restorePurchaseDraft() {
+    const draft = readPurchaseDraft()
+    if (!draft) {
+      setDraftAvailable(false)
+      resetFormForNewDraft()
+      return
+    }
+
+    const data = draft.data
+    formOwnerIdRef.current = draftOwnerId
+    setSupplierId(data.supplierId)
+    setBusinessDate(data.businessDate)
+    setFolio(data.folio)
+    setAmount(data.amount)
+    setFundingSource(data.fundingSource)
+    setSourceStoreId(data.sourceStoreId)
+    setPaymentMethod(data.paymentMethod)
+    setBills({ ...data.bills })
+    setCoinsAmount(data.coinsAmount)
+    setCashBreakdownOpen(data.cashBreakdownOpen)
+    setNotes(data.notes)
+    setPurchaseId(data.purchaseId)
+    setPaymentId(data.paymentId)
+    clearCashBreakdownError()
+    setFormError('')
+    setConfirming(false)
+    setDraftAvailable(true)
+    setDraftMenuOpen(false)
+    setFormOpen(true)
+    toast.info('Borrador recuperado')
+  }
+
+  function openForm() {
+    if (draftMenuOpen) {
+      setDraftMenuOpen(false)
+      return
+    }
+    if (readPurchaseDraft()) {
+      setDraftAvailable(true)
+      setDraftMenuOpen(true)
+      return
+    }
+    resetFormForNewDraft()
+  }
+
+  function startNewForm() {
+    const draft = readPurchaseDraft()
+    if (
+      draft &&
+      !window.confirm(
+        'Hay un borrador sin guardar.\n¿Descartarlo y comenzar uno nuevo?',
+      )
+    ) {
+      return
+    }
+    if (draft) {
+      formDraftService.clear('purchase', draftOwnerId)
+      setDraftAvailable(false)
+    }
+    setDraftMenuOpen(false)
+    resetFormForNewDraft()
+  }
+
   function handleFundingSourceChange(nextFundingSource: PaymentFundingSource) {
     if (nextFundingSource === fundingSource) return
     clearCashBreakdownError()
@@ -322,7 +537,25 @@ export function PurchasesPage({
   }
 
   function closeForm() {
+    persistCurrentDraft()
     clearCashBreakdownError()
+    setDraftMenuOpen(false)
+    setFormOpen(false)
+  }
+
+  function cancelForm() {
+    formDraftService.clear('purchase', draftOwnerId)
+    setDraftAvailable(false)
+    formOwnerIdRef.current = ''
+    if (latestDraftRef.current) {
+      latestDraftRef.current = {
+        ...latestDraftRef.current,
+        formOpen: false,
+        formOwnerId: '',
+      }
+    }
+    clearCashBreakdownError()
+    setDraftMenuOpen(false)
     setFormOpen(false)
   }
 
@@ -380,6 +613,8 @@ export function PurchasesPage({
         user,
         operatorSession,
       )
+      formDraftService.clear('purchase', draftOwnerId)
+      setDraftAvailable(false)
       setFormOpen(false)
       setConfirming(false)
       toast.success(
@@ -540,7 +775,13 @@ export function PurchasesPage({
         </div>
       )}
 
-      <button aria-label="Registrar nueva Compra" className="app-fab" disabled={activeSuppliers.length === 0 || (activeStores.length === 0 && !centralAvailable)} ref={fabRef} title="Nueva Compra" type="button" onClick={openForm}>
+      <DraftActionMenu
+        open={draftMenuOpen}
+        onClose={() => setDraftMenuOpen(false)}
+        onContinue={restorePurchaseDraft}
+        onNew={startNewForm}
+      />
+      <button aria-label="Registrar nueva Compra" aria-expanded={draftMenuOpen} aria-haspopup={draftAvailable ? 'menu' : undefined} className="app-fab" disabled={activeSuppliers.length === 0 || (activeStores.length === 0 && !centralAvailable)} ref={fabRef} title="Nueva Compra" type="button" onClick={openForm}>
         <PlusIcon className="size-7" />
       </button>
 
@@ -548,7 +789,6 @@ export function PurchasesPage({
         closeDisabled={saving}
         closeLabel="Cerrar formulario de Compra"
         eyebrow="Pago de contado"
-        hasUnsavedChanges={formDirty}
         initialFocusRef={supplierInputRef}
         open={formOpen}
         returnFocusRef={fabRef}
@@ -622,7 +862,7 @@ export function PurchasesPage({
               </div>
             )}
             <div className="mt-6 grid grid-cols-2 gap-3">
-              <button className="button-secondary" disabled={saving} type="button" onClick={closeForm}>Cancelar</button>
+              <button className="button-secondary" disabled={saving} type="button" onClick={cancelForm}>Cancelar</button>
               <button className="button-primary" disabled={saving || activeSuppliers.length === 0} type="submit">Continuar</button>
             </div>
           </form>

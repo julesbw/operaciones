@@ -18,6 +18,7 @@ import {
   ReceiptIcon,
   SyncIcon,
 } from '../components/icons'
+import { DraftActionMenu } from '../components/DraftActionMenu'
 import {
   ALL_STORES,
   StoreScopeSelector,
@@ -49,6 +50,12 @@ import {
   expenseService,
   ExpenseValidationError,
 } from '../services/expenseService'
+import {
+  FORM_DRAFT_SAVE_DEBOUNCE_MS,
+  formDraftService,
+  isExpenseDraftData,
+  type ExpenseDraftData,
+} from '../services/formDraftService'
 import { formatLongDate, getLocalDate } from '../utils/date'
 import {
   currencyFormatter,
@@ -160,9 +167,21 @@ export function ExpensesPage({
   const [errors, setErrors] = useState<string[]>([])
   const [cashBreakdownError, setCashBreakdownError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [draftAvailable, setDraftAvailable] = useState(false)
+  const [draftMenuOpen, setDraftMenuOpen] = useState(false)
   const addButtonRef = useRef<HTMLButtonElement>(null)
   const amountInputRef = useRef<HTMLInputElement>(null)
   const cashBreakdownErrorTimerRef = useRef<number | undefined>(undefined)
+  const draftOwnerId = operatorAccountId ?? operatorSession?.account.id ?? user.id
+  const formOwnerIdRef = useRef(draftOwnerId)
+  const previousDraftOwnerRef = useRef(draftOwnerId)
+  const latestDraftRef = useRef<{
+    ownerId: string
+    formOwnerId: string
+    formOpen: boolean
+    meaningful: boolean
+    data: ExpenseDraftData
+  } | undefined>(undefined)
   const { toast } = useToast()
   const centralAvailable =
     isAdmin && networkAvailable && isSupabaseConfigured && !user.demo
@@ -231,6 +250,35 @@ export function ExpensesPage({
     }
   }, [])
 
+  const expenseDraftData = useMemo<ExpenseDraftData>(
+    () => ({
+      formStoreId,
+      formDate,
+      amount,
+      concept,
+      requestId,
+      fundingSource,
+      paymentMethod,
+      bills: { ...bills },
+      coinsAmount,
+      cashBreakdownOpen,
+      notes,
+    }),
+    [
+      amount,
+      bills,
+      cashBreakdownOpen,
+      concept,
+      formDate,
+      formStoreId,
+      fundingSource,
+      notes,
+      paymentMethod,
+      requestId,
+      coinsAmount,
+    ],
+  )
+
   const isFormDirty =
     amount.trim().length > 0 ||
     concept.trim().length > 0 ||
@@ -241,6 +289,89 @@ export function ExpensesPage({
     formDate !== initialFormDate ||
     Object.values(bills).some((count) => count > 0) ||
     coinsAmount > 0
+
+  latestDraftRef.current = {
+    ownerId: draftOwnerId,
+    formOwnerId: formOwnerIdRef.current,
+    formOpen,
+    meaningful: isFormDirty,
+    data: expenseDraftData,
+  }
+
+  useEffect(() => {
+    const ownerChanged = previousDraftOwnerRef.current !== draftOwnerId
+    previousDraftOwnerRef.current = draftOwnerId
+    if (ownerChanged) {
+      formOwnerIdRef.current = ''
+      setFormOpen(false)
+    } else {
+      formOwnerIdRef.current = draftOwnerId
+    }
+    setDraftMenuOpen(false)
+    setDraftAvailable(
+      Boolean(
+        formDraftService.read(
+          'expense',
+          draftOwnerId,
+          isExpenseDraftData,
+        ),
+      ),
+    )
+  }, [draftOwnerId])
+
+  useEffect(() => {
+    if (!formOpen || formOwnerIdRef.current !== draftOwnerId) return
+
+    const timer = window.setTimeout(() => {
+      const current = latestDraftRef.current
+      if (
+        !current ||
+        !current.formOpen ||
+        current.ownerId !== current.formOwnerId
+      ) {
+        return
+      }
+      if (!current.meaningful) {
+        formDraftService.clear('expense', current.ownerId)
+        setDraftAvailable(false)
+        return
+      }
+      if (formDraftService.save('expense', current.ownerId, current.data)) {
+        setDraftAvailable(true)
+      }
+    }, FORM_DRAFT_SAVE_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [draftOwnerId, expenseDraftData, formOpen, isFormDirty])
+
+  useEffect(() => {
+    const flushDraft = () => {
+      const current = latestDraftRef.current
+      if (
+        !current ||
+        !current.formOpen ||
+        current.ownerId !== current.formOwnerId
+      ) {
+        return
+      }
+      if (!current.meaningful) {
+        formDraftService.clear('expense', current.ownerId)
+        setDraftAvailable(false)
+        return
+      }
+      if (formDraftService.save('expense', current.ownerId, current.data)) {
+        setDraftAvailable(true)
+      }
+    }
+
+    window.addEventListener('beforeunload', flushDraft)
+    window.addEventListener('pagehide', flushDraft)
+    return () => {
+      window.removeEventListener('beforeunload', flushDraft)
+      window.removeEventListener('pagehide', flushDraft)
+      flushDraft()
+    }
+  }, [])
 
   const visibleExpenses = useMemo(() => {
     const normalizedSearch = search.trim().toLocaleLowerCase('es-MX')
@@ -293,7 +424,7 @@ export function ExpensesPage({
     if (value < dateFrom) setDateFrom(value)
   }
 
-  function openForm() {
+  function getNewFormDefaults() {
     const selectedStore = isAdmin
       ? storeFilter === ALL_STORES
         ? ''
@@ -301,6 +432,13 @@ export function ExpensesPage({
       : cashierStoreId
     const selectedDate = dateFrom === dateTo ? dateFrom : today
 
+    return { selectedStore, selectedDate }
+  }
+
+  function resetFormForNewDraft() {
+    const { selectedStore, selectedDate } = getNewFormDefaults()
+
+    formOwnerIdRef.current = draftOwnerId
     setFormStoreId(selectedStore)
     setInitialFormStoreId(selectedStore)
     setFormDate(selectedDate)
@@ -319,8 +457,105 @@ export function ExpensesPage({
     setFormOpen(true)
   }
 
-  function closeForm() {
+  function readExpenseDraft() {
+    return formDraftService.read('expense', draftOwnerId, isExpenseDraftData)
+  }
+
+  function persistCurrentDraft() {
+    if (formOwnerIdRef.current !== draftOwnerId) return
+    if (!isFormDirty) {
+      formDraftService.clear('expense', draftOwnerId)
+      setDraftAvailable(false)
+      return
+    }
+    if (formDraftService.save('expense', draftOwnerId, expenseDraftData)) {
+      setDraftAvailable(true)
+    }
+  }
+
+  function restoreExpenseDraft() {
+    const draft = readExpenseDraft()
+    if (!draft) {
+      setDraftAvailable(false)
+      resetFormForNewDraft()
+      return
+    }
+
+    const { selectedStore, selectedDate } = getNewFormDefaults()
+    const data = draft.data
+    formOwnerIdRef.current = draftOwnerId
+    setFormStoreId(data.formStoreId)
+    setInitialFormStoreId(selectedStore)
+    setFormDate(data.formDate)
+    setInitialFormDate(selectedDate)
+    setAmount(data.amount)
+    setConcept(data.concept)
+    setRequestId(data.requestId)
+    setFundingSource(data.fundingSource)
+    setPaymentMethod(data.paymentMethod)
+    setBills({ ...data.bills })
+    setCoinsAmount(data.coinsAmount)
+    setCashBreakdownOpen(data.cashBreakdownOpen)
+    setNotes(data.notes)
     clearCashBreakdownError()
+    setErrors([])
+    setDraftAvailable(true)
+    setDraftMenuOpen(false)
+    setFormOpen(true)
+    toast.info('Borrador recuperado')
+  }
+
+  function openForm() {
+    if (draftMenuOpen) {
+      setDraftMenuOpen(false)
+      return
+    }
+    if (readExpenseDraft()) {
+      setDraftAvailable(true)
+      setDraftMenuOpen(true)
+      return
+    }
+    resetFormForNewDraft()
+  }
+
+  function startNewForm() {
+    const draft = readExpenseDraft()
+    if (
+      draft &&
+      !window.confirm(
+        'Hay un borrador sin guardar.\n¿Descartarlo y comenzar uno nuevo?',
+      )
+    ) {
+      return
+    }
+    if (draft) {
+      formDraftService.clear('expense', draftOwnerId)
+      setDraftAvailable(false)
+    }
+    setDraftMenuOpen(false)
+    resetFormForNewDraft()
+  }
+
+  function closeForm() {
+    persistCurrentDraft()
+    clearCashBreakdownError()
+    setDraftMenuOpen(false)
+    setFormOpen(false)
+  }
+
+  function cancelForm() {
+    formDraftService.clear('expense', draftOwnerId)
+    setDraftAvailable(false)
+    formOwnerIdRef.current = ''
+    if (latestDraftRef.current) {
+      latestDraftRef.current = {
+        ...latestDraftRef.current,
+        formOpen: false,
+        formOwnerId: '',
+      }
+    }
+    clearCashBreakdownError()
+    setDraftMenuOpen(false)
     setFormOpen(false)
   }
 
@@ -374,13 +609,15 @@ export function ExpensesPage({
         user,
         operatorAccountId,
       )
+      formDraftService.clear('expense', draftOwnerId)
+      setDraftAvailable(false)
+      setFormOpen(false)
       await load()
       toast.success(
         fundingSource === 'store_cash' && !networkAvailable
           ? 'Gasto registrado. Pendiente de sincronizar.'
           : 'Gasto registrado',
       )
-      setFormOpen(false)
       onDataChanged()
       if (fundingSource === 'store_cash') {
         await onSync?.()
@@ -605,8 +842,16 @@ export function ExpensesPage({
         </div>
       </div>
 
+      <DraftActionMenu
+        open={draftMenuOpen}
+        onClose={() => setDraftMenuOpen(false)}
+        onContinue={restoreExpenseDraft}
+        onNew={startNewForm}
+      />
       <button
         aria-label="Registrar nuevo gasto"
+        aria-expanded={draftMenuOpen}
+        aria-haspopup={draftAvailable ? 'menu' : undefined}
         className="app-fab"
         disabled={cannotCreate}
         ref={addButtonRef}
@@ -621,7 +866,6 @@ export function ExpensesPage({
         closeDisabled={saving}
         closeLabel="Cerrar formulario de gasto"
         eyebrow="Registro local"
-        hasUnsavedChanges={isFormDirty}
         initialFocusRef={amountInputRef}
         open={formOpen}
         returnFocusRef={addButtonRef}
@@ -776,7 +1020,7 @@ export function ExpensesPage({
                 className="button-secondary w-full"
                 disabled={saving}
                 type="button"
-                onClick={closeForm}
+                onClick={cancelForm}
               >
                 Cancelar
               </button>
