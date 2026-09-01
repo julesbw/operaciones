@@ -6,11 +6,79 @@
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#f6f1e8" />
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      :root {
+        color-scheme: light;
+        background: #f6f1e8;
+      }
+
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+        background: #241d1b;
+      }
+
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+        background: #f6f1e8;
+      }
+
+      :root[data-theme='dark'] body,
+      :root[data-theme='dark'] #root {
+        background: #241d1b;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          color-scheme: dark;
+          background: #241d1b;
+        }
+
+        :root:not([data-theme='light']) body,
+        :root:not([data-theme='light']) #root {
+          background: #241d1b;
+        }
+      }
+    </style>
+    <script>
+      (() => {
+        const root = document.documentElement
+        let preference = 'system'
+
+        try {
+          const stored = window.localStorage.getItem('operaciones.theme')
+          if (stored === 'light' || stored === 'dark') preference = stored
+        } catch {
+          // The app can still follow the system preference when storage is unavailable.
+        }
+
+        const systemIsDark =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+        const theme =
+          preference === 'system'
+            ? systemIsDark
+              ? 'dark'
+              : 'light'
+            : preference
+
+        root.dataset.theme = theme
+        root.dataset.themePreference = preference
+        root.style.colorScheme = theme
+        const themeColor = theme === 'dark' ? '#241d1b' : '#f6f1e8'
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute('content', themeColor)
+      })()
+    </script>
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#8b1e3f" />
     <meta name="application-name" content="La Piedad Operaciones" />
     <meta name="apple-mobile-web-app-title" content="La Piedad" />
     <meta
@@ -19,7 +87,7 @@
     />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+      content="default-src 'self'; script-src 'self' 'sha256-Xaql5LdabpOg4TwPnVvTLzRRiD/yZ6F7XQJuMkYTIDo='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
     />
     <title>La Piedad Operaciones</title>
   </head>

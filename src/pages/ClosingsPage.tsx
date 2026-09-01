@@ -114,7 +114,7 @@ function StepProgress({ currentStep }: { currentStep: CashClosingStep }) {
               aria-current={active ? 'step' : undefined}
               className={`mx-auto flex size-8 items-center justify-center rounded-full text-xs font-black ${
                 active
-                  ? 'bg-teal-700 text-white ring-4 ring-teal-100'
+                  ? 'primary-background text-on-primary ring-4 ring-teal-100'
                   : completed
                     ? 'bg-emerald-100 text-emerald-800'
                     : 'bg-slate-100 text-slate-400'

@@ -125,10 +125,10 @@ export function DashboardPage({
         <article className="hero-card">
           <div className="relative z-[1] max-w-lg">
             <span className="eyebrow-light">Acción rápida</span>
-            <h2 className="mt-4 text-3xl font-black tracking-tight text-white">
+            <h2 className="mt-4 text-3xl font-black tracking-tight text-on-primary">
               Registra un gasto en menos de un minuto.
             </h2>
-            <p className="mt-3 max-w-md text-sm leading-6 text-teal-50/75">
+            <p className="mt-3 max-w-md text-sm leading-6 text-on-primary-muted">
               Sólo necesitamos el monto, el concepto y cómo se pagó. La tienda y la fecha ya están listas.
             </p>
             <button
@@ -180,7 +180,7 @@ export function DashboardPage({
           type="button"
           onClick={() => onNavigate('closings')}
         >
-          <span className="stat-icon bg-slate-900 text-white">
+          <span className="stat-icon bg-[var(--text)] text-on-primary">
             <CashIcon className="size-5" />
           </span>
           <span className="flex-1">

@@ -172,7 +172,7 @@ export function NotificationCenter({
         {unreadCount > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-5 text-white ring-2 ring-white"
+            className="absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-5 text-on-primary ring-2 ring-white"
           >
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -251,7 +251,7 @@ export function NotificationCenter({
                             {!notification.readAt && (
                               <span
                                 aria-label="No leída"
-                                className="size-2 shrink-0 rounded-full bg-teal-700"
+                                className="size-2 shrink-0 rounded-full primary-background"
                               />
                             )}
                           </span>

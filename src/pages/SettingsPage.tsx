@@ -30,6 +30,8 @@ import {
   type PushNotificationStatus,
 } from '../services/pushNotificationService'
 import { WEEKDAYS } from '../domain/constants'
+import { THEME_OPTIONS } from '../theme/theme'
+import { useTheme } from '../theme/ThemeProvider'
 import { currencyFormatter } from '../utils/money'
 
 type SettingsTab = 'stores' | 'suppliers' | 'team' | 'users' | 'system'
@@ -69,6 +71,7 @@ export function SettingsPage({
   networkAvailable = connectivityService.isNetworkAvailable(),
   onStoresChanged,
 }: SettingsPageProps) {
+  const { preference, setPreference } = useTheme()
   const isAdmin = user.role === 'admin'
   const canCreateSuppliers = hasCapability(
     { technicalUser: user, operatorSession },
@@ -888,6 +891,51 @@ export function SettingsPage({
 
       {tab === 'system' && (
         <>
+          <article className="panel mt-6" aria-labelledby="appearance-title">
+            <div className="flex items-start gap-3">
+              <span className="stat-icon bg-teal-50 text-teal-700">
+                <SettingsIcon className="size-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="eyebrow">Sistema</p>
+                <h2 className="text-xl font-extrabold text-slate-950" id="appearance-title">
+                  Apariencia
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Elige cómo se muestra Operaciones. La preferencia se guarda en este dispositivo.
+                </p>
+              </div>
+            </div>
+            <fieldset className="mt-6">
+              <legend className="sr-only">Apariencia</legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {THEME_OPTIONS.map((option) => (
+                  <label
+                    className={`theme-option ${preference === option.value ? 'theme-option-selected' : ''}`}
+                    key={option.value}
+                  >
+                    <input
+                      aria-describedby={`theme-description-${option.value}`}
+                      checked={preference === option.value}
+                      className="theme-option-input"
+                      name="theme-preference"
+                      type="radio"
+                      value={option.value}
+                      onChange={() => setPreference(option.value)}
+                    />
+                    <span aria-hidden="true" className="theme-option-indicator" />
+                    <span className="min-w-0">
+                      <span className="theme-option-label">{option.label}</span>
+                      <span className="theme-option-description" id={`theme-description-${option.value}`}>
+                        {option.description}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </article>
+
           <article className="panel mt-6">
             <div className="flex items-center gap-3">
               <span className="stat-icon bg-teal-50 text-teal-700">

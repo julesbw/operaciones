@@ -688,7 +688,7 @@ export function AppShell({
 
       {profileOpen && (
         <div
-          className="profile-overlay fixed inset-0 z-50 flex justify-end overflow-hidden overscroll-none bg-slate-950/40 backdrop-blur-[2px]"
+          className="profile-overlay fixed inset-0 z-50 flex justify-end overflow-hidden overscroll-none backdrop-blur-[2px]"
           role="presentation"
           onClick={() => closeProfile()}
         >

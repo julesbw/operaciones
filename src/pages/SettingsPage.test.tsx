@@ -49,6 +49,17 @@ describe('SettingsPage operational users', () => {
     expect(markup).toContain('overflow-y-hidden')
   })
 
+  it('offers a device-level appearance selector with system as the default', () => {
+    const markup = render({ id: 'cashier', fullName: 'Caja', role: 'cashier', storeId: 'store-id' })
+
+    expect(markup).toContain('Apariencia')
+    expect(markup).toContain('value="system"')
+    expect(markup).toContain('value="light"')
+    expect(markup).toContain('value="dark"')
+    expect(markup).toContain('checked="" value="system"')
+    expect(markup).toContain('se guarda en este dispositivo')
+  })
+
   it('does not expose Usuarios to cashiers', () => {
     expect(render({ id: 'cashier', fullName: 'Caja', role: 'cashier', storeId: 'store-id' })).not.toContain('Usuarios')
   })

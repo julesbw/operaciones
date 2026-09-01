@@ -44,15 +44,15 @@ export function LoginPage({ notice, onSignedIn }: LoginPageProps) {
     <main className="login-shell">
       <section className="login-story">
         <div className="relative z-10 max-w-xl">
-          <div className="flex items-center gap-4 text-white">
+          <div className="flex items-center gap-4 text-on-primary">
             <img
               alt="Símbolo de La Piedad Operaciones"
-              className="size-24 rounded-full border border-white/25 object-cover shadow-2xl"
+              className="primary-border size-24 rounded-full border object-cover shadow-2xl"
               src="/la-piedad-operaciones-ui.png"
             />
             <div>
               <p className="brand-display text-3xl font-bold leading-none">La Piedad</p>
-              <p className="mt-2 text-[11px] font-extrabold uppercase tracking-[0.24em] text-[#e8ca83]">
+              <p className="mt-2 text-[11px] font-extrabold uppercase tracking-[0.24em] text-gold-foreground">
                 Operaciones
               </p>
             </div>
@@ -60,10 +60,10 @@ export function LoginPage({ notice, onSignedIn }: LoginPageProps) {
 
           <div className="mt-20 lg:mt-32">
             <span className="eyebrow-light">Todo en un solo lugar</span>
-            <h1 className="brand-display mt-5 max-w-lg text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-white lg:text-6xl">
+            <h1 className="brand-display mt-5 max-w-lg text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-on-primary lg:text-6xl">
               Tu tienda, al día. Sin complicaciones.
             </h1>
-            <p className="mt-6 max-w-md text-base leading-7 text-teal-50/80 lg:text-lg">
+            <p className="mt-6 max-w-md text-base leading-7 text-on-primary-muted lg:text-lg">
               Registra gastos y asistencias en segundos, incluso cuando la conexión no coopera.
             </p>
           </div>
@@ -73,7 +73,7 @@ export function LoginPage({ notice, onSignedIn }: LoginPageProps) {
       </section>
 
       <section className="flex min-h-dvh items-center justify-center bg-slate-50 px-5 py-10 sm:px-10 lg:px-16">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_24px_70px_rgba(100,21,45,0.08)] sm:p-9">
+        <div className="surface-shadow-lg w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 sm:p-9">
           <div className="mb-9 flex flex-col items-center text-center lg:hidden">
             <img
               alt="Símbolo de La Piedad Operaciones"

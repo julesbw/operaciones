@@ -111,11 +111,11 @@ export function AppModal({
   if (!open) return null
 
   const overlayClasses = [
-    'app-modal-overlay fixed inset-0 z-[60] flex min-h-dvh items-center justify-center overflow-hidden overscroll-none bg-slate-950/45 p-4 backdrop-blur-[3px]',
+    'app-modal-overlay fixed inset-0 z-[60] flex min-h-dvh items-center justify-center overflow-hidden overscroll-none p-4 backdrop-blur-[3px]',
     overlayClassName,
   ].filter(Boolean).join(' ')
   const cardClasses = [
-    'app-modal-card flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-[440px] flex-col overflow-hidden overscroll-none rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6',
+    'app-modal-card flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-[440px] flex-col overflow-hidden overscroll-none rounded-3xl border border-slate-200 p-5 shadow-2xl sm:p-6 surface-elevated',
     cardClassName,
   ].filter(Boolean).join(' ')
 

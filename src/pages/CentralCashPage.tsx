@@ -738,24 +738,24 @@ export function CentralCashPage({
         <article className="hero-card min-h-0 lg:h-full lg:p-5">
           <div className="relative z-[1] lg:flex lg:h-full lg:flex-col">
             <p className="eyebrow-light">Saldo actual</p>
-            <p className="mt-3 text-4xl font-black tracking-tight text-white sm:text-5xl lg:mt-2 lg:text-4xl">
+            <p className="mt-3 text-4xl font-black tracking-tight text-on-primary sm:text-5xl lg:mt-2 lg:text-4xl">
               {currencyFormatter.format(summary.balance)}
             </p>
-            <dl className="mt-7 grid gap-4 text-sm text-white sm:grid-cols-3 lg:mt-auto lg:pt-4">
+            <dl className="mt-7 grid gap-4 text-sm text-on-primary sm:grid-cols-3 lg:mt-auto lg:pt-4">
               <div>
-                <dt className="text-teal-100/80">Entradas hoy</dt>
+                <dt className="text-on-primary-muted">Entradas hoy</dt>
                 <dd className="mt-1 text-lg font-black">
                   {currencyFormatter.format(summary.todayInflows)}
                 </dd>
               </div>
               <div>
-                <dt className="text-teal-100/80">Salidas hoy</dt>
+                <dt className="text-on-primary-muted">Salidas hoy</dt>
                 <dd className="mt-1 text-lg font-black">
                   {currencyFormatter.format(summary.todayOutflows)}
                 </dd>
               </div>
               <div>
-                <dt className="text-teal-100/80">Neto hoy</dt>
+                <dt className="text-on-primary-muted">Neto hoy</dt>
                 <dd className="mt-1 text-lg font-black">
                   {currencyFormatter.format(summary.todayNet)}
                 </dd>
@@ -873,7 +873,7 @@ export function CentralCashPage({
                 <h2 className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500 lg:mb-2">
                   {formatLongDate(date)}
                 </h2>
-                <div className="space-y-3 lg:divide-y lg:divide-slate-100 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:shadow-[0_8px_30px_rgba(46,34,31,0.04)] lg:space-y-0">
+                <div className="surface-shadow-md space-y-3 lg:divide-y lg:divide-slate-100 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:space-y-0">
                   {entries.map((movement) => (
                     <button
                       className="panel flex w-full items-center gap-4 text-left transition hover:border-teal-200 hover:bg-teal-50/30 lg:rounded-none lg:border-0 lg:px-4 lg:py-3 lg:shadow-none"
@@ -932,7 +932,7 @@ export function CentralCashPage({
                 <h2 className="mb-3 text-xs font-black uppercase tracking-[0.16em] text-slate-500 lg:mb-2">
                   {formatLongDate(date)}
                 </h2>
-                <div className="space-y-3 lg:divide-y lg:divide-slate-100 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:shadow-[0_8px_30px_rgba(46,34,31,0.04)] lg:space-y-0">
+                <div className="surface-shadow-md space-y-3 lg:divide-y lg:divide-slate-100 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:space-y-0">
                   {entries.map((closing) => (
                     <article
                       className="panel flex flex-col gap-4 sm:flex-row sm:items-center lg:rounded-none lg:border-0 lg:px-4 lg:py-3 lg:shadow-none"

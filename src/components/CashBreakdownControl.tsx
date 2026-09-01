@@ -73,7 +73,7 @@ export function CashBreakdownControl({
           <button
             aria-checked={open}
             aria-label="Registrar desglose de efectivo"
-            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${open ? 'bg-teal-700' : 'bg-slate-300'}`}
+            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition ${open ? 'primary-background' : 'bg-slate-300'}`}
             role="switch"
             type="button"
             onClick={() => handleToggle(!open)}
