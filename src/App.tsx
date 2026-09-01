@@ -894,6 +894,8 @@ function App() {
             <LazyCentralCashPage
               dataRevision={revision}
               networkAvailable={networkAvailable}
+              operatorAccountId={operatorSession?.account.id ?? null}
+              operatorSession={operatorSession}
               stores={stores}
               user={user}
             />

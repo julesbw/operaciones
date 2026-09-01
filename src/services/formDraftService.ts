@@ -1,7 +1,9 @@
 import {
+  CENTRAL_CASH_MOVEMENT_TYPES,
   PAYMENT_FUNDING_SOURCES,
   PAYMENT_METHODS,
   type CentralCashBills,
+  type CentralCashMovementType,
   type PaymentFundingSource,
   type PaymentMethod,
 } from '../domain/models'
@@ -9,7 +11,7 @@ import {
 export const FORM_DRAFT_VERSION = 1 as const
 export const FORM_DRAFT_SAVE_DEBOUNCE_MS = 250
 
-export type FormDraftKind = 'expense' | 'purchase'
+export type FormDraftKind = 'expense' | 'purchase' | 'centralCash'
 
 export type FormDraftRecord<T> = {
   version: typeof FORM_DRAFT_VERSION
@@ -49,9 +51,21 @@ export type PurchaseDraftData = {
   paymentId: string
 }
 
+export type CentralCashDraftData = {
+  id: string
+  movementType: CentralCashMovementType
+  businessDate: string
+  concept: string
+  amount: number
+  bills: CentralCashBills
+  coinsAmount: string
+  notes: string
+}
+
 const STORAGE_KEYS: Record<FormDraftKind, string> = {
   expense: 'operaciones.form-draft.expense',
   purchase: 'operaciones.form-draft.purchase',
+  centralCash: 'operaciones.form-draft.central-cash',
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -96,8 +110,25 @@ function isFundingSource(value: unknown): value is PaymentFundingSource {
   )
 }
 
+function isCentralCashMovementType(
+  value: unknown,
+): value is CentralCashMovementType {
+  return (
+    typeof value === 'string' &&
+    (CENTRAL_CASH_MOVEMENT_TYPES as readonly string[]).includes(value)
+  )
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function isNonNegativeDecimalInput(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  if (value === '') return true
+  if (!/^\d*\.?\d*$/.test(value)) return false
+  const numericValue = Number(value)
+  return Number.isFinite(numericValue) && numericValue >= 0
 }
 
 export function isExpenseDraftData(value: unknown): value is ExpenseDraftData {
@@ -133,6 +164,22 @@ export function isPurchaseDraftData(value: unknown): value is PurchaseDraftData 
     typeof value.notes === 'string' &&
     isNonEmptyString(value.purchaseId) &&
     isNonEmptyString(value.paymentId)
+  )
+}
+
+export function isCentralCashDraftData(
+  value: unknown,
+): value is CentralCashDraftData {
+  if (!isRecord(value)) return false
+  return (
+    isNonEmptyString(value.id) &&
+    isCentralCashMovementType(value.movementType) &&
+    typeof value.businessDate === 'string' &&
+    typeof value.concept === 'string' &&
+    isNonNegativeFiniteNumber(value.amount) &&
+    isCentralCashBills(value.bills) &&
+    isNonNegativeDecimalInput(value.coinsAmount) &&
+    typeof value.notes === 'string'
   )
 }
 

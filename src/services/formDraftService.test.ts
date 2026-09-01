@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ExpenseDraftData } from './formDraftService'
+import type {
+  CentralCashDraftData,
+  ExpenseDraftData,
+} from './formDraftService'
 import {
   formDraftService,
+  isCentralCashDraftData,
   isExpenseDraftData,
 } from './formDraftService'
 
@@ -24,6 +28,24 @@ const expenseData: ExpenseDraftData = {
   coinsAmount: 25.5,
   cashBreakdownOpen: true,
   notes: 'Urgente',
+}
+
+const centralCashData: CentralCashDraftData = {
+  id: 'movement-a',
+  movementType: 'outflow',
+  businessDate: '2026-08-30',
+  concept: 'Retiro bancario',
+  amount: 1_250,
+  bills: {
+    b1000: 1,
+    b500: 0,
+    b200: 1,
+    b100: 0,
+    b50: 1,
+    b20: 0,
+  },
+  coinsAmount: '0',
+  notes: 'Entregar al banco',
 }
 
 function createSessionStorage() {
@@ -109,5 +131,39 @@ describe('formDraftService', () => {
       formDraftService.read('expense', 'operator-a', isExpenseDraftData),
     ).toBeUndefined()
   })
-})
 
+  it('persists Caja Central intent with the exact captured denominations', () => {
+    const saved = formDraftService.save(
+      'centralCash',
+      'admin-a',
+      centralCashData,
+    )
+
+    expect(saved).toMatchObject({
+      ownerId: 'admin-a',
+      data: {
+        amount: 1_250,
+        movementType: 'outflow',
+        bills: centralCashData.bills,
+        coinsAmount: '0',
+      },
+    })
+    expect(
+      formDraftService.read('centralCash', 'admin-a', isCentralCashDraftData),
+    ).toMatchObject({ data: centralCashData })
+    expect(sessionStorage.setItem).toHaveBeenCalledWith(
+      'operaciones.form-draft.central-cash',
+      expect.any(String),
+    )
+  })
+
+  it('does not expose a Caja Central draft to another owner', () => {
+    formDraftService.save('centralCash', 'admin-a', centralCashData)
+
+    expect(
+      formDraftService.read('centralCash', 'admin-b', isCentralCashDraftData),
+    ).toBeUndefined()
+    formDraftService.clear('centralCash', 'admin-b')
+    expect(sessionStorage.removeItem).not.toHaveBeenCalled()
+  })
+})

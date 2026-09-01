@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppModal } from '../components/AppModal'
 import { BillCounter } from '../components/BillCounter'
 import { DatePickerButton } from '../components/DatePickerButton'
+import { DraftActionMenu } from '../components/DraftActionMenu'
 import { ListPageSkeleton } from '../components/Skeletons'
 import { useToast } from '../components/ToastProvider'
 import {
@@ -26,6 +27,7 @@ import {
 } from '../domain/constants'
 import {
   calculateCentralCashPhysicalTotal,
+  validateCentralCashAdjustment,
 } from '../domain/centralCash'
 import type {
   CentralCashBills,
@@ -33,6 +35,7 @@ import type {
   CentralCashMovementType,
   CentralCashPendingClosing,
   CentralCashSummary,
+  OperatorSession,
   Store,
   UserProfile,
 } from '../domain/models'
@@ -40,6 +43,12 @@ import {
   centralCashService,
   CentralCashDomainError,
 } from '../services/centralCashService'
+import {
+  FORM_DRAFT_SAVE_DEBOUNCE_MS,
+  formDraftService,
+  isCentralCashDraftData,
+  type CentralCashDraftData,
+} from '../services/formDraftService'
 import { formatLongDate, getOperationalDate } from '../utils/date'
 import { currencyFormatter } from '../utils/money'
 
@@ -49,6 +58,8 @@ type CentralCashPageProps = {
   networkAvailable: boolean
   stores: Store[]
   user: UserProfile
+  operatorAccountId?: string | null
+  operatorSession?: OperatorSession
   dataRevision?: number
 }
 
@@ -244,6 +255,8 @@ export function CentralCashPage({
   networkAvailable,
   stores,
   user,
+  operatorAccountId,
+  operatorSession,
   dataRevision = 0,
 }: CentralCashPageProps) {
   const today = getOperationalDate()
@@ -267,7 +280,21 @@ export function CentralCashPage({
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState<'receiving' | 'adjusting'>()
   const [fromCache, setFromCache] = useState(false)
+  const [summaryFromCache, setSummaryFromCache] = useState(false)
   const [error, setError] = useState('')
+  const [draftAvailable, setDraftAvailable] = useState(false)
+  const [draftMenuOpen, setDraftMenuOpen] = useState(false)
+  const fabRef = useRef<HTMLButtonElement>(null)
+  const draftOwnerId = operatorAccountId ?? operatorSession?.account.id ?? user.id
+  const formOwnerIdRef = useRef(draftOwnerId)
+  const previousDraftOwnerRef = useRef(draftOwnerId)
+  const latestDraftRef = useRef<{
+    ownerId: string
+    formOwnerId: string
+    formOpen: boolean
+    meaningful: boolean
+    data: CentralCashDraftData
+  } | undefined>(undefined)
   const { toast } = useToast()
 
   const queryStoreId = storeFilter === ALL_STORES ? undefined : storeFilter
@@ -286,6 +313,7 @@ export function CentralCashPage({
         ),
       ])
       setSummary(summaryResult.data)
+      setSummaryFromCache(summaryResult.fromCache)
       setMovements(movementResult.data)
       setPendingClosings(pendingResult.data)
       setFromCache(
@@ -336,9 +364,140 @@ export function CentralCashPage({
       adjustmentAmount > 0 &&
       Number(adjustment.coinsAmount || 0) >= 0,
   )
-  const validAdjustment = Boolean(
-    validAdjustmentCount && adjustment?.concept.trim(),
+  const adjustmentValidationCode =
+    adjustment && validAdjustmentCount && !summaryFromCache
+      ? validateCentralCashAdjustment(
+          summary,
+          adjustment.movementType,
+          adjustment.bills,
+          Number(adjustment.coinsAmount || 0),
+          adjustmentAmount,
+        )
+      : undefined
+  const adjustmentSummaryStale = Boolean(
+    adjustment && summaryFromCache && networkAvailable,
   )
+  const adjustmentValidationMessage = adjustmentValidationCode
+    ? new CentralCashDomainError(adjustmentValidationCode).message
+    : adjustmentSummaryStale
+      ? 'No fue posible validar el saldo actual de Caja Central.'
+      : ''
+  const validAdjustment = Boolean(
+    validAdjustmentCount &&
+      adjustment?.concept.trim() &&
+      !adjustmentValidationCode &&
+      !adjustmentSummaryStale,
+  )
+
+  const adjustmentDraftData = useMemo<CentralCashDraftData>(
+    () => ({
+      id: adjustment?.id ?? '',
+      movementType: adjustment?.movementType ?? 'inflow',
+      businessDate: adjustment?.businessDate ?? today,
+      concept: adjustment?.concept ?? '',
+      amount: adjustmentAmount,
+      bills: adjustment
+        ? { ...adjustment.bills }
+        : { ...EMPTY_CENTRAL_CASH_BILLS },
+      coinsAmount: adjustment?.coinsAmount ?? '',
+      notes: adjustment?.notes ?? '',
+    }),
+    [adjustment, adjustmentAmount, today],
+  )
+  const adjustmentMeaningful = Boolean(
+    adjustment &&
+      (adjustment.movementType !== 'inflow' ||
+        adjustment.businessDate !== today ||
+        adjustment.concept.trim().length > 0 ||
+        adjustment.notes.trim().length > 0 ||
+        Object.values(adjustment.bills).some((count) => count > 0) ||
+        Number(adjustment.coinsAmount || 0) > 0),
+  )
+
+  latestDraftRef.current = {
+    ownerId: draftOwnerId,
+    formOwnerId: formOwnerIdRef.current,
+    formOpen: Boolean(adjustment),
+    meaningful: adjustmentMeaningful,
+    data: adjustmentDraftData,
+  }
+
+  useEffect(() => {
+    const ownerChanged = previousDraftOwnerRef.current !== draftOwnerId
+    previousDraftOwnerRef.current = draftOwnerId
+    if (ownerChanged) {
+      formOwnerIdRef.current = ''
+      setAdjustment(undefined)
+    } else {
+      formOwnerIdRef.current = draftOwnerId
+    }
+    setDraftMenuOpen(false)
+    setDraftAvailable(
+      Boolean(
+        formDraftService.read(
+          'centralCash',
+          draftOwnerId,
+          isCentralCashDraftData,
+        ),
+      ),
+    )
+  }, [draftOwnerId])
+
+  useEffect(() => {
+    if (!adjustment || formOwnerIdRef.current !== draftOwnerId) return
+
+    const timer = window.setTimeout(() => {
+      const current = latestDraftRef.current
+      if (
+        !current ||
+        !current.formOpen ||
+        current.ownerId !== current.formOwnerId
+      ) {
+        return
+      }
+      if (!current.meaningful) {
+        formDraftService.clear('centralCash', current.ownerId)
+        setDraftAvailable(false)
+        return
+      }
+      if (
+        formDraftService.save('centralCash', current.ownerId, current.data)
+      ) {
+        setDraftAvailable(true)
+      }
+    }, FORM_DRAFT_SAVE_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [adjustment, adjustmentDraftData, adjustmentMeaningful, draftOwnerId])
+
+  useEffect(() => {
+    const flushDraft = () => {
+      const current = latestDraftRef.current
+      if (
+        !current ||
+        !current.formOpen ||
+        current.ownerId !== current.formOwnerId
+      ) {
+        return
+      }
+      if (!current.meaningful) {
+        formDraftService.clear('centralCash', current.ownerId)
+        setDraftAvailable(false)
+        return
+      }
+      if (formDraftService.save('centralCash', current.ownerId, current.data)) {
+        setDraftAvailable(true)
+      }
+    }
+
+    window.addEventListener('beforeunload', flushDraft)
+    window.addEventListener('pagehide', flushDraft)
+    return () => {
+      window.removeEventListener('beforeunload', flushDraft)
+      window.removeEventListener('pagehide', flushDraft)
+      flushDraft()
+    }
+  }, [])
 
   function changeDateFrom(value: string) {
     setDateFrom(value)
@@ -348,6 +507,135 @@ export function CentralCashPage({
   function changeDateTo(value: string) {
     setDateTo(value)
     if (value < dateFrom) setDateFrom(value)
+  }
+
+  async function refreshCurrentSummary() {
+    const result = await centralCashService.getSummary()
+    setSummary(result.data)
+    setSummaryFromCache(result.fromCache)
+    return result
+  }
+
+  function resetAdjustmentForNewDraft() {
+    formOwnerIdRef.current = draftOwnerId
+    setAdjustment(newAdjustment())
+    setDraftMenuOpen(false)
+    setError('')
+  }
+
+  function readCentralCashDraft() {
+    return formDraftService.read(
+      'centralCash',
+      draftOwnerId,
+      isCentralCashDraftData,
+    )
+  }
+
+  function persistCurrentDraft() {
+    if (formOwnerIdRef.current !== draftOwnerId) return
+    if (!adjustmentMeaningful) {
+      formDraftService.clear('centralCash', draftOwnerId)
+      setDraftAvailable(false)
+      return
+    }
+    if (formDraftService.save('centralCash', draftOwnerId, adjustmentDraftData)) {
+      setDraftAvailable(true)
+    }
+  }
+
+  async function restoreAdjustmentDraft() {
+    const draft = readCentralCashDraft()
+    if (!draft) {
+      setDraftAvailable(false)
+      resetAdjustmentForNewDraft()
+      return
+    }
+
+    const data = draft.data
+    formOwnerIdRef.current = draftOwnerId
+    setAdjustment({
+      id: data.id,
+      movementType: data.movementType,
+      businessDate: data.businessDate,
+      concept: data.concept,
+      notes: data.notes,
+      bills: { ...data.bills },
+      coinsAmount: data.coinsAmount,
+    })
+    setDraftAvailable(true)
+    setDraftMenuOpen(false)
+    setError('')
+
+    try {
+      const currentSummaryResult = await refreshCurrentSummary()
+      if (currentSummaryResult.fromCache && networkAvailable) {
+        setError(
+          new CentralCashDomainError('CENTRAL_CASH_REQUIRES_ONLINE').message,
+        )
+      } else if (!currentSummaryResult.fromCache) {
+        const validationCode = validateCentralCashAdjustment(
+          currentSummaryResult.data,
+          data.movementType,
+          data.bills,
+          Number(data.coinsAmount || 0),
+          calculateCentralCashPhysicalTotal(
+            data.bills,
+            Number(data.coinsAmount || 0),
+          ),
+        )
+        if (validationCode) {
+          setError(new CentralCashDomainError(validationCode).message)
+        }
+      }
+    } catch (cause: unknown) {
+      setError(errorMessage(cause))
+    } finally {
+      toast.info('Borrador recuperado')
+    }
+  }
+
+  function openAdjustmentForm() {
+    if (draftMenuOpen) {
+      setDraftMenuOpen(false)
+      return
+    }
+    if (readCentralCashDraft()) {
+      setDraftAvailable(true)
+      setDraftMenuOpen(true)
+      return
+    }
+    resetAdjustmentForNewDraft()
+  }
+
+  function startNewAdjustment() {
+    const draft = readCentralCashDraft()
+    if (
+      draft &&
+      !window.confirm(
+        'Hay un borrador sin guardar.\n¿Descartarlo y comenzar uno nuevo?',
+      )
+    ) {
+      return
+    }
+    if (draft) {
+      formDraftService.clear('centralCash', draftOwnerId)
+      setDraftAvailable(false)
+    }
+    setDraftMenuOpen(false)
+    resetAdjustmentForNewDraft()
+  }
+
+  function closeAdjustmentForm() {
+    persistCurrentDraft()
+    setDraftMenuOpen(false)
+    setAdjustment(undefined)
+  }
+
+  function updateAdjustment(changes: Partial<AdjustmentForm>) {
+    setAdjustment((current) =>
+      current ? { ...current, ...changes } : current,
+    )
+    setError('')
   }
 
   function openReceipt(closing: CentralCashPendingClosing) {
@@ -392,6 +680,26 @@ export function CentralCashPage({
     setAction('adjusting')
     setError('')
     try {
+      if (!networkAvailable) {
+        throw new CentralCashDomainError('CENTRAL_CASH_REQUIRES_ONLINE')
+      }
+
+      const currentSummaryResult = await refreshCurrentSummary()
+      if (currentSummaryResult.fromCache) {
+        throw new CentralCashDomainError('CENTRAL_CASH_REQUIRES_ONLINE')
+      }
+
+      const currentValidationCode = validateCentralCashAdjustment(
+        currentSummaryResult.data,
+        adjustment.movementType,
+        adjustment.bills,
+        Number(adjustment.coinsAmount || 0),
+        adjustmentAmount,
+      )
+      if (currentValidationCode) {
+        throw new CentralCashDomainError(currentValidationCode)
+      }
+
       await centralCashService.createAdjustment({
         id: adjustment.id,
         movementType: adjustment.movementType,
@@ -402,12 +710,16 @@ export function CentralCashPage({
         bills: adjustment.bills,
         coinsAmount: Number(adjustment.coinsAmount || 0),
       })
+      formDraftService.clear('centralCash', draftOwnerId)
+      setDraftAvailable(false)
       setAdjustment(undefined)
       toast.success('Ajuste registrado.')
       setTab('movements')
       await load()
     } catch (cause: unknown) {
-      toast.error(errorMessage(cause))
+      const message = errorMessage(cause)
+      setError(message)
+      toast.error(message)
     } finally {
       setAction(undefined)
     }
@@ -660,20 +972,26 @@ export function CentralCashPage({
         )}
       </div>
 
+      <DraftActionMenu
+        open={draftMenuOpen}
+        onClose={() => setDraftMenuOpen(false)}
+        onContinue={restoreAdjustmentDraft}
+        onNew={startNewAdjustment}
+      />
       <button
         aria-label="Nuevo ajuste"
+        aria-expanded={draftMenuOpen}
+        aria-haspopup={draftAvailable ? 'menu' : undefined}
         className="app-fab"
         disabled={!networkAvailable}
+        ref={fabRef}
         title={
           networkAvailable
             ? 'Nuevo ajuste'
             : 'Los ajustes requieren conexión'
         }
         type="button"
-        onClick={() => {
-          setAdjustment(newAdjustment())
-          setError('')
-        }}
+        onClick={openAdjustmentForm}
       >
         <PlusIcon className="size-6" />
       </button>
@@ -810,11 +1128,12 @@ export function CentralCashPage({
 
       <AppModal
         closeDisabled={action === 'adjusting'}
-        closeLabel="Cancelar ajuste"
+        closeLabel="Cerrar formulario de ajuste"
         eyebrow="Caja Central"
         open={Boolean(adjustment)}
+        returnFocusRef={fabRef}
         title="Nuevo ajuste"
-        onClose={() => setAdjustment(undefined)}
+        onClose={closeAdjustmentForm}
       >
         {adjustment && (
           <div className="mt-5 space-y-4">
@@ -831,11 +1150,7 @@ export function CentralCashPage({
                     }
                     key={movementType}
                     type="button"
-                    onClick={() =>
-                      setAdjustment((current) =>
-                        current ? { ...current, movementType } : current,
-                      )
-                    }
+                    onClick={() => updateAdjustment({ movementType })}
                   >
                     {movementType === 'inflow' ? 'Entrada' : 'Salida'}
                   </button>
@@ -851,14 +1166,7 @@ export function CentralCashPage({
                   type="date"
                   value={adjustment.businessDate}
                   onChange={(event) =>
-                    setAdjustment((current) =>
-                      current
-                        ? {
-                            ...current,
-                            businessDate: event.target.value,
-                          }
-                        : current,
-                    )
+                    updateAdjustment({ businessDate: event.target.value })
                   }
                 />
               </label>
@@ -870,11 +1178,7 @@ export function CentralCashPage({
                   placeholder="Ajuste inicial"
                   value={adjustment.concept}
                   onChange={(event) =>
-                    setAdjustment((current) =>
-                      current
-                        ? { ...current, concept: event.target.value }
-                        : current,
-                    )
+                    updateAdjustment({ concept: event.target.value })
                   }
                 />
               </label>
@@ -887,11 +1191,7 @@ export function CentralCashPage({
                 rows={2}
                 value={adjustment.notes}
                 onChange={(event) =>
-                  setAdjustment((current) =>
-                    current
-                      ? { ...current, notes: event.target.value }
-                      : current,
-                  )
+                  updateAdjustment({ notes: event.target.value })
                 }
               />
             </label>
@@ -914,14 +1214,10 @@ export function CentralCashPage({
                   showTotal={false}
                   value={adjustment.bills}
                   onCoinsChange={(coinsAmount) =>
-                    setAdjustment((current) =>
-                      current ? { ...current, coinsAmount } : current,
-                    )
+                    updateAdjustment({ coinsAmount })
                   }
                   onChange={(bills) =>
-                    setAdjustment((current) =>
-                      current ? { ...current, bills } : current,
-                    )
+                    updateAdjustment({ bills })
                   }
                 />
                     <div className="mt-3 flex items-center justify-between gap-4 border-t border-slate-200 bg-slate-50 px-4 py-3">
@@ -947,7 +1243,11 @@ export function CentralCashPage({
                     </div>
               </div>
             </fieldset>
-            {error && <p className="alert-error">{error}</p>}
+            {(error || adjustmentValidationMessage) && (
+              <p className="alert-error">
+                {error || adjustmentValidationMessage}
+              </p>
+            )}
             <p className="text-xs leading-5 text-slate-500">
               Los movimientos confirmados no se editan ni eliminan.
             </p>
