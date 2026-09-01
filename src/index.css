@@ -1036,6 +1036,64 @@ button:disabled {
     box-shadow: 0 8px 30px rgb(var(--shadow-color) / 0.04);
   }
 
+  .notification-group + .notification-group {
+    border-top: 1px solid var(--border);
+  }
+
+  .notification-group-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0;
+    padding: 0.7rem 1rem 0.55rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    backdrop-filter: blur(12px);
+  }
+
+  .notification-item {
+    transition: background-color 140ms ease;
+  }
+
+  .notification-item-read {
+    background: var(--surface);
+  }
+
+  .notification-item-unread {
+    background: color-mix(in srgb, var(--primary-soft) 72%, var(--surface));
+  }
+
+  .notification-title-read,
+  .notification-title-unread {
+    display: block;
+    color: var(--text);
+  }
+
+  .notification-title-read {
+    font-weight: 800;
+  }
+
+  .notification-title-unread {
+    color: var(--text-strong);
+    font-weight: 900;
+  }
+
+  .notification-unread-indicator {
+    display: block;
+    width: 0.45rem;
+    height: 0.45rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+  }
+
   .theme-option {
     position: relative;
     @apply flex min-h-14 cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-left transition;

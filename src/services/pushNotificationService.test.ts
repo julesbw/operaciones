@@ -11,6 +11,7 @@ vi.mock('../lib/supabase', () => ({
 
 import {
   base64UrlToUint8Array,
+  LOCAL_PUSH_PREFERENCES_KEY,
   pushNotificationService,
 } from './pushNotificationService'
 
@@ -68,7 +69,7 @@ beforeEach(() => {
   localStorageMock.setItem.mockReset()
   localStorageMock.removeItem.mockReset()
   requestPermission.mockResolvedValue('granted')
-  mocks.rpc.mockResolvedValue({ data: 'subscription-id', error: null })
+  mocks.rpc.mockResolvedValue({ data: true, error: null })
   getSubscription.mockResolvedValue(null)
   localStorageMock.getItem.mockReturnValue(null)
 })
@@ -79,7 +80,7 @@ describe('pushNotificationService', () => {
   })
 
   it('does not ask for permission while reading the status', async () => {
-    await expect(pushNotificationService.getStatus()).resolves.toEqual({
+    await expect(pushNotificationService.getStatus('admin-a')).resolves.toEqual({
       state: 'permission-default',
     })
     expect(requestPermission).not.toHaveBeenCalled()
@@ -88,10 +89,10 @@ describe('pushNotificationService', () => {
   it('reports a blocked browser without requesting permission again', async () => {
     vi.stubGlobal('Notification', { permission: 'denied', requestPermission })
 
-    await expect(pushNotificationService.getStatus()).resolves.toEqual({
+    await expect(pushNotificationService.getStatus('admin-a')).resolves.toEqual({
       state: 'permission-denied',
     })
-    await expect(pushNotificationService.enable()).rejects.toMatchObject({
+    await expect(pushNotificationService.enable('admin-a')).rejects.toMatchObject({
       state: 'permission-denied',
     })
     expect(requestPermission).not.toHaveBeenCalled()
@@ -107,7 +108,7 @@ describe('pushNotificationService', () => {
       },
     })
 
-    await expect(pushNotificationService.getStatus()).resolves.toEqual({
+    await expect(pushNotificationService.getStatus('admin-a')).resolves.toEqual({
       state: 'ios-install-required',
       detail: 'Agrega Operaciones a la pantalla de inicio para activar Push.',
     })
@@ -126,7 +127,7 @@ describe('pushNotificationService', () => {
       return null
     })
 
-    await expect(pushNotificationService.enable()).resolves.toEqual({
+    await expect(pushNotificationService.enable('admin-a')).resolves.toEqual({
       state: 'enabled',
     })
 
@@ -141,6 +142,12 @@ describe('pushNotificationService', () => {
       p_p256dh: 'p256dh-value',
       p_auth: 'auth-value',
     })
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      LOCAL_PUSH_PREFERENCES_KEY,
+      JSON.stringify([
+        { sourceApp: 'operaciones', authUserId: 'admin-a', enabled: true },
+      ]),
+    )
   })
 
   it('unsubscribes a newly-created local subscription if remote registration fails', async () => {
@@ -148,8 +155,35 @@ describe('pushNotificationService', () => {
     subscribe.mockResolvedValue(subscription)
     mocks.rpc.mockResolvedValue({ data: null, error: new Error('remote failure') })
 
-    await expect(pushNotificationService.enable()).rejects.toThrow()
+    await expect(pushNotificationService.enable('admin-a')).rejects.toThrow()
     expect(subscription.unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces an unowned browser subscription only after explicit activation', async () => {
+    const subscription = createSubscription()
+    getSubscription.mockResolvedValue(subscription)
+    subscribe.mockResolvedValue(subscription)
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+    const order: string[] = []
+    subscription.unsubscribe.mockImplementation(async () => {
+      order.push('unsubscribe')
+      return true
+    })
+    subscribe.mockImplementation(async () => {
+      order.push('subscribe')
+      return subscription
+    })
+
+    await expect(pushNotificationService.enable('admin-b')).resolves.toEqual({
+      state: 'enabled',
+    })
+
+    expect(order).toEqual(['unsubscribe', 'subscribe'])
+    expect(mocks.rpc).toHaveBeenCalledWith('register_push_subscription', {
+      p_endpoint: subscription.endpoint,
+      p_p256dh: 'p256dh-value',
+      p_auth: 'auth-value',
+    })
   })
 
   it('revokes remotely before unsubscribing the local subscription', async () => {
@@ -166,7 +200,7 @@ describe('pushNotificationService', () => {
       return true
     })
 
-    await expect(pushNotificationService.disable()).resolves.toEqual({
+    await expect(pushNotificationService.disable('admin-a')).resolves.toEqual({
       state: 'disabled',
     })
     expect(order).toEqual(['revoke', 'unsubscribe'])
@@ -177,25 +211,117 @@ describe('pushNotificationService', () => {
     getSubscription.mockResolvedValue(subscription)
     mocks.rpc.mockResolvedValue({ data: null, error: new Error('remote failure') })
 
-    await expect(pushNotificationService.disable()).rejects.toMatchObject({
+    await expect(pushNotificationService.disable('admin-a')).rejects.toMatchObject({
       message: 'No fue posible revocar la suscripción Push en el servidor.',
     })
     expect(subscription.unsubscribe).toHaveBeenCalledTimes(1)
     expect(localStorageMock.setItem).toHaveBeenCalledWith(
-      'operaciones-push-disabled',
-      '1',
+      LOCAL_PUSH_PREFERENCES_KEY,
+      JSON.stringify([
+        { sourceApp: 'operaciones', authUserId: 'admin-a', enabled: false },
+      ]),
     )
   })
 
-  it('keeps Push disabled after logout until explicit activation', async () => {
-    localStorageMock.getItem.mockReturnValue('1')
+  it('does not auto-reactivate Push for another admin', async () => {
+    localStorageMock.getItem.mockReturnValue(JSON.stringify([
+      { sourceApp: 'operaciones', authUserId: 'admin-a', enabled: true },
+    ]))
     vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
     const subscription = createSubscription()
     getSubscription.mockResolvedValue(subscription)
 
-    await expect(pushNotificationService.getStatus()).resolves.toEqual({
+    await expect(pushNotificationService.reactivateForLogin('admin-b')).resolves.toEqual({
       state: 'disabled',
     })
     expect(getSubscription).not.toHaveBeenCalled()
+  })
+
+  it('pauses the current subscription on logout without unsubscribing it', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+    const subscription = createSubscription()
+    getSubscription.mockResolvedValue(subscription)
+
+    await expect(pushNotificationService.pauseForLogout('admin-a')).resolves.toBeUndefined()
+
+    expect(mocks.rpc).toHaveBeenCalledWith('pause_push_subscription', {
+      p_endpoint: subscription.endpoint,
+    })
+    expect(subscription.unsubscribe).not.toHaveBeenCalled()
+  })
+
+  it('falls back to revoke and unsubscribe if logout pause fails', async () => {
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+    const subscription = createSubscription()
+    getSubscription.mockResolvedValue(subscription)
+    mocks.rpc.mockImplementation(async (functionName: string) =>
+      functionName === 'pause_push_subscription'
+        ? { data: false, error: null }
+        : { data: true, error: null },
+    )
+
+    await expect(pushNotificationService.pauseForLogout('admin-a')).resolves.toBeUndefined()
+
+    expect(mocks.rpc).toHaveBeenCalledWith('revoke_push_subscription', {
+      p_endpoint: subscription.endpoint,
+    })
+    expect(subscription.unsubscribe).toHaveBeenCalledTimes(1)
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      LOCAL_PUSH_PREFERENCES_KEY,
+      JSON.stringify([
+        { sourceApp: 'operaciones', authUserId: 'admin-a', enabled: false },
+      ]),
+    )
+  })
+
+  it('reactivates an enabled admin preference without requesting permission', async () => {
+    localStorageMock.getItem.mockReturnValue(JSON.stringify([
+      { sourceApp: 'operaciones', authUserId: 'admin-a', enabled: true },
+    ]))
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+    const subscription = createSubscription()
+    getSubscription.mockResolvedValue(subscription)
+
+    await expect(pushNotificationService.reactivateForLogin('admin-a')).resolves.toEqual({
+      state: 'enabled',
+    })
+
+    expect(requestPermission).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
+    expect(mocks.rpc).toHaveBeenCalledWith('resume_push_subscription', {
+      p_endpoint: subscription.endpoint,
+      p_p256dh: 'p256dh-value',
+      p_auth: 'auth-value',
+    })
+  })
+
+  it('requires an explicit action when the preferred subscription is gone', async () => {
+    localStorageMock.getItem.mockReturnValue(JSON.stringify([
+      { sourceApp: 'operaciones', authUserId: 'admin-a', enabled: true },
+    ]))
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+    getSubscription.mockResolvedValue(null)
+
+    await expect(pushNotificationService.reactivateForLogin('admin-a')).resolves.toMatchObject({
+      state: 'needs-reactivation',
+    })
+    expect(requestPermission).not.toHaveBeenCalled()
+    expect(mocks.rpc).not.toHaveBeenCalled()
+  })
+
+  it('does not auto-reactivate a remotely revoked subscription', async () => {
+    localStorageMock.getItem.mockReturnValue(JSON.stringify([
+      { sourceApp: 'operaciones', authUserId: 'admin-a', enabled: true },
+    ]))
+    vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+    const subscription = createSubscription()
+    getSubscription.mockResolvedValue(subscription)
+    mocks.rpc.mockResolvedValue({ data: false, error: null })
+
+    await expect(pushNotificationService.reactivateForLogin('admin-a')).resolves.toMatchObject({
+      state: 'needs-reactivation',
+    })
+    expect(requestPermission).not.toHaveBeenCalled()
+    expect(mocks.rpc).toHaveBeenCalledTimes(1)
   })
 })

@@ -58,6 +58,7 @@ const PUSH_STATE_LABELS: Record<PushNotificationState, string> = {
   'ios-install-required': 'Instala la PWA para activar (iPhone/iPad)',
   'permission-default': 'Permiso no solicitado',
   enabled: 'Activadas en este dispositivo',
+  'needs-reactivation': 'Requieren reactivación en este dispositivo',
   'permission-denied': 'Bloqueadas por el navegador',
   disabled: 'Desactivadas en este dispositivo',
   error: 'Error de registro',
@@ -136,6 +137,7 @@ export function SettingsPage({
     pushStatus.state === 'enabled'
       ? 'disable'
       : pushStatus.state === 'permission-default' ||
+          pushStatus.state === 'needs-reactivation' ||
           pushStatus.state === 'disabled' ||
           pushStatus.state === 'error'
         ? 'enable'
@@ -175,7 +177,7 @@ export function SettingsPage({
     let active = true
     setPushError(undefined)
     void pushNotificationService
-      .getStatus()
+      .getStatus(user.id)
       .then((status) => {
         if (active) setPushStatus(status)
       })
@@ -187,7 +189,7 @@ export function SettingsPage({
     return () => {
       active = false
     }
-  }, [isAdmin, tab])
+  }, [isAdmin, tab, user.id])
 
   useEffect(() => {
     if (!canCreateSuppliers) {
@@ -274,8 +276,8 @@ export function SettingsPage({
     setPushError(undefined)
     try {
       const status = action === 'enable'
-        ? await pushNotificationService.enable()
-        : await pushNotificationService.disable()
+        ? await pushNotificationService.enable(user.id)
+        : await pushNotificationService.disable(user.id)
       setPushStatus(status)
     } catch (cause: unknown) {
       console.error('No fue posible actualizar las notificaciones Push', cause)
@@ -283,7 +285,7 @@ export function SettingsPage({
         setPushStatus({ state: cause.state })
       } else {
         const current = await pushNotificationService
-          .getStatus()
+          .getStatus(user.id)
           .catch(() => undefined)
         setPushStatus(
           action === 'disable' && current

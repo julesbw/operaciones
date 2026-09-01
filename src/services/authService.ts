@@ -87,15 +87,15 @@ class AuthService {
     return role === 'admin' ? DEMO_ADMIN : DEMO_CASHIER
   }
 
-  async signOut(): Promise<void> {
+  async signOut(authUserId?: string): Promise<void> {
     localStorage.removeItem(DEMO_SESSION_KEY)
+    try {
+      await pushNotificationService.pauseForLogout(authUserId)
+    } catch {
+      // La limpieza Push es best effort; nunca debe impedir el logout.
+      console.error('No fue posible limpiar Push antes del logout', 'push_cleanup_failed')
+    }
     if (supabase) {
-      try {
-        await pushNotificationService.disableForLogout()
-      } catch {
-        // La limpieza Push es best effort; nunca debe impedir el logout.
-        console.error('No fue posible limpiar Push antes del logout', 'push_cleanup_failed')
-      }
       // El cierre de esta PWA no debe invalidar sesiones del mismo usuario
       // en otros dispositivos o pestañas.
       const { error } = await supabase.auth.signOut({ scope: 'local' })

@@ -352,6 +352,7 @@ export type PushSubscriptionRow = {
   created_at: string
   updated_at: string
   last_seen_at: string
+  paused_at: string | null
   revoked_at: string | null
 }
 
@@ -367,6 +368,17 @@ export type NotificationDeliveryRow = {
   last_attempt_at: string | null
   delivered_at: string | null
   last_error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type NotificationPresenceRow = {
+  id: string
+  source_app: NotificationSourceApp
+  auth_user_id: string
+  presence_id: string
+  last_active_at: string
+  expires_at: string
   created_at: string
   updated_at: string
 }
@@ -719,6 +731,11 @@ export type Database = {
       push_subscriptions: TableDefinition<PushSubscriptionRow, never, never>
       notification_deliveries: TableDefinition<
         NotificationDeliveryRow,
+        never,
+        never
+      >
+      notification_presence: TableDefinition<
+        NotificationPresenceRow,
         never,
         never
       >
@@ -1076,12 +1093,34 @@ export type Database = {
         Args: { p_source_app: NotificationSourceApp }
         Returns: number
       }
+      heartbeat_notification_presence: {
+        Args: {
+          p_presence_id: string
+          p_source_app: NotificationSourceApp
+        }
+        Returns: string
+      }
+      release_notification_presence: {
+        Args: {
+          p_presence_id: string
+          p_source_app: NotificationSourceApp
+        }
+        Returns: boolean
+      }
       register_push_subscription: {
         Args: { p_endpoint: string; p_p256dh: string; p_auth: string }
         Returns: string
       }
       revoke_push_subscription: {
         Args: { p_endpoint: string }
+        Returns: boolean
+      }
+      pause_push_subscription: {
+        Args: { p_endpoint: string }
+        Returns: boolean
+      }
+      resume_push_subscription: {
+        Args: { p_auth: string; p_endpoint: string; p_p256dh: string }
         Returns: boolean
       }
     }

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  disableForLogout: vi.fn(),
+  pauseForLogout: vi.fn(),
   supabaseSignOut: vi.fn(),
   removeItem: vi.fn(),
 }))
@@ -13,7 +13,7 @@ vi.mock('../lib/supabase', () => ({
 
 vi.mock('./pushNotificationService', () => ({
   pushNotificationService: {
-    disableForLogout: mocks.disableForLogout,
+    pauseForLogout: mocks.pauseForLogout,
   },
 }))
 
@@ -21,17 +21,18 @@ import { authService } from './authService'
 
 describe('AuthService logout', () => {
   beforeEach(() => {
-    mocks.disableForLogout.mockReset()
+    mocks.pauseForLogout.mockReset()
     mocks.supabaseSignOut.mockReset()
     mocks.removeItem.mockReset()
-    mocks.disableForLogout.mockResolvedValue(undefined)
+    mocks.pauseForLogout.mockResolvedValue(undefined)
     mocks.supabaseSignOut.mockResolvedValue({ error: null })
     vi.stubGlobal('localStorage', { removeItem: mocks.removeItem })
   })
 
-  it('cleans the current Push device before signing out Supabase', async () => {
+  it('pauses the current Push device before signing out Supabase', async () => {
     const order: string[] = []
-    mocks.disableForLogout.mockImplementation(async () => {
+    mocks.pauseForLogout.mockImplementation(async (authUserId?: string) => {
+      expect(authUserId).toBe('admin-id')
       order.push('push')
     })
     mocks.supabaseSignOut.mockImplementation(async () => {
@@ -39,7 +40,7 @@ describe('AuthService logout', () => {
       return { error: null }
     })
 
-    await expect(authService.signOut()).resolves.toBeUndefined()
+    await expect(authService.signOut('admin-id')).resolves.toBeUndefined()
 
     expect(order).toEqual(['push', 'supabase'])
     expect(mocks.supabaseSignOut).toHaveBeenCalledWith({ scope: 'local' })
@@ -48,7 +49,7 @@ describe('AuthService logout', () => {
 
   it('continues logout if Push cleanup unexpectedly rejects', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    mocks.disableForLogout.mockRejectedValue(new Error('push failure'))
+    mocks.pauseForLogout.mockRejectedValue(new Error('push failure'))
 
     await expect(authService.signOut()).resolves.toBeUndefined()
 

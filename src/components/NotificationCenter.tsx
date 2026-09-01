@@ -10,6 +10,10 @@ import type {
 } from '../domain/models'
 import { notificationService } from '../services/notificationService'
 import type { NotificationNavigation } from '../services/pushNotificationNavigation'
+import {
+  groupNotifications,
+  sortNotifications,
+} from '../utils/notificationGrouping'
 import { AppModal } from './AppModal'
 import { BellIcon, CheckIcon, SyncIcon } from './icons'
 
@@ -40,6 +44,27 @@ function unreadLabel(count: number): string {
   return `${count} notificación${count === 1 ? '' : 'es'} sin leer`
 }
 
+export function shouldShowUnreadBadge(count: number): boolean {
+  return count > 0
+}
+
+export function unreadBadgeLabel(count: number): string | number {
+  return count > 9 ? '9+' : count
+}
+
+function withReadAt(
+  notification: InAppNotification,
+  readAt: string,
+): InAppNotification {
+  return { ...notification, readAt: notification.readAt ?? readAt }
+}
+
+type LoadOptions = {
+  showLoading?: boolean
+}
+
+const NOTIFICATION_POLL_INTERVAL_MS = 15_000
+
 export function NotificationCenter({
   activePage,
   enabled,
@@ -56,29 +81,81 @@ export function NotificationCenter({
   const [markingAll, setMarkingAll] = useState(false)
   const bellRef = useRef<HTMLButtonElement>(null)
   const requestIdRef = useRef(0)
+  const loadingRequestIdRef = useRef<number | undefined>(undefined)
+  const optimisticReadAtRef = useRef(new Map<string, string>())
+  const optimisticMarkAllRef = useRef<string | undefined>(undefined)
+  const hasUnread = shouldShowUnreadBadge(unreadCount)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ showLoading = false }: LoadOptions = {}) => {
     if (!enabled || !networkAvailable) return
     const requestId = ++requestIdRef.current
-    setLoading(true)
+    if (showLoading) {
+      loadingRequestIdRef.current = requestId
+      setLoading(true)
+    } else if (loadingRequestIdRef.current !== undefined) {
+      loadingRequestIdRef.current = undefined
+      setLoading(false)
+    }
     setError('')
     try {
       const result = await notificationService.load()
       if (requestId !== requestIdRef.current) return
-      setNotifications(result.notifications)
-      setUnreadCount(result.unreadCount)
+      const optimisticReads = optimisticReadAtRef.current
+      const markAllOptimistic = optimisticMarkAllRef.current !== undefined
+      const loadedNotifications = sortNotifications(result.notifications).map((item) => {
+        const optimisticReadAt = optimisticReads.get(item.id)
+        if (markAllOptimistic || (optimisticReadAt && !item.readAt)) {
+          return withReadAt(item, optimisticReadAt ?? new Date().toISOString())
+        }
+        return item
+      })
+      const optimisticUnreadCount = markAllOptimistic
+        ? 0
+        : Math.max(0, result.unreadCount - optimisticReads.size)
+      setNotifications(loadedNotifications)
+      setUnreadCount(optimisticUnreadCount)
     } catch (cause: unknown) {
       if (requestId !== requestIdRef.current) return
       console.error('No fue posible consultar las notificaciones', cause)
       setError('No fue posible consultar las notificaciones.')
     } finally {
-      if (requestId === requestIdRef.current) setLoading(false)
+      if (loadingRequestIdRef.current === requestId) {
+        loadingRequestIdRef.current = undefined
+        setLoading(false)
+      }
     }
   }, [enabled, networkAvailable])
 
   useEffect(() => {
     if (enabled && networkAvailable) void load()
   }, [enabled, networkAvailable, refreshKey, load])
+
+  useEffect(() => {
+    if (
+      !enabled ||
+      !networkAvailable ||
+      typeof window === 'undefined' ||
+      typeof document === 'undefined'
+    ) {
+      return
+    }
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') void load()
+    }
+    const interval = window.setInterval(
+      refreshIfVisible,
+      NOTIFICATION_POLL_INTERVAL_MS,
+    )
+    document.addEventListener('visibilitychange', refreshIfVisible)
+    window.addEventListener('focus', refreshIfVisible)
+
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
+      window.removeEventListener('focus', refreshIfVisible)
+    }
+  }, [enabled, networkAvailable, load])
 
   useEffect(() => {
     setOpen(false)
@@ -93,6 +170,7 @@ export function NotificationCenter({
 
     const readAt = new Date().toISOString()
     setActionId(notification.id)
+    optimisticReadAtRef.current.set(notification.id, readAt)
     setNotifications((current) =>
       current.map((item) =>
         item.id === notification.id ? { ...item, readAt } : item,
@@ -102,8 +180,10 @@ export function NotificationCenter({
     try {
       const updated = await notificationService.markRead(notification.id)
       if (!updated) throw new Error('La notificación no está asignada al usuario.')
+      optimisticReadAtRef.current.delete(notification.id)
     } catch (cause: unknown) {
       console.error('No fue posible marcar la notificación como leída', cause)
+      optimisticReadAtRef.current.delete(notification.id)
       setNotifications((current) =>
         current.map((item) =>
           item.id === notification.id ? { ...item, readAt: null } : item,
@@ -127,14 +207,17 @@ export function NotificationCenter({
     const previousUnreadCount = unreadCount
     const readAt = new Date().toISOString()
     setMarkingAll(true)
+    optimisticMarkAllRef.current = readAt
     setNotifications((current) =>
       current.map((item) => ({ ...item, readAt: item.readAt ?? readAt })),
     )
     setUnreadCount(0)
     try {
       await notificationService.markAllRead()
+      optimisticMarkAllRef.current = undefined
     } catch (cause: unknown) {
       console.error('No fue posible marcar todas las notificaciones como leídas', cause)
+      optimisticMarkAllRef.current = undefined
       setNotifications(previous)
       setUnreadCount(previousUnreadCount)
       setError('No fue posible marcar las notificaciones como leídas.')
@@ -159,7 +242,7 @@ export function NotificationCenter({
   return (
     <>
       <button
-        aria-label={unreadCount > 0 ? unreadLabel(unreadCount) : 'Notificaciones'}
+        aria-label={hasUnread ? unreadLabel(unreadCount) : 'Notificaciones'}
         className="icon-button relative"
         ref={bellRef}
         type="button"
@@ -169,12 +252,12 @@ export function NotificationCenter({
         }}
       >
         <BellIcon className="size-5" />
-        {unreadCount > 0 && (
+        {hasUnread && (
           <span
             aria-hidden="true"
             className="absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-5 text-on-primary ring-2 ring-white"
           >
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {unreadBadgeLabel(unreadCount)}
           </span>
         )}
       </button>
@@ -195,7 +278,7 @@ export function NotificationCenter({
               <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-slate-500">
                 Actividad reciente
               </p>
-              {unreadCount > 0 && (
+              {hasUnread && (
                 <button
                   className="text-action text-xs"
                   disabled={markingAll || !networkAvailable}
@@ -232,61 +315,76 @@ export function NotificationCenter({
             </div>
           )}
           {!loading && notifications.length > 0 && (
-            <ul className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200">
-              {notifications.map((notification) => (
-                <li
-                  className={notification.readAt ? 'bg-white' : 'bg-teal-50/60'}
-                  key={notification.id}
-                >
-                  <div className="p-4">
-                    <button
-                      className="w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
-                      type="button"
-                      onClick={() => void openNotification(notification)}
-                    >
-                      <span className="flex items-start gap-2">
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2 font-extrabold text-slate-950">
-                            <span className="truncate">{notification.title}</span>
-                            {!notification.readAt && (
-                              <span
-                                aria-label="No leída"
-                                className="size-2 shrink-0 rounded-full primary-background"
-                              />
-                            )}
-                          </span>
-                          <span className="mt-2 block whitespace-pre-line text-sm leading-6 text-slate-700">
-                            {notification.message}
-                          </span>
-                          <span className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] font-bold text-slate-400">
-                            <span>{entityLabel(notification.entityType)}</span>
-                            <time dateTime={notification.createdAt}>
-                              {notificationDate(notification.createdAt)}
-                            </time>
-                          </span>
-                        </span>
-                        <span className="shrink-0 text-slate-400">›</span>
-                      </span>
-                    </button>
-                    {!notification.readAt && (
-                      <button
-                        className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-teal-700 hover:text-teal-900"
-                        disabled={actionId === notification.id || !networkAvailable}
-                        type="button"
-                        onClick={() => void markAsRead(notification)}
+            <div className="notification-list mt-3 overflow-hidden rounded-2xl border border-slate-200">
+              {groupNotifications(notifications).map((group) => (
+                <section className="notification-group" key={group.key}>
+                  <h3 className="notification-group-heading">{group.label}</h3>
+                  <ul className="divide-y divide-slate-100">
+                    {group.notifications.map((notification) => (
+                      <li
+                        className={notification.readAt
+                          ? 'notification-item notification-item-read'
+                          : 'notification-item notification-item-unread'}
+                        key={notification.id}
                       >
-                        {actionId === notification.id ? (
-                          <SyncIcon className="size-3 animate-spin" />
-                        ) : (
-                          <CheckIcon className="size-3" />
-                        )}
-                        Marcar como leída
-                      </button>
-                    )}
-                  </div>
-                </li>
+                        <div className="p-4">
+                          <button
+                            className="w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700"
+                            type="button"
+                            onClick={() => void openNotification(notification)}
+                          >
+                            <span className="flex items-start gap-2">
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-center gap-2">
+                                  <span
+                                    className={notification.readAt
+                                      ? 'notification-title-read truncate'
+                                      : 'notification-title-unread truncate'}
+                                  >
+                                    {notification.title}
+                                  </span>
+                                  {!notification.readAt && (
+                                    <span
+                                      aria-label="No leída"
+                                      className="notification-unread-indicator"
+                                    />
+                                  )}
+                                </span>
+                                <span className="mt-2 block whitespace-pre-line text-sm leading-6 text-slate-700">
+                                  {notification.message}
+                                </span>
+                                <span className="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[11px] font-bold text-slate-400">
+                                  <span>{entityLabel(notification.entityType)}</span>
+                                  <time dateTime={notification.createdAt}>
+                                    {notificationDate(notification.createdAt)}
+                                  </time>
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-slate-400">›</span>
+                            </span>
+                          </button>
+                          {!notification.readAt && (
+                            <button
+                              className="mt-3 inline-flex items-center gap-1 text-xs font-extrabold text-teal-700 hover:text-teal-900"
+                              disabled={actionId === notification.id || !networkAvailable}
+                              type="button"
+                              onClick={() => void markAsRead(notification)}
+                            >
+                              {actionId === notification.id ? (
+                                <SyncIcon className="size-3 animate-spin" />
+                              ) : (
+                                <CheckIcon className="size-3" />
+                              )}
+                              Marcar como leída
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           )}
         </div>
       </AppModal>

@@ -14,6 +14,7 @@ import {
 import { useToast } from './components/ToastProvider'
 import { lazyNamedPage } from './components/lazyPage'
 import { canAccessPage } from './domain/capabilities'
+import { useNotificationPresence } from './hooks/useNotificationPresence'
 import {
   ALL_STORES,
   type StoreScopeValue,
@@ -51,6 +52,8 @@ import {
   type SyncInspectorSnapshot,
 } from './services/syncInspectorService'
 import { notificationService } from './services/notificationService'
+import { notificationPresenceService } from './services/notificationPresenceService'
+import { pushNotificationService } from './services/pushNotificationService'
 import type { NotificationNavigation } from './services/pushNotificationNavigation'
 import {
   clearNotificationQuery,
@@ -169,6 +172,11 @@ function App() {
   const [backendReachable, setBackendReachable] = useState<boolean>()
   const [revision, setRevision] = useState(0)
   const { toast } = useToast()
+
+  useNotificationPresence({
+    enabled: user?.role === 'admin',
+    networkAvailable,
+  })
 
   useEffect(() => {
     userRef.current = user
@@ -324,6 +332,20 @@ function App() {
         setOperatorSession(result.operatorSession)
         setBackendReachable(true)
         setStartupNotice(undefined)
+        if (result.profile.role === 'admin') {
+          void (async () => {
+            try {
+              // Registrar presencia antes de reactivar evita que una entrega
+              // pendiente gane la carrera durante el arranque visible.
+              await notificationPresenceService.heartbeat()
+            } catch (cause: unknown) {
+              console.error('No fue posible registrar presencia al iniciar sesión', cause)
+            }
+            await pushNotificationService.reactivateForLogin(result.profile.id)
+          })().catch((cause: unknown) => {
+            console.error('No fue posible reactivar las notificaciones Push', cause)
+          })
+        }
         const sync = result.sync
         if (notifySync) {
           if (sync.failed > 0) {
@@ -559,6 +581,9 @@ function App() {
     ) {
       return
     }
+    if (user?.role === 'admin') {
+      void notificationPresenceService.release().catch(() => undefined)
+    }
     const remoteStopped = remoteBootstrapService.cancelForSignOut()
     setUser(undefined)
     setOperatorSession(undefined)
@@ -571,7 +596,7 @@ function App() {
     setState('requires-first-login')
     const [, remoteSignOut] = await Promise.allSettled([
       localContextService.setAccessState('signed-out'),
-      authService.signOut(),
+      authService.signOut(user?.id),
       remoteStopped,
       operatorSessionService.logout(),
     ])
@@ -629,12 +654,14 @@ function App() {
       user.role === 'admin' &&
       networkAvailable
     ) {
-      void notificationService.markRead(target.notificationId).catch((cause: unknown) => {
-        console.error(
-          'No fue posible marcar la notificación Push como leída',
-          cause,
-        )
-      })
+      void notificationService.markRead(target.notificationId)
+        .then(() => setRevision((value) => value + 1))
+        .catch((cause: unknown) => {
+          console.error(
+            'No fue posible marcar la notificación Push como leída',
+            cause,
+          )
+        })
     } else if (
       target.source === 'push' &&
       user.role === 'admin' &&
@@ -662,12 +689,14 @@ function App() {
     }
     const notificationId = pendingPushReadId
     setPendingPushReadId(undefined)
-    void notificationService.markRead(notificationId).catch((cause: unknown) => {
-      console.error(
-        'No fue posible marcar la notificación Push pendiente como leída',
-        cause,
-      )
-    })
+    void notificationService.markRead(notificationId)
+      .then(() => setRevision((value) => value + 1))
+      .catch((cause: unknown) => {
+        console.error(
+          'No fue posible marcar la notificación Push pendiente como leída',
+          cause,
+        )
+      })
   }, [networkAvailable, pendingPushReadId, user?.id, user?.role])
 
   if (state === 'loading-local' || state === 'fatal-error') {

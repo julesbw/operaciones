@@ -1,3 +1,6 @@
+import {
+  OPERATIONS_NOTIFICATION_SOURCE_APP,
+} from '../domain/models'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
 
 export const PUSH_NOTIFICATION_STATES = [
@@ -5,6 +8,7 @@ export const PUSH_NOTIFICATION_STATES = [
   'ios-install-required',
   'permission-default',
   'enabled',
+  'needs-reactivation',
   'permission-denied',
   'disabled',
   'error',
@@ -45,37 +49,85 @@ type NavigatorWithStandalone = Navigator & {
 }
 
 const PUBLIC_KEY_ENV_NAME = 'VITE_WEB_PUSH_VAPID_PUBLIC_KEY'
-const LOCAL_PUSH_DISABLED_KEY = 'operaciones-push-disabled'
+export const LOCAL_PUSH_PREFERENCES_KEY = 'operaciones-push-preferences'
 const LOGOUT_CLEANUP_TIMEOUT_MS = 5_000
+
+type StoredPushPreference = {
+  sourceApp: typeof OPERATIONS_NOTIFICATION_SOURCE_APP
+  authUserId: string
+  enabled: boolean
+}
+
+type SerializedPushSubscription = {
+  endpoint: string
+  p256dh: string
+  auth: string
+}
 
 function publicVapidKey(): string {
   return import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY?.trim() ?? ''
 }
 
-function isLocallyDisabled(): boolean {
-  if (typeof localStorage === 'undefined') return false
+function browserLocalStorage(): Pick<Storage, 'getItem' | 'setItem'> | undefined {
+  if (typeof localStorage === 'undefined') return undefined
   try {
-    return localStorage.getItem(LOCAL_PUSH_DISABLED_KEY) === '1'
+    return localStorage
   } catch {
-    return false
+    return undefined
   }
 }
 
-function markLocallyDisabled(): void {
-  if (typeof localStorage === 'undefined') return
+function readPushPreferences(): StoredPushPreference[] {
+  const storage = browserLocalStorage()
+  if (!storage) return []
+
   try {
-    localStorage.setItem(LOCAL_PUSH_DISABLED_KEY, '1')
+    const parsed: unknown = JSON.parse(
+      storage.getItem(LOCAL_PUSH_PREFERENCES_KEY) ?? '[]',
+    )
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((item): item is StoredPushPreference => {
+      if (!item || typeof item !== 'object') return false
+      const candidate = item as Partial<StoredPushPreference>
+      return (
+        candidate.sourceApp === OPERATIONS_NOTIFICATION_SOURCE_APP &&
+        typeof candidate.authUserId === 'string' &&
+        candidate.authUserId.length > 0 &&
+        typeof candidate.enabled === 'boolean'
+      )
+    })
   } catch {
-    // La suscripción remota y la del navegador siguen siendo la fuente principal.
+    return []
   }
 }
 
-function clearLocallyDisabled(): void {
-  if (typeof localStorage === 'undefined') return
+function pushPreference(authUserId: string): boolean | undefined {
+  return readPushPreferences().find(
+    (item) =>
+      item.sourceApp === OPERATIONS_NOTIFICATION_SOURCE_APP &&
+      item.authUserId === authUserId,
+  )?.enabled
+}
+
+function savePushPreference(authUserId: string, enabled: boolean): void {
+  if (!authUserId.trim()) return
+  const storage = browserLocalStorage()
+  if (!storage) return
+
   try {
-    localStorage.removeItem(LOCAL_PUSH_DISABLED_KEY)
+    const preferences = readPushPreferences().filter(
+      (item) =>
+        item.sourceApp !== OPERATIONS_NOTIFICATION_SOURCE_APP ||
+        item.authUserId !== authUserId,
+    )
+    preferences.push({
+      sourceApp: OPERATIONS_NOTIFICATION_SOURCE_APP,
+      authUserId,
+      enabled,
+    })
+    storage.setItem(LOCAL_PUSH_PREFERENCES_KEY, JSON.stringify(preferences))
   } catch {
-    // La activación remota ya quedó registrada aunque no se pueda limpiar la marca.
+    // El backend sigue siendo la fuente de autorización para la entrega.
   }
 }
 
@@ -154,7 +206,7 @@ function arrayBufferToBase64Url(value: ArrayBuffer | null): string {
 
 function subscriptionJSON(
   subscription: PushSubscriptionWithJSON,
-): { endpoint: string; p256dh: string; auth: string } {
+): SerializedPushSubscription {
   const serialized = subscription.toJSON?.() ?? {}
   const endpoint = serialized.endpoint ?? subscription.endpoint
   const p256dh =
@@ -210,19 +262,43 @@ async function readyRegistration(): Promise<ServiceWorkerRegistration> {
 }
 
 export class PushNotificationService {
-  async getStatus(): Promise<PushNotificationStatus> {
+  private readonly reactivationStatusByUser = new Map<
+    string,
+    PushNotificationStatus
+  >()
+
+  async getStatus(authUserId: string): Promise<PushNotificationStatus> {
     const initial = unsupportedStatus()
     if (initial.state !== 'disabled') return initial
 
     const permission = Notification.permission
     if (permission === 'denied') return { state: 'permission-denied' }
     if (permission === 'default') return { state: 'permission-default' }
-    if (isLocallyDisabled()) return { state: 'disabled' }
+    const preference = pushPreference(authUserId)
+    if (preference === false) {
+      this.reactivationStatusByUser.delete(authUserId)
+      return { state: 'disabled' }
+    }
+    const reactivationStatus = this.reactivationStatusByUser.get(authUserId)
+    if (reactivationStatus) return reactivationStatus
 
     try {
       const registration = await readyRegistration()
       const subscription = await registration.pushManager.getSubscription()
-      return subscription ? { state: 'enabled' } : { state: 'disabled' }
+      if (subscription) {
+        return preference === true
+          ? { state: 'enabled' }
+          : {
+              state: 'needs-reactivation',
+              detail: 'Activa Push explícitamente para este administrador.',
+            }
+      }
+      return preference === true
+        ? {
+            state: 'needs-reactivation',
+            detail: 'La suscripción Push requiere reactivación en este dispositivo.',
+          }
+        : { state: 'disabled' }
     } catch (cause: unknown) {
       return {
         state: 'error',
@@ -234,7 +310,66 @@ export class PushNotificationService {
     }
   }
 
-  async enable(): Promise<PushNotificationStatus> {
+  async reactivateForLogin(authUserId: string): Promise<PushNotificationStatus> {
+    const initial = unsupportedStatus()
+    if (initial.state !== 'disabled') return initial
+    if (!authUserId.trim()) return { state: 'disabled' }
+
+    const preference = pushPreference(authUserId)
+    if (preference !== true) {
+      this.reactivationStatusByUser.delete(authUserId)
+      return { state: 'disabled' }
+    }
+
+    const permission = Notification.permission
+    if (permission === 'denied') return { state: 'permission-denied' }
+    if (permission === 'default') return { state: 'permission-default' }
+
+    try {
+      const registration = await readyRegistration()
+      const subscription = await registration.pushManager.getSubscription()
+      if (!subscription) {
+        const status: PushNotificationStatus = {
+          state: 'needs-reactivation',
+          detail: 'La suscripción Push requiere reactivación en este dispositivo.',
+        }
+        this.reactivationStatusByUser.set(authUserId, status)
+        return status
+      }
+
+      const serialized = subscriptionJSON(subscription as PushSubscriptionWithJSON)
+      const { data, error } = await supabase!.rpc('resume_push_subscription', {
+        p_endpoint: serialized.endpoint,
+        p_p256dh: serialized.p256dh,
+        p_auth: serialized.auth,
+      })
+      if (error) throw error
+      if (data !== true) {
+        const status: PushNotificationStatus = {
+          state: 'needs-reactivation',
+          detail: 'La suscripción requiere activación explícita en este dispositivo.',
+        }
+        this.reactivationStatusByUser.set(authUserId, status)
+        return status
+      }
+
+      this.reactivationStatusByUser.delete(authUserId)
+      savePushPreference(authUserId, true)
+      return { state: 'enabled' }
+    } catch (cause: unknown) {
+      const status: PushNotificationStatus = {
+        state: 'error',
+        detail:
+          cause instanceof Error
+            ? cause.message
+            : 'No fue posible reactivar la suscripción Push.',
+      }
+      this.reactivationStatusByUser.set(authUserId, status)
+      return status
+    }
+  }
+
+  async enable(authUserId: string): Promise<PushNotificationStatus> {
     const initial = unsupportedStatus()
     if (initial.state === 'unsupported' || initial.state === 'ios-install-required') {
       throw new PushNotificationError(
@@ -244,6 +379,9 @@ export class PushNotificationService {
     }
     if (!supabase) {
       throw new PushNotificationError('Supabase no está configurado.')
+    }
+    if (!authUserId.trim()) {
+      throw new PushNotificationError('No fue posible identificar al administrador.')
     }
     if (Notification.permission === 'denied') {
       throw new PushNotificationError(
@@ -268,15 +406,14 @@ export class PushNotificationService {
     }
 
     const registration = await readyRegistration()
-    const renewAfterLogout = isLocallyDisabled()
     let subscription = await registration.pushManager.getSubscription()
     let createdLocally = false
 
-    if (subscription && renewAfterLogout) {
+    if (subscription && pushPreference(authUserId) !== true) {
       try {
         const unsubscribed = await subscription.unsubscribe()
         if (!unsubscribed) {
-          throw new Error('El navegador no confirmó la renovación.')
+          throw new Error('El navegador no confirmó la sustitución.')
         }
       } catch (cause: unknown) {
         throw new PushNotificationError(
@@ -311,7 +448,7 @@ export class PushNotificationService {
       }
     }
 
-    let serialized: { endpoint: string; p256dh: string; auth: string }
+    let serialized: SerializedPushSubscription
     try {
       serialized = subscriptionJSON(subscription as PushSubscriptionWithJSON)
     } catch (cause: unknown) {
@@ -321,12 +458,13 @@ export class PushNotificationService {
       throw cause
     }
     try {
-      const { error } = await supabase.rpc('register_push_subscription', {
+      const { data, error } = await supabase.rpc('register_push_subscription', {
         p_endpoint: serialized.endpoint,
         p_p256dh: serialized.p256dh,
         p_auth: serialized.auth,
       })
       if (error) throw error
+      if (!data) throw new Error('No fue posible registrar el dispositivo.')
     } catch {
       if (createdLocally) {
         await subscription.unsubscribe().catch(() => undefined)
@@ -336,11 +474,12 @@ export class PushNotificationService {
       )
     }
 
-    clearLocallyDisabled()
+    savePushPreference(authUserId, true)
+    this.reactivationStatusByUser.delete(authUserId)
     return { state: 'enabled' }
   }
 
-  async disable(): Promise<PushNotificationStatus> {
+  async disable(authUserId: string): Promise<PushNotificationStatus> {
     const initial = unsupportedStatus()
     if (initial.state === 'unsupported' || initial.state === 'ios-install-required') {
       throw new PushNotificationError(
@@ -350,17 +489,21 @@ export class PushNotificationService {
     }
     if (!supabase) throw new PushNotificationError('Supabase no está configurado.')
 
-    markLocallyDisabled()
+    if (!authUserId.trim()) {
+      throw new PushNotificationError('No fue posible identificar al administrador.')
+    }
+    savePushPreference(authUserId, false)
+    this.reactivationStatusByUser.delete(authUserId)
     const registration = await readyRegistration()
     const subscription = await registration.pushManager.getSubscription()
     if (!subscription) return { state: 'disabled' }
 
     let revokeFailed = false
     try {
-      const { error } = await supabase.rpc('revoke_push_subscription', {
+      const { data, error } = await supabase.rpc('revoke_push_subscription', {
         p_endpoint: subscription.endpoint,
       })
-      if (error) revokeFailed = true
+      if (error || data !== true) revokeFailed = true
     } catch {
       revokeFailed = true
     }
@@ -391,18 +534,66 @@ export class PushNotificationService {
     return { state: 'disabled' }
   }
 
-  async disableForLogout(): Promise<void> {
-    const initial = unsupportedStatus()
-    if (initial.state !== 'disabled') return
+  async pauseForLogout(authUserId?: string): Promise<void> {
+    if (!browserSupportsPush()) return
 
-    markLocallyDisabled()
+    let subscription: PushSubscription | null = null
     try {
-      await withTimeout(this.disable(), LOGOUT_CLEANUP_TIMEOUT_MS)
+      const registration = await withTimeout(
+        readyRegistration(),
+        LOGOUT_CLEANUP_TIMEOUT_MS,
+      )
+      subscription = await withTimeout(
+        registration.pushManager.getSubscription(),
+        LOGOUT_CLEANUP_TIMEOUT_MS,
+      )
+      if (!subscription) return
+      if (!supabase) {
+        throw new Error('Supabase no está configurado.')
+      }
+
+      const { data, error } = await withTimeout(
+        Promise.resolve(
+          supabase.rpc('pause_push_subscription', {
+            p_endpoint: subscription.endpoint,
+          }),
+        ),
+        LOGOUT_CLEANUP_TIMEOUT_MS,
+      )
+      if (error || data !== true) {
+        throw new Error('No fue posible pausar la suscripción Push.')
+      }
+      return
     } catch (cause: unknown) {
-      const detail = cause instanceof PushNotificationError
-        ? cause.message
-        : 'No fue posible limpiar la suscripción Push.'
-      console.error('No fue posible limpiar Push durante el logout', detail)
+      if (!subscription) {
+        console.error(
+          'No fue posible obtener la suscripción Push durante el logout',
+          cause,
+        )
+        return
+      }
+
+      savePushPreference(authUserId ?? '', false)
+      if (authUserId) this.reactivationStatusByUser.delete(authUserId)
+      const revoke = supabase
+        ? withTimeout(
+            Promise.resolve(
+              supabase.rpc('revoke_push_subscription', {
+                p_endpoint: subscription.endpoint,
+              }),
+            ),
+            LOGOUT_CLEANUP_TIMEOUT_MS,
+          ).catch(() => undefined)
+        : Promise.resolve(undefined)
+      const unsubscribe = withTimeout(
+        Promise.resolve(subscription.unsubscribe()),
+        LOGOUT_CLEANUP_TIMEOUT_MS,
+      ).catch(() => undefined)
+      await Promise.allSettled([revoke, unsubscribe])
+      console.error(
+        'No fue posible pausar Push durante el logout; se aplicó el fallback local',
+        cause,
+      )
     }
   }
 }
