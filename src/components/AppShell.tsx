@@ -39,6 +39,7 @@ import {
   WalletIcon,
   XIcon,
 } from './icons'
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock'
 import {
   NotificationCenter,
   type NotificationNavigation,
@@ -238,6 +239,9 @@ export function AppShell({
   const restoreScrollRef = useRef(true)
   const [pullDistance, setPullDistance] = useState(0)
   const [pullReady, setPullReady] = useState(false)
+  useBodyScrollLock(profileOpen, {
+    restoreScroll: () => restoreScrollRef.current,
+  })
   const identity = { technicalUser: user, operatorSession }
   const items = NAVIGATION.filter((item) =>
     hasCapability(identity, item.capability),
@@ -301,19 +305,6 @@ export function AppShell({
   useEffect(() => {
     if (!profileOpen) return
 
-    const scrollPosition = window.scrollY
-    const previousBodyStyles = {
-      overflow: document.body.style.overflow,
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-    }
-    const previousHtmlOverflow = document.documentElement.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.body.style.position = 'fixed'
-    document.body.style.top = `-${scrollPosition}px`
-    document.body.style.width = '100%'
-    document.documentElement.style.overflow = 'hidden'
     const focusFrame = window.requestAnimationFrame(() => {
       closeButtonRef.current?.focus()
     })
@@ -325,12 +316,6 @@ export function AppShell({
     return () => {
       window.cancelAnimationFrame(focusFrame)
       document.removeEventListener('keydown', closeOnEscape)
-      document.body.style.overflow = previousBodyStyles.overflow
-      document.body.style.position = previousBodyStyles.position
-      document.body.style.top = previousBodyStyles.top
-      document.body.style.width = previousBodyStyles.width
-      document.documentElement.style.overflow = previousHtmlOverflow
-      window.scrollTo(0, restoreScrollRef.current ? scrollPosition : 0)
     }
   }, [profileOpen])
 
@@ -703,7 +688,7 @@ export function AppShell({
 
       {profileOpen && (
         <div
-          className="profile-overlay fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-[2px]"
+          className="profile-overlay fixed inset-0 z-50 flex justify-end overflow-hidden overscroll-none bg-slate-950/40 backdrop-blur-[2px]"
           role="presentation"
           onClick={() => closeProfile()}
         >

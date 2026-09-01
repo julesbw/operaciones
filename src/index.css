@@ -395,6 +395,7 @@ button:disabled {
   }
 
   .profile-overlay {
+    overscroll-behavior: none;
     animation: profile-overlay-in 160ms ease-out both;
   }
 
@@ -402,6 +403,7 @@ button:disabled {
     width: min(22rem, calc(100% - 0.75rem));
     padding-top: max(1.25rem, env(safe-area-inset-top));
     padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+    overscroll-behavior: none;
     touch-action: pan-y;
     animation: profile-drawer-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
     @apply h-dvh min-w-0 overflow-y-auto border-l border-slate-200 bg-white px-5 shadow-2xl sm:px-6;
@@ -694,12 +696,23 @@ button:disabled {
   }
 
   .app-modal-overlay {
+    overscroll-behavior: none;
     animation: app-modal-overlay-in 160ms ease-out both;
   }
 
   .app-modal-card {
-    overscroll-behavior: contain;
+    overscroll-behavior: none;
     animation: app-modal-card-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .app-modal-scroll-content {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .app-modal-scroll-content::-webkit-scrollbar {
+    width: 0;
+    height: 0;
   }
 
   .attendance-option,
@@ -843,6 +856,31 @@ button:disabled {
 }
 
 @media (min-width: 64rem) {
+  .app-modal-scroll-content {
+    margin-right: -1rem;
+    padding-right: 1rem;
+    scrollbar-color: rgb(139 30 63 / 0.5) transparent;
+    scrollbar-width: thin;
+  }
+
+  .app-modal-scroll-content::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .app-modal-scroll-content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .app-modal-scroll-content::-webkit-scrollbar-thumb {
+    background-color: rgb(139 30 63 / 0.5);
+    border-radius: 999px;
+  }
+
+  .app-modal-scroll-content::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(139 30 63 / 0.68);
+  }
+
   .toast-viewport {
     right: max(1rem, env(safe-area-inset-right, 0px));
     left: auto;

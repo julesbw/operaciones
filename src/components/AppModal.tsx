@@ -5,6 +5,7 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react'
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock'
 import { XIcon } from './icons'
 
 type AppModalProps = {
@@ -34,7 +35,6 @@ export function AppModal({
   initialFocusRef,
   open,
   returnFocusRef,
-  scrollableContent = false,
   title,
   cardClassName,
   overlayClassName,
@@ -54,22 +54,10 @@ export function AppModal({
   initialFocusTargetRef.current = initialFocusRef
   onCloseRef.current = onClose
 
+  useBodyScrollLock(open)
+
   useEffect(() => {
     if (!open) return
-
-    const scrollPosition = window.scrollY
-    const previousBodyStyles = {
-      overflow: document.body.style.overflow,
-      position: document.body.style.position,
-      top: document.body.style.top,
-      width: document.body.style.width,
-    }
-    const previousHtmlOverflow = document.documentElement.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.body.style.position = 'fixed'
-    document.body.style.top = `-${scrollPosition}px`
-    document.body.style.width = '100%'
-    document.documentElement.style.overflow = 'hidden'
 
     const focusFrame = window.requestAnimationFrame(() => {
       const target = initialFocusTargetRef.current?.current ?? closeButtonRef.current
@@ -104,12 +92,6 @@ export function AppModal({
     return () => {
       window.cancelAnimationFrame(focusFrame)
       document.removeEventListener('keydown', handleKeyboard)
-      document.body.style.overflow = previousBodyStyles.overflow
-      document.body.style.position = previousBodyStyles.position
-      document.body.style.top = previousBodyStyles.top
-      document.body.style.width = previousBodyStyles.width
-      document.documentElement.style.overflow = previousHtmlOverflow
-      window.scrollTo(0, scrollPosition)
     }
   }, [open])
 
@@ -129,14 +111,11 @@ export function AppModal({
   if (!open) return null
 
   const overlayClasses = [
-    'app-modal-overlay fixed inset-0 z-[60] flex min-h-dvh items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[3px]',
+    'app-modal-overlay fixed inset-0 z-[60] flex min-h-dvh items-center justify-center overflow-hidden overscroll-none bg-slate-950/45 p-4 backdrop-blur-[3px]',
     overlayClassName,
   ].filter(Boolean).join(' ')
   const cardClasses = [
-    'app-modal-card w-full max-w-[440px] rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6',
-    scrollableContent
-      ? 'flex min-h-0 max-h-[calc(100dvh-2rem)] flex-col overflow-hidden'
-      : 'max-h-[calc(100dvh-2rem)] overflow-y-auto',
+    'app-modal-card flex min-h-0 max-h-[calc(100dvh-2rem)] w-full max-w-[440px] flex-col overflow-hidden overscroll-none rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6',
     cardClassName,
   ].filter(Boolean).join(' ')
 
@@ -178,11 +157,9 @@ export function AppModal({
           </div>
           {headerContent}
         </div>
-        {scrollableContent ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {children}
-          </div>
-        ) : children}
+        <div className="app-modal-scroll-content min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-none touch-pan-y">
+          {children}
+        </div>
       </div>
     </div>
   )
