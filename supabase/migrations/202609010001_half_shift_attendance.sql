@@ -9,13 +9,37 @@
 alter table public.attendance_records
   add column if not exists attendance_type text;
 
-update public.attendance_records
-set attendance_type = case
-  when status = 'present' then coalesce(attendance_type, 'full')
-  else null
-end
-where attendance_type is null
-   or status <> 'present';
+-- El backfill sólo agrega metadata derivada. Las asistencias históricas de
+-- colaboradores inactivos y las asistencias ya pagadas deben conservarse,
+-- por lo que se suspenden únicamente sus validaciones durante este UPDATE y
+-- se reactivan incluso si el backfill falla.
+do $$
+begin
+  execute
+    'alter table public.attendance_records disable trigger attendance_validate_store';
+  execute
+    'alter table public.attendance_records disable trigger attendance_guard_paid_record';
+
+  update public.attendance_records
+  set attendance_type = case
+    when status = 'present' then coalesce(attendance_type, 'full')
+    else null
+  end
+  where attendance_type is null
+     or status <> 'present';
+
+  execute
+    'alter table public.attendance_records enable trigger attendance_guard_paid_record';
+  execute
+    'alter table public.attendance_records enable trigger attendance_validate_store';
+exception when others then
+  execute
+    'alter table public.attendance_records enable trigger attendance_guard_paid_record';
+  execute
+    'alter table public.attendance_records enable trigger attendance_validate_store';
+  raise;
+end;
+$$;
 
 do $$
 begin
