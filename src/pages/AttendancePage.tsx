@@ -18,11 +18,13 @@ import {
 } from '../components/icons'
 import type {
   AttendanceStatus,
+  AttendanceType,
   Collaborator,
   OperatorSession,
   Store,
   UserProfile,
 } from '../domain/models'
+import { getEffectiveAttendanceType } from '../domain/models'
 import { attendanceService } from '../services/attendanceService'
 import { referenceDataService } from '../services/referenceDataService'
 import { getOperationalDate, getWeekday } from '../utils/date'
@@ -55,32 +57,69 @@ export function AttendanceStatusControls({
   onChange,
   paid = false,
   status,
+  attendanceType,
 }: {
   disabled?: boolean
-  onChange: (status: AttendanceStatus) => void
+  onChange: (status: AttendanceStatus, attendanceType: AttendanceType | null) => void
   paid?: boolean
   status: AttendanceStatus
+  attendanceType?: AttendanceType | null
 }) {
+  const effectiveAttendanceType =
+    status === 'present' ? attendanceType ?? 'full' : null
+  const controlDisabled = paid || disabled
+
   return (
-    <div className="mt-3 grid w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 xl:mt-0 xl:w-[348px] xl:shrink-0">
-      {STATUS_OPTIONS.map((option) => {
-        const Icon = option.icon
-        const active = status === option.value
-        return (
+    <div className="mt-3 w-full xl:mt-0 xl:w-[348px] xl:shrink-0">
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+        {STATUS_OPTIONS.map((option) => {
+          const Icon = option.icon
+          const active = status === option.value
+          return (
+            <button
+              aria-pressed={active}
+              aria-label={`${option.label}${paid ? ' · Pagado · No modificable' : ''}`}
+              className={`${active ? `attendance-${option.value}` : 'attendance-option'}${paid ? ' cursor-not-allowed opacity-60' : ''}`}
+              disabled={controlDisabled}
+              key={option.value}
+              type="button"
+              onClick={() =>
+                onChange(
+                  option.value,
+                  option.value === 'present' ? effectiveAttendanceType ?? 'full' : null,
+                )
+              }
+            >
+              <Icon className="size-4 shrink-0" />
+              <span className="hidden min-[420px]:inline">{option.label}</span>
+            </button>
+          )
+        })}
+      </div>
+      {status === 'present' && (
+        <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-emerald-50 p-1">
           <button
-            aria-pressed={active}
-            aria-label={`${option.label}${paid ? ' · Pagado · No modificable' : ''}`}
-            className={`${active ? `attendance-${option.value}` : 'attendance-option'}${paid ? ' cursor-not-allowed opacity-60' : ''}`}
-            disabled={paid || disabled}
-            key={option.value}
+            aria-pressed={effectiveAttendanceType === 'full'}
+            className={`${effectiveAttendanceType === 'full' ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-100' : 'text-emerald-700 hover:bg-white'} flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 text-xs font-bold transition${paid ? ' cursor-not-allowed opacity-60' : ''}`}
+            disabled={controlDisabled}
             type="button"
-            onClick={() => onChange(option.value)}
+            onClick={() => onChange('present', 'full')}
           >
-            <Icon className="size-4 shrink-0" />
-            <span className="hidden min-[420px]:inline">{option.label}</span>
+            <span aria-hidden="true">✓</span>
+            <span>Turno completo</span>
           </button>
-        )
-      })}
+          <button
+            aria-pressed={effectiveAttendanceType === 'half'}
+            className={`${effectiveAttendanceType === 'half' ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-100' : 'text-emerald-700 hover:bg-white'} flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 text-xs font-bold transition${paid ? ' cursor-not-allowed opacity-60' : ''}`}
+            disabled={controlDisabled}
+            type="button"
+            onClick={() => onChange('present', 'half')}
+          >
+            <span aria-hidden="true">½</span>
+            <span>Medio turno</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -109,8 +148,14 @@ export function AttendancePage({
   const [date, setDate] = useState(operationalDate)
   const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
+  const [attendanceTypes, setAttendanceTypes] = useState<
+    Record<string, AttendanceType | null>
+  >({})
   const [originalStatuses, setOriginalStatuses] = useState<
     Record<string, AttendanceStatus>
+  >({})
+  const [originalAttendanceTypes, setOriginalAttendanceTypes] = useState<
+    Record<string, AttendanceType | null>
   >({})
   const [paidCollaboratorIds, setPaidCollaboratorIds] = useState<ReadonlySet<string>>(
     new Set(),
@@ -153,7 +198,9 @@ export function AttendancePage({
     if (storeScope.kind === 'unavailable' && !effectiveStoreId) {
       setCollaborators([])
       setStatuses({})
+      setAttendanceTypes({})
       setOriginalStatuses({})
+      setOriginalAttendanceTypes({})
       setPaidCollaboratorIds(new Set())
       setError('Tu perfil no tiene una tienda asignada.')
       setLoading(false)
@@ -195,15 +242,38 @@ export function AttendancePage({
               (person.restDay === weekday ? 'rest_day' : 'present'),
           ]),
         ) as Record<string, AttendanceStatus>
+        const nextAttendanceTypes = Object.fromEntries(
+          visiblePeople.map((person) => {
+            const record = existing.get(person.id)
+            const status = record?.status ?? nextStatuses[person.id]!
+            return [
+              person.id,
+              getEffectiveAttendanceType(status, record?.attendanceType),
+            ]
+          }),
+        ) as Record<string, AttendanceType | null>
         const nextOriginalStatuses = Object.fromEntries(
           visiblePeople.flatMap((person) => {
             const record = existing.get(person.id)
             return record ? [[person.id, record.status]] : []
           }),
         ) as Record<string, AttendanceStatus>
+        const nextOriginalAttendanceTypes = Object.fromEntries(
+          visiblePeople.flatMap((person) => {
+            const record = existing.get(person.id)
+            return record
+              ? [[
+                  person.id,
+                  getEffectiveAttendanceType(record.status, record.attendanceType),
+                ]]
+              : []
+          }),
+        ) as Record<string, AttendanceType | null>
         setCollaborators(visiblePeople)
         setStatuses(nextStatuses)
+        setAttendanceTypes(nextAttendanceTypes)
         setOriginalStatuses(nextOriginalStatuses)
+        setOriginalAttendanceTypes(nextOriginalAttendanceTypes)
         setPaidCollaboratorIds(
           new Set(
             records
@@ -259,9 +329,14 @@ export function AttendancePage({
           storeId: collaborator.storeId,
           attendanceDate: date,
           status: statuses[collaborator.id] ?? 'present',
+          attendanceType:
+            attendanceTypes[collaborator.id] ??
+            (statuses[collaborator.id] === 'present' ? 'full' : null),
         }))
         .filter(
-          (input) => originalStatuses[input.collaboratorId] !== input.status,
+          (input) =>
+            originalStatuses[input.collaboratorId] !== input.status ||
+            originalAttendanceTypes[input.collaboratorId] !== input.attendanceType,
         )
       const savedRecords = await attendanceService.save(
         changedInputs,
@@ -278,6 +353,13 @@ export function AttendancePage({
         const next = { ...current }
         for (const record of savedRecords) {
           next[record.collaboratorId] = record.status
+        }
+        return next
+      })
+      setOriginalAttendanceTypes((current) => {
+        const next = { ...current }
+        for (const record of savedRecords) {
+          next[record.collaboratorId] = record.attendanceType
         }
         return next
       })
@@ -364,7 +446,7 @@ export function AttendancePage({
               <p className="mt-1 text-xs text-slate-500">Toca un estado para cambiarlo.</p>
             </div>
             <span className="rounded-full bg-teal-50 px-3 py-1.5 text-xs font-bold text-teal-700">
-              {presentCount} presentes
+              {presentCount} asistencias marcadas
             </span>
           </div>
 
@@ -410,19 +492,28 @@ export function AttendancePage({
                     </div>
                     {paidCollaboratorIds.has(collaborator.id) && (
                       <p className="mt-2 text-xs font-extrabold text-slate-500 xl:mt-0">
-                        Pagado · No modificable
+                        Pagado ·{' '}
+                        {attendanceTypes[collaborator.id] === 'half'
+                          ? 'Medio turno'
+                          : 'Turno completo'}{' '}
+                        · No modificable
                       </p>
                     )}
                     <AttendanceStatusControls
+                      attendanceType={attendanceTypes[collaborator.id]}
                       disabled={saving}
                       paid={paidCollaboratorIds.has(collaborator.id)}
                       status={statuses[collaborator.id] ?? 'present'}
-                      onChange={(status) => {
+                      onChange={(status, attendanceType) => {
                         setSaved(false)
                         setSavedMessage(undefined)
                         setStatuses((current) => ({
                           ...current,
                           [collaborator.id]: status,
+                        }))
+                        setAttendanceTypes((current) => ({
+                          ...current,
+                          [collaborator.id]: attendanceType,
                         }))
                       }}
                     />

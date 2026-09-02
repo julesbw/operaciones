@@ -1,6 +1,7 @@
 import type {
   AppAccountRole,
   AttendanceStatus,
+  AttendanceType,
   Bills,
   CentralCashBills,
   CentralCashMovementType,
@@ -87,6 +88,7 @@ export type AttendanceRow = {
   store_id: string
   attendance_date: string
   status: AttendanceStatus
+  attendance_type: AttendanceType | null
   recorded_by: string
   recorded_by_operator_account_id: string | null
   created_at: string
@@ -117,6 +119,7 @@ export type PaymentAttendanceItemRow = {
   work_date_snapshot: string
   period_start: string
   period_end: string
+  attendance_type_snapshot: AttendanceType
   weekly_pay_snapshot: number
   daily_pay_snapshot: number
   suggested_allocation: number
@@ -532,12 +535,15 @@ export type Database = {
           | 'store_id'
           | 'attendance_date'
           | 'status'
+          | 'attendance_type'
           | 'recorded_by'
           | 'created_at'
           | 'updated_at'
           | 'version'
         >,
-        Partial<Pick<AttendanceRow, 'status' | 'recorded_by' | 'updated_at'>>
+        Partial<
+          Pick<AttendanceRow, 'status' | 'attendance_type' | 'recorded_by' | 'updated_at'>
+        >
       >
       collaborator_payments: TableDefinition<PaymentRow, never, never>
       purchases: TableDefinition<PurchaseRow, never, never>
@@ -788,6 +794,7 @@ export type Database = {
           p_store_id: string
           p_attendance_date: string
           p_status: AttendanceStatus
+          p_attendance_type: AttendanceType | null
           p_created_at: string
           p_updated_at: string
           p_recorded_by: string

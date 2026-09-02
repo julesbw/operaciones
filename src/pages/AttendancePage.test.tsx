@@ -8,13 +8,15 @@ describe('AttendanceStatusControls', () => {
       <AttendanceStatusControls
         paid
         status="present"
+        attendanceType="half"
         onChange={vi.fn()}
       />,
     )
 
     expect(markup).toContain('attendance-present')
     expect(markup).toContain('Pagado · No modificable')
-    expect(markup.match(/disabled=""/g)).toHaveLength(3)
+    expect(markup).toContain('Medio turno')
+    expect(markup.match(/disabled=""/g)).toHaveLength(5)
   })
 
   it('leaves unpaid status controls editable', () => {

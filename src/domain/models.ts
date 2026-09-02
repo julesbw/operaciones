@@ -61,6 +61,17 @@ export const ATTENDANCE_STATUSES = [
 ] as const
 export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number]
 
+export const ATTENDANCE_TYPES = ['full', 'half'] as const
+export type AttendanceType = (typeof ATTENDANCE_TYPES)[number]
+
+export function getEffectiveAttendanceType(
+  status: AttendanceStatus,
+  attendanceType: AttendanceType | null | undefined,
+): AttendanceType | null {
+  if (status !== 'present') return null
+  return attendanceType ?? 'full'
+}
+
 export type Store = {
   id: string
   name: string
@@ -169,6 +180,7 @@ export type AttendanceRecord = {
   storeId: string
   attendanceDate: string
   status: AttendanceStatus
+  attendanceType: AttendanceType | null
   recordedBy: string
   operatorAccountId?: string | null
   createdAt: string
@@ -200,6 +212,7 @@ export type PaymentAttendanceItem = {
   workDateSnapshot: string
   periodStart: string
   periodEnd: string
+  attendanceTypeSnapshot: AttendanceType
   weeklyPaySnapshot: number
   dailyPaySnapshot: number
   suggestedAllocation: number
@@ -478,7 +491,9 @@ export type MerchandiseTransferInput = Pick<
 export type AttendanceInput = Pick<
   AttendanceRecord,
   'collaboratorId' | 'storeId' | 'attendanceDate' | 'status'
->
+> & {
+  attendanceType?: AttendanceType | null
+}
 
 export type CreatePurchaseInput = {
   purchaseId: string

@@ -8,6 +8,8 @@ import type {
 import {
   buildCollaboratorPaymentState,
   calculatePaymentSelection,
+  calculateShiftPayment,
+  consolidateShifts,
   getDefaultPaymentSelection,
   getPaymentPeriod,
 } from './paymentPolicy'
@@ -35,13 +37,18 @@ const history: CollaboratorCompensationHistory[] = [
   },
 ]
 
-function attendance(date: string, id = date): AttendanceRecord {
+function attendance(
+  date: string,
+  id = date,
+  attendanceType: 'full' | 'half' = 'full',
+): AttendanceRecord {
   return {
     id,
     collaboratorId: collaborator.id,
     storeId: collaborator.storeId,
     attendanceDate: date,
     status: 'present',
+    attendanceType,
     recordedBy: 'admin-1',
     createdAt: `${date}T12:00:00.000Z`,
     updatedAt: `${date}T12:00:00.000Z`,
@@ -60,6 +67,7 @@ function paidItem(
     workDateSnapshot: record.attendanceDate,
     periodStart: '2026-08-02',
     periodEnd: '2026-08-08',
+    attendanceTypeSnapshot: record.attendanceType ?? 'full',
     weeklyPaySnapshot: 2_000,
     dailyPaySnapshot: 333,
     suggestedAllocation: allocation,
@@ -68,6 +76,67 @@ function paidItem(
 }
 
 describe('payment policy', () => {
+  it('consolidates two half shifts into one equivalent full shift', () => {
+    expect(consolidateShifts(1, 3)).toMatchObject({
+      pairedHalves: 1,
+      remainingHalf: 1,
+      equivalentFullShifts: 2,
+    })
+    expect(consolidateShifts(0, 4)).toMatchObject({
+      pairedHalves: 2,
+      remainingHalf: 0,
+      equivalentFullShifts: 2,
+    })
+  })
+
+  it('calculates an isolated half shift with the floored half pay', () => {
+    expect(
+      calculateShiftPayment({
+        weeklyPay: 2_000,
+        fullShifts: 0,
+        halfShifts: 1,
+      }),
+    ).toMatchObject({
+      dailyPay: 333,
+      halfPay: 166,
+      amount: 166,
+    })
+  })
+
+  it('calculates one full and three half shifts after consolidation', () => {
+    expect(
+      calculateShiftPayment({
+        weeklyPay: 2_000,
+        fullShifts: 1,
+        halfShifts: 3,
+      }),
+    ).toMatchObject({
+      equivalentFullShifts: 2,
+      remainingHalf: 1,
+      amount: 832,
+    })
+  })
+
+  it('uses the exact weekly pay for six equivalent full shifts', () => {
+    for (const shifts of [
+      { fullShifts: 5, halfShifts: 2 },
+      { fullShifts: 4, halfShifts: 4 },
+      { fullShifts: 3, halfShifts: 6 },
+    ]) {
+      expect(
+        calculateShiftPayment({
+          weeklyPay: 2_000,
+          ...shifts,
+        }),
+      ).toMatchObject({
+        equivalentFullShifts: 6,
+        remainingHalf: 0,
+        amount: 2_000,
+        weeklyPayApplied: true,
+      })
+    }
+  })
+
   it('calculates individual periods from the collaborator payday', () => {
     expect(getPaymentPeriod('2026-08-02', 6)).toEqual({
       periodStart: '2026-08-02',
@@ -94,6 +163,30 @@ describe('payment policy', () => {
     expect(state.suggestedPending).toBe(2_000)
     expect(calculatePaymentSelection(state.periods, records.map((item) => item.id)))
       .toMatchObject({ suggestedAmount: 2_000, selectedDays: 6 })
+  })
+
+  it('keeps preview selection aligned with the consolidated amount', () => {
+    const records = [
+      attendance('2026-08-02'),
+      attendance('2026-08-03', 'half-1', 'half'),
+      attendance('2026-08-04', 'half-2', 'half'),
+      attendance('2026-08-05', 'half-3', 'half'),
+    ]
+    const state = buildCollaboratorPaymentState({
+      collaborator,
+      attendance: records,
+      paymentItems: [],
+      compensationHistory: history,
+      today: '2026-08-08',
+    })
+
+    expect(state.suggestedPending).toBe(832)
+    expect(
+      calculatePaymentSelection(
+        state.periods,
+        records.map((record) => record.id),
+      ).suggestedAmount,
+    ).toBe(832)
   })
 
   it('suggests daily pay for five worked days', () => {

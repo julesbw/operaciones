@@ -304,7 +304,7 @@ export function PaymentsPage({
                     <dl className="mt-5 grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-3 text-center">
                       <div>
                         <dt className="text-[10px] font-bold uppercase text-slate-400">
-                          Días
+                          Pendientes
                         </dt>
                         <dd className="mt-1 font-black text-slate-900">
                           {state.pendingDays}
@@ -595,7 +595,8 @@ function PaymentFormModal({
                     Periodo {periodLabel(period)}
                   </p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {period.workedDays} trabajados · {period.pendingDays} pendientes ·{' '}
+                    {period.workedDays} registros · {period.fullShifts} completos ·{' '}
+                    {period.halfShifts} medios · {period.pendingDays} pendientes ·{' '}
                     {selectedCount} seleccionados
                   </p>
                   {period.open && (
@@ -643,7 +644,9 @@ function PaymentFormModal({
                         {formatLongDate(record.attendanceDate)}
                       </span>
                       <span className="text-xs font-bold text-slate-500">
-                        Presente
+                        {record.attendanceType === 'half'
+                          ? '½ Medio turno'
+                          : '✓ Turno completo'}
                       </span>
                     </label>
                   ))}
@@ -838,13 +841,22 @@ function PaymentHistoryModal({
                 Periodo {shortDate(first.periodStart)}–{shortDate(first.periodEnd)}
               </p>
               <div className="mt-2 flex items-center justify-between text-sm">
-                <span>{periodItems.length} días cubiertos</span>
+                <span>
+                  {periodItems.length} días ·{' '}
+                  {periodItems.filter((item) => item.attendanceTypeSnapshot === 'half').length}{' '}
+                  medios
+                </span>
                 <strong>{currencyFormatter.format(suggested)}</strong>
               </div>
               <ul className="mt-3 space-y-1 text-xs text-slate-500">
                 {periodItems.map((item) => (
                   <li className="flex justify-between gap-3" key={item.attendanceId}>
-                    <span className="capitalize">{formatLongDate(item.workDateSnapshot)}</span>
+                    <span className="capitalize">
+                      {formatLongDate(item.workDateSnapshot)} ·{' '}
+                      {item.attendanceTypeSnapshot === 'half'
+                        ? '½ Medio turno'
+                        : '✓ Turno completo'}
+                    </span>
                     <span>{currencyFormatter.format(item.suggestedAllocation)}</span>
                   </li>
                 ))}

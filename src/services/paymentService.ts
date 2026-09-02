@@ -10,6 +10,7 @@ import type {
   PaymentAttendanceItem,
   PaymentFundingSource,
 } from '../domain/models'
+import { getEffectiveAttendanceType } from '../domain/models'
 import { supabase } from '../lib/supabase'
 import { operationsRepository } from '../repositories/operationsRepository'
 import type {
@@ -100,6 +101,7 @@ function mapPaymentItem(row: PaymentAttendanceItemRow): PaymentAttendanceItem {
     workDateSnapshot: row.work_date_snapshot,
     periodStart: row.period_start,
     periodEnd: row.period_end,
+    attendanceTypeSnapshot: row.attendance_type_snapshot ?? 'full',
     weeklyPaySnapshot: Number(row.weekly_pay_snapshot),
     dailyPaySnapshot: Number(row.daily_pay_snapshot),
     suggestedAllocation: Number(row.suggested_allocation),
@@ -127,6 +129,10 @@ function mapAttendance(row: AttendanceRow): AttendanceRecord {
     storeId: row.store_id,
     attendanceDate: row.attendance_date,
     status: row.status,
+    attendanceType: getEffectiveAttendanceType(
+      row.status,
+      row.attendance_type,
+    ),
     recordedBy: row.recorded_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

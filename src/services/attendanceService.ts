@@ -1,7 +1,8 @@
-import type {
-  AttendanceInput,
-  AttendanceRecord,
-  SyncQueueItem,
+import {
+  getEffectiveAttendanceType,
+  type AttendanceInput,
+  type AttendanceRecord,
+  type SyncQueueItem,
 } from '../domain/models'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { OperatorAuthorizationError } from './operatorAuthorization'
@@ -55,10 +56,15 @@ export class AttendanceService {
     const existingByCollaborator = new Map(
       existingRecords.map((record) => [record.collaboratorId, record]),
     )
-    const changedInputs = inputs.filter(
-      (input) =>
-        existingByCollaborator.get(input.collaboratorId)?.status !== input.status,
-    )
+    const changedInputs = inputs.filter((input) => {
+      const existing = existingByCollaborator.get(input.collaboratorId)
+      if (!existing) return true
+      return (
+        existing.status !== input.status ||
+        getEffectiveAttendanceType(existing.status, existing.attendanceType) !==
+          getEffectiveAttendanceType(input.status, input.attendanceType)
+      )
+    })
     if (changedInputs.length === 0) return []
 
     const paidAttendanceIds = await this.listPaidAttendanceIds()
@@ -107,6 +113,10 @@ export class AttendanceService {
         storeId: input.storeId,
         attendanceDate: input.attendanceDate,
         status: input.status,
+        attendanceType: getEffectiveAttendanceType(
+          input.status,
+          input.attendanceType,
+        ),
         recordedBy: userId,
         operatorAccountId: operatorAccountId ?? existing?.operatorAccountId ?? null,
         createdAt: existing?.createdAt ?? now,

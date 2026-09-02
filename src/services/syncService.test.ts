@@ -369,6 +369,7 @@ describe('SyncService manual retry', () => {
       store_id: 'store-id',
       attendance_date: '2026-08-28',
       status: 'present' as const,
+      attendance_type: 'full' as const,
       recorded_by: 'user-id',
       recorded_by_operator_account_id: null,
       created_at: '2026-08-28T12:00:00.000Z',
@@ -418,6 +419,7 @@ describe('SyncService manual retry', () => {
       storeId: 'store-id',
       attendanceDate: '2026-08-28',
       status: 'absent',
+      attendanceType: null,
       recordedBy: 'user-id',
       operatorAccountId: null,
       createdAt: '2026-08-28T12:00:00.000Z',
@@ -444,13 +446,14 @@ describe('SyncService manual retry', () => {
     expect(result).toMatchObject({ synced: 1, failed: 0, pending: 0 })
     expect(mocks.rpc).toHaveBeenCalledWith(
       'sync_attendance',
-      expect.objectContaining({ p_status: 'absent' }),
+      expect.objectContaining({ p_status: 'absent', p_attendance_type: null }),
     )
     expect(mocks.reconcileAttendanceQueueItem).toHaveBeenCalledWith(
       expect.objectContaining({ entityId: 'attendance-id' }),
       expect.objectContaining({
         id: 'attendance-id',
         status: 'present',
+        attendanceType: 'full',
         version: 4,
         syncStatus: 'synced',
       }),
@@ -465,6 +468,7 @@ describe('SyncService manual retry', () => {
       store_id: 'store-id',
       attendance_date: '2026-08-28',
       status: 'absent' as const,
+      attendance_type: null,
       recorded_by: 'user-id',
       recorded_by_operator_account_id: null,
       created_at: '2026-08-28T12:00:00.000Z',
@@ -534,6 +538,7 @@ describe('SyncService manual retry', () => {
       store_id: 'store-id',
       attendance_date: '2026-08-28',
       status: 'present' as const,
+      attendance_type: 'full' as const,
       recorded_by: 'user-id',
       recorded_by_operator_account_id: null,
       created_at: '2026-08-28T12:00:00.000Z',

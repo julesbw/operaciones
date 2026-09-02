@@ -152,6 +152,9 @@ export class OperationsDatabase extends Dexie {
         '&id, store_id, business_date, [store_id+business_date], closed_at, cachedAt',
       cashClosingDetails: '&closingId, cachedAt',
     }
+    const schemaV19 = {
+      ...schemaV18,
+    }
 
     this.version(1).stores(schemaV1)
     this.version(2)
@@ -289,6 +292,25 @@ export class OperationsDatabase extends Dexie {
       })
     this.version(17).stores(schemaV17)
     this.version(18).stores(schemaV18)
+    this.version(19)
+      .stores(schemaV19)
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<AttendanceRecord, string>('attendanceRecords')
+          .toCollection()
+          .modify((attendance) => {
+            attendance.attendanceType ??=
+              attendance.status === 'present' ? 'full' : null
+          })
+        await transaction
+          .table<PaymentAttendanceItem, [string, string]>(
+            'paymentAttendanceItems',
+          )
+          .toCollection()
+          .modify((item) => {
+            item.attendanceTypeSnapshot ??= 'full'
+          })
+      })
   }
 }
 

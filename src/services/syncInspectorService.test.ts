@@ -59,6 +59,7 @@ const attendance: AttendanceRecord = {
   storeId: 'store-center',
   attendanceDate: '2026-08-28',
   status: 'present',
+  attendanceType: 'full',
   recordedBy: 'technical-user',
   operatorAccountId: null,
   createdAt: '2026-08-28T16:00:00.000Z',

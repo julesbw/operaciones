@@ -10,6 +10,7 @@ import type {
   SyncQueueItem,
   SyncStatus,
 } from '../domain/models'
+import { getEffectiveAttendanceType } from '../domain/models'
 import { operationsRepository } from '../repositories/operationsRepository'
 import { currencyFormatter } from '../utils/money'
 import {
@@ -129,7 +130,11 @@ async function attendanceData(
   const collaborator = await repository.getCollaborator(record.collaboratorId)
   return {
     description: `Asistencia · ${collaborator?.name ?? 'Colaborador no identificado'}`,
-    detail: ATTENDANCE_LABELS[record.status],
+    detail:
+      record.status === 'present' &&
+      getEffectiveAttendanceType(record.status, record.attendanceType) === 'half'
+        ? 'Medio turno'
+        : ATTENDANCE_LABELS[record.status],
     storeId: record.storeId,
     storeName: storeName(storesById, record.storeId),
     ownerId: record.recordedBy,

@@ -51,6 +51,16 @@ describe('OperationsDatabase closing draft migration', () => {
       createdAt: '2026-08-10T12:00:00.000Z',
       updatedAt: '2026-08-10T12:00:00.000Z',
     })
+    await legacyDatabase.table('attendanceRecords').put({
+      id: 'legacy-attendance',
+      collaboratorId: 'collaborator-id',
+      storeId: 'store-id',
+      attendanceDate: '2026-08-10',
+      status: 'present',
+      recordedBy: 'admin-id',
+      createdAt: '2026-08-10T12:00:00.000Z',
+      updatedAt: '2026-08-10T12:00:00.000Z',
+    })
     legacyDatabase.close()
 
     const upgradedDatabase = new OperationsDatabase(databaseName)
@@ -59,7 +69,7 @@ describe('OperationsDatabase closing draft migration', () => {
       const migrated = await upgradedDatabase.closingDrafts.get('legacy-closing')
       const migratedExpense = await upgradedDatabase.expenses.get('legacy-expense')
 
-      expect(upgradedDatabase.verno).toBe(18)
+      expect(upgradedDatabase.verno).toBe(19)
       expect(
         upgradedDatabase.tables.some(
           (table) => table.name === 'merchandiseTransfers',
@@ -144,6 +154,12 @@ describe('OperationsDatabase closing draft migration', () => {
       expect(migratedExpense).toMatchObject({
         fundingSource: 'store_cash',
         sourceStoreId: 'store-id',
+      })
+      await expect(
+        upgradedDatabase.attendanceRecords.get('legacy-attendance'),
+      ).resolves.toMatchObject({
+        status: 'present',
+        attendanceType: 'full',
       })
       expect(migrated).not.toHaveProperty('openingBalance')
       expect(migrated).not.toHaveProperty('otherMovements')

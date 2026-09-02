@@ -25,6 +25,7 @@ function attendance(id: string): AttendanceRecord {
     storeId: 'store-id',
     attendanceDate: '2026-08-06',
     status: 'present',
+    attendanceType: 'full',
     recordedBy: 'user-id',
     createdAt: '2026-08-06T12:00:00.000Z',
     updatedAt: '2026-08-06T12:00:00.000Z',
@@ -231,7 +232,7 @@ describe('OperationsRepository attendance constraints', () => {
       const record = attendance('attendance-id')
       await repository.saveAttendanceWithQueue([record], [queueItem(record.id)])
       await repository.saveAttendanceWithQueue(
-        [{ ...record, status: 'absent' }],
+        [{ ...record, status: 'absent', attendanceType: null }],
         [{ ...queueItem(record.id), operation: 'update' }],
       )
 
@@ -276,6 +277,7 @@ describe('OperationsRepository attendance constraints', () => {
       const remote = {
         ...attendance('attendance-remote'),
         status: 'absent' as const,
+        attendanceType: null,
         syncStatus: 'synced' as const,
       }
       await repository.saveAttendanceWithQueue([local], [queueItem(local.id)])
@@ -304,7 +306,7 @@ describe('OperationsRepository attendance constraints', () => {
       }
       await repository.saveAttendanceWithQueue([record], [firstQueue])
       await repository.saveAttendanceWithQueue(
-        [{ ...record, status: 'absent' }],
+        [{ ...record, status: 'absent', attendanceType: null }],
         [newerQueue],
       )
 
@@ -733,6 +735,7 @@ describe('OperationsRepository sync failures', () => {
     const local = {
       ...attendance('attendance-reconciliation'),
       status: 'absent' as const,
+      attendanceType: null,
       syncStatus: 'error' as const,
     }
     const other = {
@@ -745,6 +748,7 @@ describe('OperationsRepository sync failures', () => {
     const remote = {
       ...local,
       status: 'present' as const,
+      attendanceType: 'full' as const,
       updatedAt: '2026-08-28T18:00:00.000Z',
       version: 4,
       syncStatus: 'synced' as const,

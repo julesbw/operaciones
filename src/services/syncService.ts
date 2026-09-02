@@ -6,6 +6,7 @@ import type {
   OperatorSession,
   SyncQueueItem,
 } from '../domain/models'
+import { getEffectiveAttendanceType } from '../domain/models'
 import { hasCapability } from '../domain/capabilities'
 import type { ExpenseRow } from '../types/database'
 import { supabase } from '../lib/supabase'
@@ -83,6 +84,7 @@ type AttendanceRow = {
   store_id: string
   attendance_date: string
   status: AttendanceRecord['status']
+  attendance_type: AttendanceRecord['attendanceType'] | undefined
   recorded_by: string
   recorded_by_operator_account_id: string | null
   created_at: string
@@ -112,6 +114,10 @@ function mapAttendanceRow(record: AttendanceRow): AttendanceRecord {
     storeId: record.store_id,
     attendanceDate: record.attendance_date,
     status: record.status,
+    attendanceType: getEffectiveAttendanceType(
+      record.status,
+      record.attendance_type,
+    ),
     recordedBy: record.recorded_by,
     operatorAccountId: record.recorded_by_operator_account_id,
     createdAt: record.created_at,
@@ -152,6 +158,7 @@ function attendanceToRpcArgs(record: AttendanceRecord) {
     p_store_id: record.storeId,
     p_attendance_date: record.attendanceDate,
     p_status: record.status,
+    p_attendance_type: record.attendanceType,
     p_created_at: record.createdAt,
     p_updated_at: record.updatedAt,
     p_recorded_by: record.recordedBy,
@@ -419,7 +426,7 @@ export class SyncService {
     const { data, error } = await supabase
       .from('attendance_records')
       .select(
-        'id, collaborator_id, store_id, attendance_date, status, recorded_by, recorded_by_operator_account_id, created_at, updated_at, version',
+        'id, collaborator_id, store_id, attendance_date, status, attendance_type, recorded_by, recorded_by_operator_account_id, created_at, updated_at, version',
       )
       .eq('id', item.entityId)
       .maybeSingle<AttendanceRow>()
@@ -455,7 +462,7 @@ export class SyncService {
       supabase
         .from('attendance_records')
         .select(
-          'id, collaborator_id, store_id, attendance_date, status, recorded_by, recorded_by_operator_account_id, created_at, updated_at, version',
+          'id, collaborator_id, store_id, attendance_date, status, attendance_type, recorded_by, recorded_by_operator_account_id, created_at, updated_at, version',
         )
         .gte('attendance_date', sinceDate)
         .returns<AttendanceRow[]>(),

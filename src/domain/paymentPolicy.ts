@@ -4,11 +4,70 @@ import type {
   CollaboratorCompensationHistory,
   PaymentAttendanceItem,
 } from './models'
+import { getEffectiveAttendanceType } from './models'
 
 const DAY_MILLISECONDS = 86_400_000
 
 function roundMoney(value: number): number {
   return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+export type ShiftConsolidation = {
+  fullShifts: number
+  halfShifts: number
+  pairedHalves: number
+  remainingHalf: number
+  equivalentFullShifts: number
+}
+
+export function consolidateShifts(
+  fullShifts: number,
+  halfShifts: number,
+): ShiftConsolidation {
+  const pairedHalves = Math.floor(halfShifts / 2)
+  const remainingHalf = halfShifts % 2
+  return {
+    fullShifts,
+    halfShifts,
+    pairedHalves,
+    remainingHalf,
+    equivalentFullShifts: fullShifts + pairedHalves,
+  }
+}
+
+export type ShiftPaymentCalculation = ShiftConsolidation & {
+  dailyPay: number
+  halfPay: number
+  amount: number
+  weeklyPayApplied: boolean
+}
+
+export function calculateShiftPayment(options: {
+  weeklyPay: number
+  fullShifts: number
+  halfShifts: number
+  weeklyPayEligible?: boolean
+}): ShiftPaymentCalculation {
+  const { weeklyPay, fullShifts, halfShifts } = options
+  const consolidation = consolidateShifts(fullShifts, halfShifts)
+  const dailyPay = Math.floor(weeklyPay / 6)
+  const halfPay = Math.floor(dailyPay / 2)
+  const weeklyPayApplied =
+    options.weeklyPayEligible !== false &&
+    consolidation.equivalentFullShifts === 6 &&
+    consolidation.remainingHalf === 0
+  const amount = weeklyPayApplied
+    ? weeklyPay
+    : consolidation.equivalentFullShifts * dailyPay +
+      consolidation.remainingHalf * halfPay
+
+  return {
+    ...consolidation,
+    dailyPay,
+    halfPay,
+    amount,
+    weeklyPayApplied,
+  }
 }
 
 function parseDate(value: string): Date {
@@ -51,7 +110,13 @@ export type CollaboratorPaymentPeriod = {
   open: boolean
   weeklyPay?: number
   dailyPay?: number
+  halfPay?: number
   workedDays: number
+  fullShifts: number
+  halfShifts: number
+  pairedHalves: number
+  remainingHalf: number
+  equivalentFullShifts: number
   paidDays: number
   pendingDays: number
   suggestedAllocated: number
@@ -110,6 +175,16 @@ function enumerateMissingDates(
     }
   }
   return dates
+}
+
+function paymentAttendanceType(
+  record: AttendanceRecord,
+  paymentItem?: PaymentAttendanceItem,
+): 'full' | 'half' | null {
+  return (
+    paymentItem?.attendanceTypeSnapshot ??
+    getEffectiveAttendanceType(record.status, record.attendanceType)
+  )
 }
 
 export function buildCollaboratorPaymentState(options: {
@@ -185,6 +260,28 @@ export function buildCollaboratorPaymentState(options: {
       const dailyPay =
         priorItem?.dailyPaySnapshot ??
         (weeklyPay === undefined ? undefined : Math.floor(weeklyPay / 6))
+      const halfPay =
+        dailyPay === undefined ? undefined : Math.floor(dailyPay / 2)
+      const fullShifts = records.filter(
+        (record) =>
+          paymentAttendanceType(record, paidItemByAttendance.get(record.id)) ===
+          'full',
+      ).length
+      const halfShifts = records.filter(
+        (record) =>
+          paymentAttendanceType(record, paidItemByAttendance.get(record.id)) ===
+          'half',
+      ).length
+      const open = periodEnd > today
+      const shiftCalculation =
+        weeklyPay === undefined
+          ? undefined
+          : calculateShiftPayment({
+              weeklyPay,
+              fullShifts,
+              halfShifts,
+              weeklyPayEligible: !open,
+            })
       const suggestedAllocated = roundMoney(
         records.reduce(
           (total, record) =>
@@ -197,13 +294,8 @@ export function buildCollaboratorPaymentState(options: {
         paidItemByAttendance.has(record.id),
       ).length
       const pendingDays = records.length - paidDays
-      const open = periodEnd > today
       const policyTarget =
-        weeklyPay === undefined || dailyPay === undefined
-          ? undefined
-          : !open && records.length === 6
-            ? weeklyPay
-            : dailyPay * records.length
+        shiftCalculation?.amount
       const suggestedPending =
         policyTarget === undefined
           ? undefined
@@ -221,7 +313,13 @@ export function buildCollaboratorPaymentState(options: {
         open,
         weeklyPay,
         dailyPay,
+        halfPay,
         workedDays: records.length,
+        fullShifts,
+        halfShifts,
+        pairedHalves: shiftCalculation?.pairedHalves ?? 0,
+        remainingHalf: shiftCalculation?.remainingHalf ?? 0,
+        equivalentFullShifts: shiftCalculation?.equivalentFullShifts ?? 0,
         paidDays,
         pendingDays,
         suggestedAllocated,
@@ -301,15 +399,33 @@ export function calculatePaymentSelection(
     selectedPeriods += 1
     if (
       period.dailyPay === undefined ||
-      period.policyTarget === undefined
+      period.policyTarget === undefined ||
+      period.weeklyPay === undefined
     ) {
       salaryMissing = true
       continue
     }
-    suggestedAmount +=
-      selected.length === pending.length
-        ? period.policyTarget - period.suggestedAllocated
-        : period.dailyPay * selected.length
+    if (selected.length === pending.length) {
+      suggestedAmount += period.policyTarget - period.suggestedAllocated
+      continue
+    }
+
+    const selectedFullShifts = selected.filter(
+      (record) =>
+        getEffectiveAttendanceType(record.status, record.attendanceType) ===
+        'full',
+    ).length
+    const selectedHalfShifts = selected.filter(
+      (record) =>
+        getEffectiveAttendanceType(record.status, record.attendanceType) ===
+        'half',
+    ).length
+    suggestedAmount += calculateShiftPayment({
+      weeklyPay: period.weeklyPay,
+      fullShifts: selectedFullShifts,
+      halfShifts: selectedHalfShifts,
+      weeklyPayEligible: false,
+    }).amount
   }
 
   return {
