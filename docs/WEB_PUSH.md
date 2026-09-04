@@ -1,19 +1,24 @@
-# Web Push de Operaciones
+# Web Push compartido
 
-Web Push es un canal secundario para los administradores de Operaciones. La
-fuente de verdad sigue siendo `notifications` y
+Web Push es un canal secundario para los administradores de Operaciones y
+Arrendamientos. La fuente de verdad sigue siendo `notifications` y
 `notification_recipients`; `notification_deliveries` sólo registra el intento
 de entrega. Un error de Push nunca cambia `read_at`.
 
 ## Componentes
 
-- `202608290003_web_push.sql` crea suscripciones, entregas, RPCs protegidas y
-  la proyección idempotente desde destinatarios administrativos.
+- `202608290003_web_push.sql`, las migraciones de presencia/ciclo de vida y
+  `202609040001_shared_notifications.sql` crean suscripciones, entregas,
+  RPCs protegidas y la proyección idempotente desde destinatarios
+  administrativos para ambos `source_app`.
 - `supabase/functions/deliver-web-push` es el único emisor. Carga la entrega y
-  sus referencias desde Supabase, construye un payload breve y envía mediante
-  VAPID.
-- `public/sw.js` recibe sólo eventos de `operaciones` y abre Compras,
-  Transferencias o Cortes mediante la navegación existente.
+  sus referencias desde Supabase, valida la combinación de aplicación/evento/
+  entidad, construye un payload breve y envía mediante VAPID. Para
+  `arrendamientos + PAYMENT_REGISTERED + payment` usa exclusivamente el
+  mensaje persistido, limitado a 500 caracteres.
+- `public/sw.js` de Operaciones recibe sus tres eventos propios. La PWA de
+  Arrendamientos importa `public/push-notifications.js` en su worker generado
+  y recibe únicamente pagos registrados.
 - La pestaña `Sistema` permite activar o desactivar únicamente el dispositivo
   actual y sólo para un administrador autenticado.
 
@@ -30,8 +35,8 @@ En el build de la PWA configura sólo la clave pública:
 VITE_WEB_PUSH_VAPID_PUBLIC_KEY=<clave-publica-url-safe-base64>
 ```
 
-Genera un par VAPID independiente para cada ambiente. La versión usada por la
-función es `web-push@3.6.7`, fijada en su `deno.json`:
+Genera un par VAPID por ambiente y úsalo en ambas aplicaciones. La versión
+usada por la función es `web-push@3.6.7`, fijada en su `deno.json`:
 
 ```bash
 npx --yes web-push@3.6.7 generate-vapid-keys
@@ -63,7 +68,8 @@ supabase functions deploy deliver-web-push
 ```
 
 Configura un Database Webhook asíncrono para `INSERT` en
-`public.notification_deliveries`. Debe hacer `POST` a:
+`public.notification_deliveries`, sin filtrar por `source_app`. Debe hacer
+`POST` a:
 
 ```text
 https://<project-ref>.supabase.co/functions/v1/deliver-web-push
@@ -73,9 +79,9 @@ Incluye el header `x-web-push-secret` y el cuerpo estándar del webhook, que
 contiene `record.id`. La función vuelve a cargar la fila y no acepta del
 caller el destinatario, el texto, el evento ni `source_app`.
 
-Configura además un scheduler server-to-server que consulte entregas de
-Operaciones con estado `pending` o `failed` cuyo `next_attempt_at` ya venció y
-envíe:
+Configura además el scheduler server-to-server de la migración compartida. Debe
+consultar entregas de ambos orígenes con estado `pending` o `failed` cuyo
+`next_attempt_at` ya venció y enviar:
 
 ```json
 { "deliveryId": "<uuid-de-la-entrega>" }
@@ -92,13 +98,13 @@ automáticamente desde este repositorio.
 
 ## Logout y cambio de usuario
 
-`authService.signOut()` ejecuta primero la limpieza del dispositivo actual
-mediante `pushNotificationService.disableForLogout()`: revoca el endpoint de
-`operaciones` para el administrador autenticado y después llama a
-`PushSubscription.unsubscribe()`. El logout de Supabase usa alcance local para
-no invalidar sesiones del mismo usuario en otros dispositivos. Si alguna de
-estas operaciones falla, se registra un diagnóstico seguro y el logout de
-Supabase continúa.
+El logout ejecuta primero `pause_push_subscription(source_app, endpoint)` para
+conservar la suscripción del administrador en el dispositivo. Si la pausa
+falla o excede el timeout, revoca el registro y elimina la suscripción local
+como fallback best-effort. El logout de Supabase continúa aunque falle toda la
+limpieza. El origen siempre se deriva de la sesión autenticada y se envía de
+forma explícita en las nuevas firmas; las firmas antiguas siguen fijadas a
+`operaciones`.
 
 La activación explícita elimina la marca local de Push desactivado. Por eso, al
 volver a iniciar sesión en el dispositivo, Push aparece desactivado y no se

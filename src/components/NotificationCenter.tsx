@@ -37,6 +37,7 @@ function notificationDate(value: string): string {
 function entityLabel(entityType: NotificationEntityType): string {
   if (entityType === 'purchase') return 'Compra'
   if (entityType === 'merchandise_transfer') return 'Transferencia'
+  if (entityType === 'payment') return 'Pago'
   return 'Corte'
 }
 

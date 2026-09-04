@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from 'supabase'
 import webpush from 'web-push'
 import {
+  ARRENDAMIENTOS_SOURCE_APP,
   buildWebPushPayload,
   OPERATIONS_SOURCE_APP,
   type PersistedPushNotification,
@@ -26,6 +27,7 @@ type NotificationRecord = {
   source_app: string
   event_type: string
   title: string
+  message: string
   store_id: string | null
   entity_type: string
   entity_id: string
@@ -44,6 +46,7 @@ type SubscriptionRecord = {
   endpoint: string
   p256dh: string
   auth: string
+  paused_at: string | null
   revoked_at: string | null
 }
 
@@ -227,10 +230,6 @@ async function loadPayloadInput(
   client: SupabaseClient,
   notification: NotificationRecord,
 ): Promise<PersistedPushNotification> {
-  if (notification.source_app !== OPERATIONS_SOURCE_APP) {
-    throw new DispatchError('source_app_rejected', true)
-  }
-
   const base = {
     notificationId: notification.id,
     sourceApp: notification.source_app,
@@ -238,6 +237,19 @@ async function loadPayloadInput(
     entityType: notification.entity_type,
     entityId: notification.entity_id,
     title: notification.title,
+    message: notification.message,
+  }
+
+  if (
+    notification.source_app === ARRENDAMIENTOS_SOURCE_APP &&
+    notification.event_type === 'PAYMENT_REGISTERED' &&
+    notification.entity_type === 'payment'
+  ) {
+    return base
+  }
+
+  if (notification.source_app !== OPERATIONS_SOURCE_APP) {
+    throw new DispatchError('source_app_rejected', true)
   }
 
   if (notification.event_type === 'PURCHASE_CREATED') {
@@ -286,12 +298,12 @@ async function loadContext(
   const [notificationResult, subscriptionResult] = await Promise.all([
     client
       .from('notifications')
-      .select('id, source_app, event_type, title, store_id, entity_type, entity_id')
+      .select('id, source_app, event_type, title, message, store_id, entity_type, entity_id')
       .eq('id', delivery.notification_id)
       .maybeSingle(),
     client
       .from('push_subscriptions')
-      .select('id, source_app, auth_user_id, endpoint, p256dh, auth, revoked_at')
+      .select('id, source_app, auth_user_id, endpoint, p256dh, auth, paused_at, revoked_at')
       .eq('id', delivery.subscription_id)
       .maybeSingle(),
   ])
@@ -315,10 +327,9 @@ async function loadContext(
   const recipient = recipientResult.data as RecipientRecord | null
 
   if (
-    delivery.source_app !== OPERATIONS_SOURCE_APP ||
     delivery.channel !== 'push' ||
-    notification.source_app !== OPERATIONS_SOURCE_APP ||
-    subscription.source_app !== OPERATIONS_SOURCE_APP ||
+    delivery.source_app !== notification.source_app ||
+    subscription.source_app !== delivery.source_app ||
     !recipient ||
     recipient.recipient_id !== subscription.auth_user_id
   ) {
@@ -327,6 +338,9 @@ async function loadContext(
   if (subscription.revoked_at) {
     throw new DispatchError('subscription_revoked', true)
   }
+  if (subscription.paused_at) {
+    throw new DispatchError('subscription_paused', true)
+  }
 
   return { notification, subscription }
 }
@@ -334,13 +348,14 @@ async function loadContext(
 async function revokeSubscriptionAndAbandon(
   client: SupabaseClient,
   subscriptionId: string,
+  sourceApp: string,
 ): Promise<void> {
   const now = new Date().toISOString()
   const subscriptionResult = await client
     .from('push_subscriptions')
     .update({ revoked_at: now, updated_at: now })
     .eq('id', subscriptionId)
-    .eq('source_app', OPERATIONS_SOURCE_APP)
+    .eq('source_app', sourceApp)
   if (subscriptionResult.error) {
     throw new DispatchError('subscription_revoke_failed', false)
   }
@@ -353,7 +368,7 @@ async function revokeSubscriptionAndAbandon(
       updated_at: now,
     })
     .eq('subscription_id', subscriptionId)
-    .eq('source_app', OPERATIONS_SOURCE_APP)
+    .eq('source_app', sourceApp)
     .in('status', ['pending', 'failed', 'processing'])
   if (deliveriesResult.error) {
     throw new DispatchError('delivery_abandon_failed', false)
@@ -377,10 +392,18 @@ async function sendPush(
   subscription: SubscriptionRecord,
   payload: PersistedPushNotification,
 ): Promise<void> {
+  let webPushPayload: ReturnType<typeof buildWebPushPayload>
+  try {
+    webPushPayload = buildWebPushPayload(payload)
+  } catch (cause: unknown) {
+    throw new DispatchError(
+      cause instanceof Error ? cause.message : 'push_payload_invalid',
+      true,
+    )
+  }
   const vapidSubject = configuredValue('WEB_PUSH_VAPID_SUBJECT')
   const vapidPublicKey = configuredValue('WEB_PUSH_VAPID_PUBLIC_KEY')
   const vapidPrivateKey = configuredValue('WEB_PUSH_VAPID_PRIVATE_KEY')
-  const webPushPayload = buildWebPushPayload(payload)
 
   try {
     await webpush.sendNotification(
@@ -483,7 +506,11 @@ async function dispatch(request: Request): Promise<Response> {
         : retryAt(delivery.attempt_count),
     )
     if (dispatchError.code === 'push_subscription_expired') {
-      await revokeSubscriptionAndAbandon(client, delivery.subscription_id)
+      await revokeSubscriptionAndAbandon(
+        client,
+        delivery.subscription_id,
+        delivery.source_app,
+      )
     }
     if (!permanent) {
       console.error('web_push_delivery_retry_scheduled', dispatchError.code)

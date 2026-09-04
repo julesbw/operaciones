@@ -68,4 +68,47 @@ describe('buildWebPushPayload', () => {
       storeName: 'Tienda Centro',
     })).toThrow('push_amount_missing')
   })
+
+  it('builds Arrendamientos Push only from the persisted notification message', () => {
+    const message = 'Local 7 · Arrendatario · $3,500 · Periodo: 09/2026 · Registró: Ana'
+    expect(buildWebPushPayload({
+      ...base,
+      sourceApp: 'arrendamientos',
+      eventType: 'PAYMENT_REGISTERED',
+      entityType: 'payment',
+      message,
+      storeName: 'No debe consultarse',
+      amount: 999,
+    })).toMatchObject({
+      sourceApp: 'arrendamientos',
+      eventType: 'PAYMENT_REGISTERED',
+      entityType: 'payment',
+      body: message,
+    })
+
+    expect(buildWebPushPayload({
+      ...base,
+      sourceApp: 'arrendamientos',
+      eventType: 'PAYMENT_REGISTERED',
+      entityType: 'payment',
+      message: 'x'.repeat(700),
+    }).body).toHaveLength(500)
+  })
+
+  it('rejects crossed application, event and entity combinations', () => {
+    expect(() => buildWebPushPayload({
+      ...base,
+      sourceApp: 'arrendamientos',
+      eventType: 'PAYMENT_REGISTERED',
+      entityType: 'purchase',
+      message: 'Pago registrado',
+    })).toThrow('push_notification_invalid')
+    expect(() => buildWebPushPayload({
+      ...base,
+      sourceApp: 'operaciones',
+      eventType: 'PAYMENT_REGISTERED',
+      entityType: 'payment',
+      message: 'Pago registrado',
+    })).toThrow('push_notification_invalid')
+  })
 })

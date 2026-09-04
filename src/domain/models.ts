@@ -37,6 +37,7 @@ export const NOTIFICATION_EVENT_TYPES = [
   'PURCHASE_CREATED',
   'TRANSFER_CREATED',
   'CASH_CLOSING_CLOSED',
+  'PAYMENT_REGISTERED',
 ] as const
 export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number]
 
@@ -51,6 +52,7 @@ export const NOTIFICATION_ENTITY_TYPES = [
   'purchase',
   'merchandise_transfer',
   'cash_closing',
+  'payment',
 ] as const
 export type NotificationEntityType = (typeof NOTIFICATION_ENTITY_TYPES)[number]
 
